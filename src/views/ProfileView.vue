@@ -135,6 +135,7 @@ import {
 import { Strava } from "@vicons/fa";
 import { db } from "@/db";
 import { supabase } from "@/supabase";
+import { stravaApi } from "@/stravaBridge";
 import TypewriterHeader from "../components/TypewriterHeader.vue";
 
 const message = useMessage();
