@@ -59,6 +59,7 @@ import { NCard, NTag, NText, NSpace, NStatistic, NSpin, NAlert } from 'naive-ui'
 import L from 'leaflet'
 import 'leaflet-polylinedecorator'
 import { decode } from '@mapbox/polyline'
+import { stravaApi } from '@/stravaBridge'
 import type { Workout } from '../types' // Import shared types
 
 
@@ -154,7 +155,7 @@ onMounted(async () => {
 	if (props.workout.type?.toLowerCase() === 'running' && props.workout.stravaActivityId) {
 		loading.value = true;
 		try {
-			const result = await window.stravaApi.getStravaActivityById(props.workout.stravaActivityId.toString());
+			const result = await stravaApi.getStravaActivityById(props.workout.stravaActivityId.toString());
             stravaActivity.value = result;
             if (result && !(result as any).error) {
 			    await initMap();

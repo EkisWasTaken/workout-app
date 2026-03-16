@@ -258,7 +258,7 @@ onMounted(async () => {
 			workout.value = await db.getWorkoutById(workoutId)
 			if (workout.value?.stravaActivityId) {
 				try {
-					stravaActivity.value = await window.stravaApi.getStravaActivityById(workout.value.stravaActivityId.toString());
+					stravaActivity.value = await stravaApi.getStravaActivityById(workout.value.stravaActivityId.toString());
 				} catch (error) {
 					console.error('Failed to fetch Strava activity:', error);
 				}
@@ -268,6 +268,7 @@ onMounted(async () => {
 		loading.value = false;
 	}
 })
+
 </script>
 
 <style scoped>

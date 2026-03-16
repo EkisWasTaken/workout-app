@@ -112,11 +112,13 @@ const fetchWorkouts = async () => {
   }
 };
 
+import { stravaApi } from '@/stravaBridge';
+
 const linkActivity = async () => {
   if (selectedActivity.value && selectedWorkoutId.value) {
     try {
       linkingActivity.value = true; // Set loading state
-      await window.stravaApi.linkStravaActivity(
+      await stravaApi.linkStravaActivity(
         selectedWorkoutId.value as number,
         selectedActivity.value.id.toString()
       );
@@ -138,7 +140,7 @@ const updateShow = (value: boolean) => {
 
 const fetchActivities = async () => {
   try {
-    const fetchedActivities = await (window as any).stravaApi.getActivities(); // Changed from getAthleteActivities
+    const fetchedActivities = await stravaApi.getActivities(); // Changed from getAthleteActivities
     console.log('Fetched Strava activities:', fetchedActivities); // Add this line
     if (fetchedActivities && !fetchedActivities.error) {
         activities.value = fetchedActivities;

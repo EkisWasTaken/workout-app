@@ -12,6 +12,7 @@
 import { ref, watch, watchEffect } from 'vue';
 import { NModal, NFormItem, NSelect } from 'naive-ui';
 import { db } from '@/db';
+import { stravaApi } from '@/stravaBridge';
 
 const props = defineProps<{
     show: boolean;
@@ -54,7 +55,7 @@ async function loadStravaActivities() {
     console.log('loadStravaActivities called.');
     loadingActivities.value = true;
     try {
-        const isConnected = await window.stravaApi.isStravaConnected();
+        const isConnected = await stravaApi.isStravaConnected();
         console.log('Strava Connected:', isConnected);
         if (!isConnected) {
             console.warn('Strava is not connected. Please connect to Strava in your settings.');
@@ -62,7 +63,7 @@ async function loadStravaActivities() {
             return;
         }
 
-        const activities = await window.stravaApi.getActivities();
+        const activities = await stravaApi.getActivities();
         console.log('Fetched Strava activities:', activities);
         if (activities && Array.isArray(activities)) {
             stravaActivityOptions.value = activities.map((act: any) => ({
@@ -81,10 +82,11 @@ async function loadStravaActivities() {
     }
 }
 
+
 async function onPositiveClick() {
     if (props.workoutId !== null && selectedStravaActivityId.value !== null) {
         try {
-            await window.stravaApi.linkStravaActivity(props.workoutId, selectedStravaActivityId.value);
+            await stravaApi.linkStravaActivity(props.workoutId, selectedStravaActivityId.value);
             // Mark the workout as completed
             await db.completeWorkout({
                 id: props.workoutId,
@@ -98,6 +100,7 @@ async function onPositiveClick() {
         }
     }
 }
+
 
 function onNegativeClick() {
     showInternal.value = false;
