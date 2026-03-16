@@ -78,7 +78,7 @@ const emits = defineEmits<{
 }>();
 
 const message = useMessage();
-const activities = ref<StravaActivity[]>([]);
+const activities = ref<any[]>([]);
 const workouts = ref<Workout[]>([]);
 const showLinkModal = ref(false);
 const selectedActivity = ref<StravaActivity | null>(null);

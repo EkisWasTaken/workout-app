@@ -52,15 +52,14 @@
 
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, nextTick, PropType } from 'vue'
-import { useRouter } from 'router' // Note: This might need adjustment if your router import is different, but following local convention
-import { useRouter as useVueRouter } from 'vue-router'
-const router = useVueRouter()
+import { useRouter } from 'vue-router'
+const router = useRouter()
 
 import { NCard, NTag, NText, NSpace, NStatistic, NSpin, NAlert } from 'naive-ui'
 import L from 'leaflet'
 import 'leaflet-polylinedecorator'
 import { decode } from '@mapbox/polyline'
-import type { Workout, StravaActivity } from '../types' // Import shared types
+import type { Workout } from '../types' // Import shared types
 
 
 const props = defineProps({

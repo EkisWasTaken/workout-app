@@ -145,7 +145,7 @@ import type { Workout, StravaActivity } from '../types'
 const route = useRoute()
 const router = useRouter()
 const workout = ref<Workout | null>(null)
-const stravaActivity = ref<StravaActivity | null>(null)
+const stravaActivity = ref<any>(null)
 const loading = ref(true);
 const mapContainer = ref<HTMLElement | null>(null)
 

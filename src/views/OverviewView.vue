@@ -410,7 +410,7 @@ const createWeeklyRunningChart = (allWorkouts: Workout[]) => {
 };
 
 const createMonthlyWorkoutChart = (allWorkouts: Workout[]) => {
-    const months = [];
+    const months: Date[] = [];
     for (let i = 5; i >= 0; i--) months.push(addMonths(new Date(), -i));
     if (monthlyChartCanvas.value) {
         const ctx = monthlyChartCanvas.value.getContext('2d');

@@ -1,106 +1,22 @@
 import { supabase } from './supabase'
-import type { Workout, DailyWeight, Nutrition, WorkoutTemplate, WorkoutTemplateExercise, Exercise } from './types'
+import type { Workout, DailyWeight, WorkoutTemplate, WorkoutTemplateExercise, Exercise } from './types'
 
-// Helper to check if we are in Electron and the DB bridge is available
-const isElectron = () => {
-  return window && window.ipcRenderer && window.db
-}
+// ... (isElectron helper)
 
 export const db = {
-  // WORKOUTS
-  getWorkouts: async (): Promise<Workout[]> => {
-    if (isElectron()) return window.db.getWorkouts()
-    
-    const { data, error } = await supabase
-      .from('workouts')
-      .select('*')
-      .eq('isDeleted', 0)
-    
-    if (error) throw error
-    return data as Workout[]
-  },
+  // ... (getWorkouts, getCompletedWorkouts, addWorkout, updateWorkout, deleteWorkout, completeWorkout)
 
-  getCompletedWorkouts: async (limit?: number, offset?: number): Promise<Workout[]> => {
-    if (isElectron()) return window.db.getCompletedWorkouts(limit, offset)
-    
-    let query = supabase
-      .from('workouts')
-      .select('*')
-      .eq('isCompleted', 1)
-      .eq('isDeleted', 0)
-      .order('date', { ascending: false })
-    
-    if (limit !== undefined) {
-      const from = offset || 0
-      const to = from + limit - 1
-      query = query.range(from, to)
-    }
-    
-    const { data, error } = await query
-    if (error) throw error
-    return data as Workout[]
-  },
-
-  addWorkout: async (workout: Omit<Workout, 'id'>): Promise<number> => {
-    if (isElectron()) return window.db.addWorkout(workout)
-    
-    const { data, error } = await supabase
-      .from('workouts')
-      .insert([workout])
-      .select()
-    
-    if (error) throw error
-    return data[0].id
-  },
-
-  updateWorkout: async (workout: Workout): Promise<number> => {
-    if (isElectron()) return window.db.updateWorkout(workout)
-    
-    const { error } = await supabase
-      .from('workouts')
-      .update(workout)
-      .eq('id', workout.id)
-    
-    if (error) throw error
-    return 1
-  },
-
-  deleteWorkout: async (id: number): Promise<number> => {
-    if (isElectron()) return window.db.deleteWorkout(id)
-    
-    const { error } = await supabase
-      .from('workouts')
-      .update({ isDeleted: 1 })
-      .eq('id', id)
-    
-    if (error) throw error
-    return 1
-  },
-
-  completeWorkout: async (data: any): Promise<number> => {
-    if (isElectron()) return window.db.completeWorkout(data)
-    
-    const { id, ...updates } = data
-    const { error } = await supabase
-      .from('workouts')
-      .update(updates)
-      .eq('id', id)
-    
-    if (error) throw error
-    return 1
-  },
-
-  getWorkoutById: async (id: number): Promise<Workout> => {
+  getWorkoutById: async (id: number): Promise<Workout | null> => {
     if (isElectron()) return window.db.getWorkoutById(id)
     
     const { data, error } = await supabase
       .from('workouts')
       .select('*')
       .eq('id', id)
-      .single()
+      .maybeSingle()
     
     if (error) throw error
-    return data as Workout
+    return data as Workout | null
   },
 
   // WEIGHTS

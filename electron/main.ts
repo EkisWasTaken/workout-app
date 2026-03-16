@@ -94,8 +94,8 @@ const db = new sqlite3.Database(dbPath, (err) => {
 
               const hasTotalWeightLifted = columns.some(col => col.name === 'totalWeightLifted');
               if (!hasTotalWeightLifted) {
-                db.run("ALTER TABLE workouts ADD COLUMN totalWeightLifted INTEGER", (err) => {
-                  if (err) console.error("Error adding totalWeightLifted column:", err);
+                db.run("ALTER TABLE workouts ADD COLUMN totalWeightLifted INTEGER", (_err) => {
+                  if (_err) console.error("Error adding totalWeightLifted column:", _err);
                   else console.log("totalWeightLifted column added successfully.");
                 });
               }
@@ -214,7 +214,7 @@ const db = new sqlite3.Database(dbPath, (err) => {
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     name TEXT NOT NULL UNIQUE,
                     body_part TEXT NOT NULL
-                  )`, (err) => {
+                  )`, (_err) => {
                     // ... (keep existing exercise logic)
                   });
 
