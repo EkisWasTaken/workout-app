@@ -26,6 +26,11 @@ export const stravaApi = {
     return stravaWeb.getStravaActivityById(id);
   },
 
+  linkStravaActivity: async (workoutId: number, stravaActivityId: string) => {
+    if (isElectron()) return (window as any).stravaApi.linkStravaActivity(workoutId, stravaActivityId);
+    return stravaWeb.linkStravaActivity(workoutId, stravaActivityId);
+  },
+
   isStravaConnected: async () => {
     if (isElectron()) return (window as any).stravaApi.isStravaConnected();
     return stravaWeb.isStravaConnected();

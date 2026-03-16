@@ -75,6 +75,13 @@ export const stravaWeb = {
     return response.data;
   },
 
+  linkStravaActivity: async (workoutId: number, stravaActivityId: string) => {
+    // On web, "linking" is just returning the ID to the frontend to save in Supabase.
+    // The database logic in db.ts already handles saving the ID.
+    // We just return true to confirm the Strava part is "done" (even though nothing happens on Strava API side).
+    return true;
+  },
+
   isStravaConnected: async () => {
     return !!localStorage.getItem('strava_refresh_token');
   }

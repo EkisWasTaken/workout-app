@@ -140,6 +140,7 @@ import L from 'leaflet'
 import 'leaflet-polylinedecorator'
 import { decode } from '@mapbox/polyline'
 import { db } from '@/db'
+import { stravaApi } from '@/stravaBridge'
 import type { Workout } from '../types'
 
 const route = useRoute()
