@@ -221,19 +221,18 @@ const saveProfile = () => {
 
 const checkStravaConnection = async () => {
 	try {
-		if (window.stravaApi?.isStravaConnected) {
-			isStravaConnected.value = await window.stravaApi.isStravaConnected();
-			console.log('Profile: Strava status updated ->', isStravaConnected.value);
-		}
+		isStravaConnected.value = await stravaApi.isStravaConnected();
+		console.log('Profile: Strava status updated ->', isStravaConnected.value);
 	} catch (error) { console.error('Error checking Strava connection:', error); }
 };
 
-const handleConnectToStrava = () => {
-	if (window.stravaApi?.getAuthUrl) {
-		connectingToStrava.value = true;
-		window.stravaApi.getAuthUrl(); 
-	} else {
+const handleConnectToStrava = async () => {
+	connectingToStrava.value = true;
+	try {
+		await stravaApi.getAuthUrl();
+	} catch (e) {
 		message.error("API_UNAVAILABLE");
+		connectingToStrava.value = false;
 	}
 };
 
@@ -242,8 +241,8 @@ const handleStravaAuthCallback = async (_event: any, url: string) => {
 	try {
 		const urlParams = new URLSearchParams(new URL(url).search);
 		const code = urlParams.get("code");
-		if (code && window.stravaApi?.exchangeCodeForToken) {
-			await window.stravaApi.exchangeCodeForToken(code);
+		if (code) {
+			await stravaApi.exchangeCodeForToken(code);
 			await checkStravaConnection(); 
 			message.success("UPLINK_ESTABLISHED_SUCCESSFULLY");
 		}
@@ -282,18 +281,38 @@ const saveWorkoutTypeColors = async () => {
 	}
 };
 
+const handleWebStravaCallback = async () => {
+	const urlParams = new URLSearchParams(window.location.search);
+	const code = urlParams.get("code");
+	if (code) {
+		connectingToStrava.value = true;
+		try {
+			await stravaApi.exchangeCodeForToken(code);
+			window.history.replaceState({}, document.title, window.location.pathname);
+			await checkStravaConnection();
+			message.success("UPLINK_ESTABLISHED_SUCCESSFULLY");
+		} catch (e) {
+			console.error("Web OAuth Error:", e);
+			message.error("HANDSHAKE_FAILED");
+		} finally {
+			connectingToStrava.value = false;
+		}
+	}
+};
+
 onMounted(() => {
 	loadProfile();
+	handleWebStravaCallback(); 
 	checkStravaConnection();
 	fetchWorkoutTypeColors(); 
-	if (window.ipcRenderer) {
-		window.ipcRenderer.on("strava-auth-callback", handleStravaAuthCallback);
+	if ((window as any).ipcRenderer) {
+		(window as any).ipcRenderer.on("strava-auth-callback", handleStravaAuthCallback);
 	}
 });
 
 onUnmounted(() => {
-	if (window.ipcRenderer) {
-		window.ipcRenderer.off("strava-auth-callback", handleStravaAuthCallback);
+	if ((window as any).ipcRenderer) {
+		(window as any).ipcRenderer.off("strava-auth-callback", handleStravaAuthCallback);
 	}
 });
 </script>
