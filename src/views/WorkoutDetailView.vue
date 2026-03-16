@@ -185,7 +185,7 @@ const maxPaceInSeconds = computed(() => {
     if (!stravaActivity.value?.splits_metric || stravaActivity.value.splits_metric.length === 0) {
         return 1; 
     }
-    const paces = stravaActivity.value.splits_metric.map(split => 1000 / split.average_speed);
+    const paces = (stravaActivity.value.splits_metric as any[]).map((split: any) => 1000 / split.average_speed);
     return Math.max(...paces);
 });
 

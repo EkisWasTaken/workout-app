@@ -156,7 +156,7 @@ onMounted(async () => {
 		try {
 			const result = await window.stravaApi.getStravaActivityById(props.workout.stravaActivityId.toString());
             stravaActivity.value = result;
-            if (result && !result.error) {
+            if (result && !(result as any).error) {
 			    await initMap();
             }
 		} catch (error) {
