@@ -1,13 +1,100 @@
 import { supabase } from './supabase'
 import type { Workout, DailyWeight, WorkoutTemplate, WorkoutTemplateExercise, Exercise } from './types'
 
-// ... (isElectron helper)
+// Helper to check if we are in Electron and the DB bridge is available
+const isElectron = () => {
+  return typeof window !== 'undefined' && !!(window as any).ipcRenderer && !!(window as any).db
+}
 
 export const db = {
-  // ... (getWorkouts, getCompletedWorkouts, addWorkout, updateWorkout, deleteWorkout, completeWorkout)
+  // WORKOUTS
+  getWorkouts: async (): Promise<Workout[]> => {
+    if (isElectron()) return (window as any).db.getWorkouts()
+    
+    const { data, error } = await supabase
+      .from('workouts')
+      .select('*')
+      .eq('isDeleted', 0)
+    
+    if (error) throw error
+    return data as Workout[]
+  },
+
+  getCompletedWorkouts: async (limit?: number, offset?: number): Promise<Workout[]> => {
+    if (isElectron()) return (window as any).db.getCompletedWorkouts(limit, offset)
+    
+    let query = supabase
+      .from('workouts')
+      .select('*')
+      .eq('isCompleted', 1)
+      .eq('isDeleted', 0)
+      .order('date', { ascending: false })
+    
+    if (limit !== undefined) {
+      const from = offset || 0
+      const to = from + limit - 1
+      query = query.range(from, to)
+    }
+    
+    const { data, error } = await query
+    if (error) throw error
+    return data as Workout[]
+  },
+
+  addWorkout: async (workout: Omit<Workout, 'id'>): Promise<number> => {
+    if (isElectron()) return (window as any).db.addWorkout(workout)
+    
+    const { data, error } = await supabase
+      .from('workouts')
+      .insert([workout])
+      .select()
+    
+    if (error) throw error
+    return data[0].id
+  },
+
+  updateWorkout: async (workout: Workout): Promise<number> => {
+    if (isElectron()) return (window as any).db.updateWorkout(workout)
+    
+    const { error } = await supabase
+      .from('workouts')
+      .update(workout)
+      .eq('id', workout.id)
+    
+    if (error) throw error
+    return 1
+  },
+
+  deleteWorkout: async (id: number): Promise<number> => {
+    if (isElectron()) return (window as any).db.deleteWorkout(id)
+    
+    const { error } = await supabase
+      .from('workouts')
+      .update({ isDeleted: 1 })
+      .eq('id', id)
+    
+    if (error) throw error
+    return 1
+  },
+
+  completeWorkout: async (data: any): Promise<number> => {
+    if (isElectron()) return (window as any).db.completeWorkout(data)
+    
+    const { id, ...updates } = data
+    const { error } = await supabase
+      .from('workouts')
+      .update(updates)
+      .eq('id', id)
+    
+    if (error) throw error
+    return 1
+  },
 
   getWorkoutById: async (id: number): Promise<Workout | null> => {
-    if (isElectron()) return window.db.getWorkoutById(id)
+    if (isElectron()) {
+        const result = await (window as any).db.getWorkoutById(id);
+        return result ?? null;
+    }
     
     const { data, error } = await supabase
       .from('workouts')
@@ -21,7 +108,7 @@ export const db = {
 
   // WEIGHTS
   getDailyWeights: async (): Promise<DailyWeight[]> => {
-    if (isElectron()) return window.db.getDailyWeights()
+    if (isElectron()) return (window as any).db.getDailyWeights()
     
     const { data, error } = await supabase
       .from('daily_weights')
@@ -33,7 +120,7 @@ export const db = {
   },
 
   addDailyWeight: async (dailyWeight: Omit<DailyWeight, 'id'>): Promise<number> => {
-    if (isElectron()) return window.db.addDailyWeight(dailyWeight)
+    if (isElectron()) return (window as any).db.addDailyWeight(dailyWeight)
     
     const { data, error } = await supabase
       .from('daily_weights')
@@ -46,7 +133,7 @@ export const db = {
 
   // COLORS
   getWorkoutTypeColors: async () => {
-    if (isElectron()) return window.db.getWorkoutTypeColors()
+    if (isElectron()) return (window as any).db.getWorkoutTypeColors()
     
     const { data, error } = await supabase
       .from('workout_type_colors')
@@ -57,7 +144,7 @@ export const db = {
   },
 
   setWorkoutTypeColor: async (data: { type: string; color: string }) => {
-    if (isElectron()) return window.db.setWorkoutTypeColor(data)
+    if (isElectron()) return (window as any).db.setWorkoutTypeColor(data)
     
     const { error } = await supabase
       .from('workout_type_colors')
@@ -69,7 +156,7 @@ export const db = {
 
   // TEMPLATES
   getWorkoutTemplates: async (): Promise<WorkoutTemplate[]> => {
-    if (isElectron()) return window.db.getWorkoutTemplates()
+    if (isElectron()) return (window as any).db.getWorkoutTemplates()
     
     const { data, error } = await supabase
       .from('workout_templates')
@@ -80,9 +167,8 @@ export const db = {
   },
 
   addWorkoutTemplate: async (template: { name: string; exercises: any[] }): Promise<number> => {
-    if (isElectron()) return window.db.addWorkoutTemplate(template)
+    if (isElectron()) return (window as any).db.addWorkoutTemplate(template)
     
-    // In Supabase we need to do this in two steps or use a RPC
     const { data: tData, error: tError } = await supabase
       .from('workout_templates')
       .insert([{ name: template.name }])
@@ -105,7 +191,7 @@ export const db = {
   },
 
   getWorkoutTemplateExercises: async (templateId: number): Promise<WorkoutTemplateExercise[]> => {
-    if (isElectron()) return window.db.getWorkoutTemplateExercises(templateId)
+    if (isElectron()) return (window as any).db.getWorkoutTemplateExercises(templateId)
     
     const { data, error } = await supabase
       .from('workout_template_exercises')
@@ -117,7 +203,7 @@ export const db = {
   },
 
   deleteWorkoutTemplate: async (templateId: number): Promise<boolean> => {
-    if (isElectron()) return window.db.deleteWorkoutTemplate(templateId)
+    if (isElectron()) return (window as any).db.deleteWorkoutTemplate(templateId)
     
     const { error } = await supabase
       .from('workout_templates')
@@ -130,7 +216,7 @@ export const db = {
 
   // EXERCISES
   getExercises: async (): Promise<Exercise[]> => {
-    if (isElectron()) return window.db.getExercises()
+    if (isElectron()) return (window as any).db.getExercises()
     
     const { data, error } = await supabase
       .from('exercises')

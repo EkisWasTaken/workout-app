@@ -31,9 +31,9 @@
 			</n-space>
 		</div>
 
-        <div v-else-if="stravaActivity && stravaActivity.error" class="error-container">
+        <div v-else-if="stravaActivity && (stravaActivity as any).error" class="error-container">
             <n-alert title="STRAVA_SYNC_ISSUE" type="warning" size="small">
-                {{ stravaActivity.details?.message || 'FAILED_TO_LOAD_DATA' }}
+                {{ (stravaActivity as any).details?.message || 'FAILED_TO_LOAD_DATA' }}
             </n-alert>
         </div>
 

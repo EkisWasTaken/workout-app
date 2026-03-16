@@ -138,9 +138,13 @@ const updateShow = (value: boolean) => {
 
 const fetchActivities = async () => {
   try {
-    const fetchedActivities = await window.stravaApi.getActivities(); // Changed from getAthleteActivities
+    const fetchedActivities = await (window as any).stravaApi.getActivities(); // Changed from getAthleteActivities
     console.log('Fetched Strava activities:', fetchedActivities); // Add this line
-    activities.value = fetchedActivities || [];
+    if (fetchedActivities && !fetchedActivities.error) {
+        activities.value = fetchedActivities;
+    } else {
+        activities.value = [];
+    }
   } catch (error) {
     console.error('Failed to fetch Strava activities:', error);
     activities.value = [];

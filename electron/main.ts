@@ -1003,7 +1003,7 @@ async function setPersistentCache(id: string, type: string, data: any) {
           return reject(err);
         }
         const templateId = this.lastID;
-        const exercisesPromises = exercises.map(ex => {
+        const exercisesPromises = exercises.map((ex: any) => {
           return new Promise((resolveExercise, rejectExercise) => {
             db.run('INSERT INTO workout_template_exercises (template_id, exercise_name, sets, reps, notes) VALUES (?, ?, ?, ?, ?)',
               [templateId, ex.exercise_name, ex.sets, ex.reps, ex.notes],

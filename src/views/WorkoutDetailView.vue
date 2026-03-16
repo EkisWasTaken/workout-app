@@ -99,7 +99,7 @@
 										<n-gi :span="2"><strong>HR (bpm)</strong></n-gi>
 									</n-grid>
 								</n-list-item>
-								<n-list-item v-for="(split, index) in stravaActivity.splits_metric" :key="index">
+								<n-list-item v-for="(split, index) in (stravaActivity.splits_metric as any[])" :key="index">
 									<n-grid x-gap="12" :cols="10" class="split-row">
 										<n-gi :span="2">
 											{{ split.split }}
@@ -140,7 +140,7 @@ import L from 'leaflet'
 import 'leaflet-polylinedecorator'
 import { decode } from '@mapbox/polyline'
 import { db } from '@/db'
-import type { Workout, StravaActivity } from '../types'
+import type { Workout } from '../types'
 
 const route = useRoute()
 const router = useRouter()
