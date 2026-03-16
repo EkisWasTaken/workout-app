@@ -1,0 +1,181 @@
+/* src/styles/terminal.css */
+
+:root {
+  --background-color: #040604; /* Deep forest-black */
+  --text-color: #00b33c; /* Subtle, professional emerald green */
+  --accent-color: #00b33c;
+  --primary-color: #00b33c;
+  --card-background-color: rgba(6, 8, 6, 0.85);
+  --link-hover-color: #ffffff;
+  --border-color: #003311; /* Dark forest border */
+  --glow-color: rgba(0, 179, 60, 0.25);
+  --font-family: 'Fira Code', 'Courier New', Courier, monospace;
+  
+  /* Responsive Variables */
+  --sidebar-width: 250px;
+  --sidebar-collapsed-width: 80px;
+  --mobile-nav-height: 60px;
+}
+
+body {
+  background-color: var(--background-color);
+  color: var(--text-color);
+  font-family: var(--font-family);
+  margin: 0;
+  padding: 0;
+  min-height: 100vh;
+  /* Muted phosphor glow */
+  text-shadow: 0 0 1px var(--glow-color);
+  overflow-x: hidden;
+}
+
+#app {
+  min-height: 100vh;
+  display: flex;
+  position: relative;
+  flex-direction: row;
+}
+
+@media (max-width: 768px) {
+  #app {
+    flex-direction: column;
+  }
+}
+
+/* CRT Overlay - Refined for Emerald Phosphor */
+.crt-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  /* Very subtle scanlines + cool RGB shift */
+  background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.1) 50%),
+              linear-gradient(90deg, rgba(0, 255, 0, 0.02), rgba(0, 255, 100, 0.01), rgba(0, 100, 255, 0.015));
+  background-size: 100% 2px, 3px 100%;
+  pointer-events: none;
+  z-index: 9999;
+  opacity: 0.45;
+}
+
+/* Periodic Scanline Sweep - Subtle Emerald pulse */
+.crt-scanline-sweep {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100px;
+  background: linear-gradient(0deg,
+    transparent 0%,
+    rgba(0, 179, 60, 0.03) 50%,
+    transparent 100%);
+  animation: sweep 18s linear infinite;
+  pointer-events: none;
+  z-index: 9998;
+}
+
+/* Subtlest Flicker - High frequency, low opacity */
+.crt-flicker {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  pointer-events: none;
+  z-index: 9997;
+  animation: flicker 0.1s infinite;
+  opacity: 0.01;
+  background: white;
+}
+
+@keyframes sweep {
+  0% { transform: translateY(-100vh); }
+  100% { transform: translateY(100vh); }
+}
+
+@keyframes flicker {
+  0% { opacity: 0.012; }
+  50% { opacity: 0.008; }
+  100% { opacity: 0.012; }
+}
+
+/* Global Elements */
+.n-card {
+  background-color: rgba(10, 10, 10, 0.85) !important;
+  border: 1px solid var(--border-color) !important;
+  box-shadow: 0 0 10px rgba(255, 157, 0, 0.1);
+}
+
+.n-button {
+  background-color: transparent !important;
+  border: 1px solid var(--accent-color) !important;
+  color: var(--accent-color) !important;
+  text-shadow: 0 0 3px var(--glow-color);
+  transition: all 0.2s ease;
+}
+
+.n-button:hover {
+  background-color: var(--accent-color) !important;
+  color: var(--background-color) !important;
+  box-shadow: 0 0 15px var(--glow-color);
+}
+
+/* Alive Cursor */
+.terminal-cursor {
+  display: inline-block;
+  width: 8px;
+  height: 1.2em;
+  background-color: var(--accent-color);
+  animation: cursor-blink 1s step-end infinite;
+  box-shadow: 0 0 8px var(--glow-color);
+  vertical-align: middle;
+}
+
+@keyframes cursor-blink {
+  50% { opacity: 0; }
+}
+
+/* Glitch Pulse - Occasionally jitter elements slightly */
+@keyframes glitch-pulse {
+  0% { transform: translate(0); }
+  1% { transform: translate(-1px, 1px); }
+  2% { transform: translate(1px, -1px); }
+  3% { transform: translate(0); }
+  100% { transform: translate(0); }
+}
+
+.glitch-alive {
+  animation: glitch-pulse 10s infinite;
+}
+
+/* ASCII Loading Spinner Animation */
+.ascii-spinner::after {
+  content: "|";
+  animation: ascii-spin 0.8s steps(4) infinite;
+  display: inline-block;
+  margin-left: 8px;
+  font-weight: bold;
+}
+
+@keyframes ascii-spin {
+  0% { content: "/"; }
+  25% { content: "-"; }
+  50% { content: "\\"; }
+  75% { content: "|"; }
+}
+
+/* Progress bar style loading */
+.loading-progress::after {
+  content: "[    ]";
+  animation: progress-spin 1.5s linear infinite;
+  display: inline-block;
+  margin-left: 8px;
+}
+
+@keyframes progress-spin {
+  0% { content: "[=   ]"; }
+  25% { content: "[==  ]"; }
+  50% { content: "[=== ]"; }
+  75% { content: "[====]"; }
+  100% { content: "[   =]"; }
+}

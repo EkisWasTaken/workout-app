@@ -1,0 +1,53 @@
+{
+  "name": "electron-vue-naive-app-template-vue",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --mode electron",
+    "dev:web": "vite",
+    "build": "npm run build:web && npm run build:electron",
+    "build:web": "vue-tsc && vite build",
+    "build:electron": "vite build --mode electron && electron-builder",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@mapbox/polyline": "^1.2.1",
+    "@supabase/supabase-js": "^2.99.2",
+    "@vicons/fa": "0.13.0",
+    "@vicons/ionicons5": "^0.13.0",
+    "@vueuse/core": "^14.1.0",
+    "axios": "^1.13.2",
+    "bindings": "^1.5.0",
+    "chart.js": "^4.5.1",
+    "chartjs-adapter-date-fns": "^3.0.0",
+    "chartjs-plugin-datalabels": "2.2.0",
+    "date-fns": "^4.1.0",
+    "leaflet": "^1.9.4",
+    "leaflet-polylinedecorator": "^1.6.0",
+    "naive-ui": "^2.43.2",
+    "node-gyp": "^12.1.0",
+    "papaparse": "^5.5.3",
+    "sqlite3": "^5.1.7",
+    "vue": "^3.4.21",
+    "vue-chartjs": "^5.3.3",
+    "vue-router": "^4.6.4"
+  },
+  "devDependencies": {
+    "@types/leaflet": "^1.9.21",
+    "@types/leaflet-polylinedecorator": "^1.6.5",
+    "@types/mapbox__polyline": "^1.0.5",
+    "@types/papaparse": "^5.5.2",
+    "@types/sqlite3": "^3.1.11",
+    "@vitejs/plugin-vue": "^5.0.4",
+    "electron": "^30.0.1",
+    "electron-builder": "^24.13.3",
+    "electron-rebuild": "^3.2.9",
+    "typescript": "^5.2.2",
+    "vite": "^5.1.6",
+    "vite-plugin-electron": "^0.28.6",
+    "vite-plugin-electron-renderer": "^0.14.5",
+    "vue-tsc": "^2.0.26"
+  },
+  "main": "dist-electron/main.js"
+}

@@ -1,0 +1,46 @@
+/* src/styles/themes.css */
+
+[data-theme='dark'] {
+  --primary-color: #646cff;
+  --secondary-color: #535bf2;
+  --background-color: #242424;
+  --text-color: rgba(255, 255, 255, 0.87);
+  --card-background-color: #1a1a1a;
+  --border-color: #c7c7c7;
+}
+
+[data-theme='light'] {
+  --primary-color: #747bff;
+  --secondary-color: #535bf2;
+  --background-color: #ffffff;
+  --text-color: #213547;
+  --card-background-color: #f9f9f9;
+  --border-color: #747bff;
+}
+
+[data-theme='dark-blue'] {
+  --primary-color: #3b82f6;
+  --secondary-color: #60a5fa;
+  --background-color: #1e293b;
+  --text-color: #e2e8f0;
+  --card-background-color: #0f172a;
+  --border-color: #334155;
+}
+
+[data-theme='light-solarized'] {
+  --primary-color: #268bd2;
+  --secondary-color: #2aa198;
+  --background-color: #fdf6e3;
+  --text-color: #657b83;
+  --card-background-color: #eee8d5;
+  --border-color: #93a1a1;
+}
+
+[data-theme='dark-solarized'] {
+  --primary-color: #268bd2;
+  --secondary-color: #2aa198;
+  --background-color: #002b36;
+  --text-color: #839496;
+  --card-background-color: #073642;
+  --border-color: #586e75;
+}
