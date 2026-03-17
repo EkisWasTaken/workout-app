@@ -44,13 +44,23 @@ export const db = {
   addWorkout: async (workout: Omit<Workout, 'id'>): Promise<number> => {
     if (isElectron()) return (window as any).db.addWorkout(workout)
     
-    const { data, error } = await supabase
-      .from('workouts')
-      .insert([workout])
-      .select()
-    
-    if (error) throw error
-    return data[0].id
+    let attempts = 0;
+    while (attempts < 50) {
+      const { data, error } = await supabase
+        .from('workouts')
+        .insert([workout])
+        .select()
+      
+      if (!error) return data[0].id
+      
+      // Error 23505 is duplicate key. If it's on 'id', the sequence is out of sync.
+      if (error.code === '23505' && (error.message.includes('id') || error.message.includes('pkey') || (error.details && error.details.includes('id')))) {
+        attempts++;
+        continue;
+      }
+      throw error
+    }
+    throw new Error('MAX_RETRY_EXCEEDED_SYNC_DB_SEQUENCE')
   },
 
   updateWorkout: async (workout: Workout): Promise<number> => {
@@ -122,13 +132,22 @@ export const db = {
   addDailyWeight: async (dailyWeight: Omit<DailyWeight, 'id'>): Promise<number> => {
     if (isElectron()) return (window as any).db.addDailyWeight(dailyWeight)
     
-    const { data, error } = await supabase
-      .from('daily_weights')
-      .upsert([dailyWeight], { onConflict: 'date' })
-      .select()
-    
-    if (error) throw error
-    return data[0].id
+    let attempts = 0;
+    while (attempts < 50) {
+      const { data, error } = await supabase
+        .from('daily_weights')
+        .upsert([dailyWeight], { onConflict: 'date' })
+        .select()
+      
+      if (!error) return data[0].id
+      
+      if (error.code === '23505' && (error.message.includes('id') || error.message.includes('pkey') || (error.details && error.details.includes('id')))) {
+        attempts++;
+        continue;
+      }
+      throw error
+    }
+    throw new Error('MAX_RETRY_EXCEEDED_SYNC_DB_SEQUENCE')
   },
 
   // COLORS
@@ -169,13 +188,28 @@ export const db = {
   addWorkoutTemplate: async (template: { name: string; exercises: any[] }): Promise<number> => {
     if (isElectron()) return (window as any).db.addWorkoutTemplate(template)
     
-    const { data: tData, error: tError } = await supabase
-      .from('workout_templates')
-      .insert([{ name: template.name }])
-      .select()
-    
-    if (tError) throw tError
-    const templateId = tData[0].id
+    let attempts = 0;
+    let templateId: number | null = null;
+
+    while (attempts < 50) {
+      const { data: tData, error: tError } = await supabase
+        .from('workout_templates')
+        .insert([{ name: template.name }])
+        .select()
+      
+      if (!tError) {
+        templateId = tData[0].id;
+        break;
+      }
+      
+      if (tError.code === '23505' && (tError.message.includes('id') || tError.message.includes('pkey') || (tError.details && tError.details.includes('id')))) {
+        attempts++;
+        continue;
+      }
+      throw tError;
+    }
+
+    if (!templateId) throw new Error('MAX_RETRY_EXCEEDED_SYNC_DB_SEQUENCE');
     
     const exercisesToInsert = template.exercises.map(ex => ({
       ...ex,

@@ -160,7 +160,9 @@ const migrateDataToCloud = async () => {
 		const localWorkouts = await window.db.getWorkouts();
 		if (localWorkouts.length > 0) {
 			migrationStatus.value = `PUSHING ${localWorkouts.length} WORKOUTS TO CLOUD...`;
-			const { error: wErr } = await supabase.from('workouts').upsert(localWorkouts);
+			// Omit ID to let Supabase generate its own sequences
+			const workoutsToSync = localWorkouts.map(({ id, ...rest }: any) => rest);
+			const { error: wErr } = await supabase.from('workouts').upsert(workoutsToSync);
 			if (wErr) throw wErr;
 		}
 
@@ -169,7 +171,9 @@ const migrateDataToCloud = async () => {
 		const localWeights = await window.db.getDailyWeights();
 		if (localWeights.length > 0) {
 			migrationStatus.value = `PUSHING ${localWeights.length} WEIGHT RECORDS TO CLOUD...`;
-			const { error: tErr } = await supabase.from('daily_weights').upsert(localWeights);
+			// Omit ID and use 'date' as conflict target for daily weights
+			const weightsToSync = localWeights.map(({ id, ...rest }: any) => rest);
+			const { error: tErr } = await supabase.from('daily_weights').upsert(weightsToSync, { onConflict: 'date' });
 			if (tErr) throw tErr;
 		}
 
@@ -177,6 +181,7 @@ const migrateDataToCloud = async () => {
 		migrationStatus.value = "SYNCING_INTERFACE_SCHEMAS...";
 		const localColors = await window.db.getWorkoutTypeColors();
 		if (localColors.length > 0) {
+			// Colors table uses 'type' as PK usually, but upsert handles it
 			const { error: cErr } = await supabase.from('workout_type_colors').upsert(localColors);
 			if (cErr) throw cErr;
 		}
