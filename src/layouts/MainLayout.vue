@@ -117,7 +117,7 @@ const handleResize = () => {
 	isMobile.value = window.innerWidth <= 768
 }
 
-const workoutTypes = ['gym', 'running', 'rest', 'other'];
+const workoutTypes = ['gym', 'running', 'bike', 'rest', 'other'];
 
 const hexToRgb = (hex: string) => {
 	const bigint = parseInt(hex.slice(1), 16);

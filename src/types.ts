@@ -22,6 +22,7 @@ export interface StravaActivity {
 	distance: number;
 	moving_time: number;
 	type: string;
+	sport_type?: string;
 	start_date?: string; // Added for activity list data
 	start_date_local: string;
 	map?: {

@@ -140,6 +140,7 @@ const db = new sqlite3.Database(dbPath, (err) => {
                 if (row.count === 0) {
                   db.run('INSERT INTO workout_type_colors (type, color) VALUES (?, ?)', ['gym', '#3f88c5']);
                   db.run('INSERT INTO workout_type_colors (type, color) VALUES (?, ?)', ['running', '#5cb85c']);
+                  db.run('INSERT INTO workout_type_colors (type, color) VALUES (?, ?)', ['bike', '#fb8c00']);
                   db.run('INSERT INTO workout_type_colors (type, color) VALUES (?, ?)', ['rest', '#757575']); // Default rest color
                   db.run('INSERT INTO workout_type_colors (type, color) VALUES (?, ?)', ['other', '#FFA726']); // Default other color
                   console.log('Default workout type colors inserted.');
@@ -619,12 +620,14 @@ async function setPersistentCache(id: string, type: string, data: any) {
         }
 
         let distance = 0;
+        let stravaSportType = '';
         let activityFound = false;
 
         // Check detailed cache
         const cachedDetailed = detailedActivityCache.get(stravaActivityId);
         if (cachedDetailed) {
             distance = cachedDetailed.data.distance;
+            stravaSportType = cachedDetailed.data.sport_type || cachedDetailed.data.type;
             activityFound = true;
         }
         
@@ -633,6 +636,7 @@ async function setPersistentCache(id: string, type: string, data: any) {
             const activity = cachedActivities.find((a: any) => a.id.toString() === stravaActivityId.toString());
             if (activity) {
                 distance = activity.distance;
+                stravaSportType = activity.sport_type || activity.type;
                 activityFound = true;
             }
         }
@@ -640,6 +644,7 @@ async function setPersistentCache(id: string, type: string, data: any) {
         if (!activityFound) {
             const activity = await getStravaActivityById(accessToken, stravaActivityId);
             distance = activity.distance / 1000; // Convert to KM
+            stravaSportType = activity.sport_type || activity.type;
             // Cache it
             detailedActivityCache.set(stravaActivityId, { data: activity, timestamp: Date.now() });
         } else {
@@ -648,8 +653,22 @@ async function setPersistentCache(id: string, type: string, data: any) {
             distance = distance / 1000;
         }
 
+        // Map Strava sport type to our workout types
+        let workoutType = '';
+        if (stravaSportType === 'Run') workoutType = 'running';
+        else if (['Ride', 'VirtualRide', 'GravelRide', 'MountainBikeRide', 'EBikeRide'].includes(stravaSportType)) workoutType = 'bike';
+
         return new Promise((resolve, reject) => {
-            db.run('UPDATE workouts SET stravaActivityId = ?, distance = ? WHERE id = ?', [stravaActivityId, distance, workoutId], function(err) {
+            let sql = 'UPDATE workouts SET stravaActivityId = ?, distance = ?';
+            const params = [stravaActivityId, distance];
+            if (workoutType) {
+                sql += ', type = ?';
+                params.push(workoutType);
+            }
+            sql += ' WHERE id = ?';
+            params.push(workoutId);
+
+            db.run(sql, params, function(err) {
                 if (err) reject(err);
                 else resolve(this.changes);
             });
@@ -809,6 +828,8 @@ async function setPersistentCache(id: string, type: string, data: any) {
     const { id, isCompleted, actualDuration, rpe, notes, totalWeightLifted, stravaActivityId, distance: manualDistance } = data; // Deconstruct manualDistance
 
     let finalDistance: number | undefined = manualDistance; // Initialize finalDistance with manualDistance, if provided
+    let stravaSportType = '';
+
     if (stravaActivityId) {
       console.log('Attempting to sync Strava activity:', stravaActivityId);
       try {
@@ -817,6 +838,7 @@ async function setPersistentCache(id: string, type: string, data: any) {
           const activity = await getStravaActivityById(accessToken, String(stravaActivityId));
           console.log('Successfully fetched Strava activity. Distance (m):', activity.distance);
           finalDistance = activity.distance / 1000; // Convert meters to kilometers
+          stravaSportType = activity.sport_type || activity.type;
         } else {
           console.error('No valid Strava access token found.');
         }
@@ -825,6 +847,11 @@ async function setPersistentCache(id: string, type: string, data: any) {
         // Don't block completion if Strava fetch fails
       }
     }
+
+    // Map Strava sport type to our workout types
+    let detectedWorkoutType = '';
+    if (stravaSportType === 'Run') detectedWorkoutType = 'running';
+    else if (['Ride', 'VirtualRide', 'GravelRide', 'MountainBikeRide', 'EBikeRide'].includes(stravaSportType)) detectedWorkoutType = 'bike';
 
     return new Promise((resolve, reject) => {
       const columns: string[] = ['isCompleted = ?'];
@@ -836,6 +863,7 @@ async function setPersistentCache(id: string, type: string, data: any) {
       if (totalWeightLifted !== undefined) { columns.push('totalWeightLifted = ?'); values.push(totalWeightLifted); }
       if (stravaActivityId !== undefined) { columns.push('stravaActivityId = ?'); values.push(stravaActivityId); }
       if (finalDistance !== undefined) { columns.push('distance = ?'); values.push(finalDistance); } // Use finalDistance here
+      if (detectedWorkoutType) { columns.push('type = ?'); values.push(detectedWorkoutType); }
 
       values.push(id);
 

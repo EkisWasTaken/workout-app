@@ -56,6 +56,7 @@
             <select id="workout-type" v-model="newWorkout.type">
               <option>Running</option>
               <option>Gym</option>
+              <option>Bike</option>
               <option>Rest</option>
               <option>Other</option>
             </select>
@@ -134,6 +135,7 @@
             <select v-model="selectedWorkout.type">
               <option>Running</option>
               <option>Gym</option>
+              <option>Bike</option>
               <option>Rest</option>
               <option>Other</option>
             </select>
@@ -465,16 +467,18 @@ const workouts = ref<Workout[]>([]);
 const dailyWeights = ref<DailyWeight[]>([]);
 const raceGoals = ref<RaceGoal[]>([]);
 
-const getWorkoutType = (workout: Workout): 'gym' | 'running' | 'rest' | 'other' => {
+const getWorkoutType = (workout: Workout): 'gym' | 'running' | 'bike' | 'rest' | 'other' => {
 	if (workout.type) {
 		const typeLower = workout.type.toLowerCase();
 		if (typeLower === 'gym') return 'gym';
 		if (typeLower === 'running') return 'running';
+		if (typeLower === 'bike' || typeLower === 'cycling') return 'bike';
 		if (typeLower === 'rest day' || typeLower === 'rest') return 'rest';
 	}
 	const nameLower = workout.name.toLowerCase();
 	if (nameLower.includes('gym') || nameLower.includes('strength')) return 'gym';
 	if (nameLower.includes('run') || nameLower.includes('running')) return 'running';
+	if (nameLower.includes('bike') || nameLower.includes('cycle') || nameLower.includes('cycling')) return 'bike';
 	return 'other';
 };
 
@@ -731,8 +735,8 @@ onActivated(() => { loadWorkouts(); loadDailyWeights(); loadRaceGoals(); });
 
 .workout-gym { border-color: var(--color-gym-primary); color: var(--color-gym-primary); }
 .workout-running { border-color: var(--color-running-primary); color: var(--color-running-primary); }
-.workout-rest { border-color: #757575; color: #757575; }
-.workout-other { border-color: var(--color-other-primary); color: var(--color-other-primary); }
+.workout-bike { border-color: var(--color-bike-primary); color: var(--color-bike-primary); }
+.workout-rest { border-color: #757575; color: #757575; }.workout-other { border-color: var(--color-other-primary); color: var(--color-other-primary); }
 
 .status-completed {
   background-color: rgba(0, 179, 60, 0.05);

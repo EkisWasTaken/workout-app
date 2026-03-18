@@ -77,6 +77,7 @@
 						<div class="legend-scale">
 							<div title="Gym" style="background-color: rgba(63, 136, 197, 0.6)"></div>
 							<div title="Running" style="background-color: rgba(92, 184, 92, 0.6)"></div>
+							<div title="Bike" style="background-color: rgba(251, 140, 0, 0.6)"></div>
 							<div title="Other" style="background-color: rgba(255, 167, 38, 0.6)"></div>
 							<div title="Rest" style="background-color: rgba(117, 117, 117, 0.6)"></div>
 						</div>
@@ -111,7 +112,7 @@ const allWorkouts = ref<Workout[]>([]);
 const dailyWeights = ref<DailyWeight[]>([]);
 const heatmapWeeks = ref<any[]>([]);
 
-const WORKOUT_TYPES = ['gym', 'running', 'rest', 'other'];
+const WORKOUT_TYPES = ['gym', 'running', 'bike', 'rest', 'other'];
 
 const COLOR_PALETTE: { [key: string]: { background: string; border: string; highlight: string } } = {
 	gym: {
@@ -123,6 +124,11 @@ const COLOR_PALETTE: { [key: string]: { background: string; border: string; high
 		background: 'rgba(0, 179, 60, 0.4)',
 		border: '#00b33c',
 		highlight: 'rgba(0, 179, 60, 0.8)'
+	},
+	bike: {
+		background: 'rgba(251, 140, 0, 0.4)',
+		border: '#fb8c00',
+		highlight: 'rgba(251, 140, 0, 0.8)'
 	},
 	rest: {
 		background: 'rgba(117, 117, 117, 0.4)',
@@ -186,16 +192,18 @@ const createChartOptions = (chartType: 'line' | 'bar' | 'pie', yAxisText?: strin
     };
 };
 
-const getWorkoutType = (workout: Workout): 'gym' | 'running' | 'rest' | 'other' => {
+const getWorkoutType = (workout: Workout): 'gym' | 'running' | 'bike' | 'rest' | 'other' => {
 	if (workout.type) {
 		const typeLower = workout.type.toLowerCase();
 		if (typeLower === 'gym') return 'gym';
 		if (typeLower === 'running') return 'running';
+		if (typeLower === 'bike' || typeLower === 'cycling') return 'bike';
 		if (typeLower === 'rest day' || typeLower === 'rest') return 'rest';
 	}
 	const nameLower = workout.name.toLowerCase();
 	if (nameLower.includes('gym') || nameLower.includes('strength')) return 'gym';
 	if (nameLower.includes('run') || nameLower.includes('running')) return 'running';
+	if (nameLower.includes('bike') || nameLower.includes('cycle') || nameLower.includes('cycling')) return 'bike';
 	return 'other';
 };
 
@@ -381,7 +389,8 @@ const createWeeklyRunningChart = (allWorkouts: Workout[]) => {
         return allWorkouts
             .filter(wk => {
                 const d = parseISO(wk.date);
-                return wk.isCompleted === 1 && getWorkoutType(wk) === 'running' && d >= w && d <= wEnd;
+                const type = getWorkoutType(wk);
+                return wk.isCompleted === 1 && (type === 'running' || type === 'bike') && d >= w && d <= wEnd;
             })
             .reduce((sum, wk) => sum + (wk.distance || 0), 0);
     });

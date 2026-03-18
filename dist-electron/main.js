@@ -11686,14 +11686,7 @@ var _eval = EvalError;
 var range = RangeError;
 var ref = ReferenceError;
 var syntax = SyntaxError;
-var type;
-var hasRequiredType;
-function requireType() {
-  if (hasRequiredType) return type;
-  hasRequiredType = 1;
-  type = TypeError;
-  return type;
-}
+var type = TypeError;
 var uri = URIError;
 var abs$1 = Math.abs;
 var floor$1 = Math.floor;
@@ -11939,7 +11932,7 @@ function requireCallBindApplyHelpers() {
   if (hasRequiredCallBindApplyHelpers) return callBindApplyHelpers;
   hasRequiredCallBindApplyHelpers = 1;
   var bind3 = functionBind;
-  var $TypeError2 = requireType();
+  var $TypeError2 = type;
   var $call2 = requireFunctionCall();
   var $actualApply = requireActualApply();
   callBindApplyHelpers = function callBindBasic(args) {
@@ -12012,7 +12005,7 @@ var $EvalError = _eval;
 var $RangeError = range;
 var $ReferenceError = ref;
 var $SyntaxError = syntax;
-var $TypeError$1 = requireType();
+var $TypeError$1 = type;
 var $URIError = uri;
 var abs = abs$1;
 var floor = floor$1;
@@ -12343,7 +12336,7 @@ var GetIntrinsic2 = getIntrinsic;
 var $defineProperty = GetIntrinsic2("%Object.defineProperty%", true);
 var hasToStringTag = requireShams()();
 var hasOwn$1 = hasown;
-var $TypeError = requireType();
+var $TypeError = type;
 var toStringTag = hasToStringTag ? Symbol.toStringTag : null;
 var esSetTostringtag = function setToStringTag(object, value) {
   var overrideIfSet = arguments.length > 2 && !!arguments[2] && arguments[2].force;
@@ -17201,6 +17194,7 @@ const db = new sqlite3.Database(dbPath, (err) => {
                 if (row.count === 0) {
                   db.run("INSERT INTO workout_type_colors (type, color) VALUES (?, ?)", ["gym", "#3f88c5"]);
                   db.run("INSERT INTO workout_type_colors (type, color) VALUES (?, ?)", ["running", "#5cb85c"]);
+                  db.run("INSERT INTO workout_type_colors (type, color) VALUES (?, ?)", ["bike", "#fb8c00"]);
                   db.run("INSERT INTO workout_type_colors (type, color) VALUES (?, ?)", ["rest", "#757575"]);
                   db.run("INSERT INTO workout_type_colors (type, color) VALUES (?, ?)", ["other", "#FFA726"]);
                   console.log("Default workout type colors inserted.");
@@ -17589,28 +17583,43 @@ app.whenReady().then(async () => {
         throw new Error("No valid Strava access token available.");
       }
       let distance = 0;
+      let stravaSportType = "";
       let activityFound = false;
       const cachedDetailed = detailedActivityCache.get(stravaActivityId);
       if (cachedDetailed) {
         distance = cachedDetailed.data.distance;
+        stravaSportType = cachedDetailed.data.sport_type || cachedDetailed.data.type;
         activityFound = true;
       }
       if (!activityFound && cachedActivities && Array.isArray(cachedActivities)) {
         const activity = cachedActivities.find((a) => a.id.toString() === stravaActivityId.toString());
         if (activity) {
           distance = activity.distance;
+          stravaSportType = activity.sport_type || activity.type;
           activityFound = true;
         }
       }
       if (!activityFound) {
         const activity = await getStravaActivityById(accessToken, stravaActivityId);
         distance = activity.distance / 1e3;
+        stravaSportType = activity.sport_type || activity.type;
         detailedActivityCache.set(stravaActivityId, { data: activity, timestamp: Date.now() });
       } else {
         distance = distance / 1e3;
       }
+      let workoutType = "";
+      if (stravaSportType === "Run") workoutType = "running";
+      else if (["Ride", "VirtualRide", "GravelRide", "MountainBikeRide", "EBikeRide"].includes(stravaSportType)) workoutType = "bike";
       return new Promise((resolve, reject) => {
-        db.run("UPDATE workouts SET stravaActivityId = ?, distance = ? WHERE id = ?", [stravaActivityId, distance, workoutId], function(err) {
+        let sql = "UPDATE workouts SET stravaActivityId = ?, distance = ?";
+        const params = [stravaActivityId, distance];
+        if (workoutType) {
+          sql += ", type = ?";
+          params.push(workoutType);
+        }
+        sql += " WHERE id = ?";
+        params.push(workoutId);
+        db.run(sql, params, function(err) {
           if (err) reject(err);
           else resolve(this.changes);
         });
@@ -17753,6 +17762,7 @@ app.whenReady().then(async () => {
   ipcMain.handle("complete-workout", async (_event, data) => {
     const { id, isCompleted, actualDuration, rpe, notes, totalWeightLifted, stravaActivityId, distance: manualDistance } = data;
     let finalDistance = manualDistance;
+    let stravaSportType = "";
     if (stravaActivityId) {
       console.log("Attempting to sync Strava activity:", stravaActivityId);
       try {
@@ -17761,6 +17771,7 @@ app.whenReady().then(async () => {
           const activity = await getStravaActivityById(accessToken, String(stravaActivityId));
           console.log("Successfully fetched Strava activity. Distance (m):", activity.distance);
           finalDistance = activity.distance / 1e3;
+          stravaSportType = activity.sport_type || activity.type;
         } else {
           console.error("No valid Strava access token found.");
         }
@@ -17768,6 +17779,9 @@ app.whenReady().then(async () => {
         console.error("Failed to fetch Strava activity for distance:", error);
       }
     }
+    let detectedWorkoutType = "";
+    if (stravaSportType === "Run") detectedWorkoutType = "running";
+    else if (["Ride", "VirtualRide", "GravelRide", "MountainBikeRide", "EBikeRide"].includes(stravaSportType)) detectedWorkoutType = "bike";
     return new Promise((resolve, reject) => {
       const columns = ["isCompleted = ?"];
       const values = [isCompleted];
@@ -17794,6 +17808,10 @@ app.whenReady().then(async () => {
       if (finalDistance !== void 0) {
         columns.push("distance = ?");
         values.push(finalDistance);
+      }
+      if (detectedWorkoutType) {
+        columns.push("type = ?");
+        values.push(detectedWorkoutType);
       }
       values.push(id);
       const sql = `UPDATE workouts SET ${columns.join(", ")} WHERE id = ?`;

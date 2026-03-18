@@ -281,10 +281,11 @@ const migrateDataToCloud = async () => {
 	}
 };
 
-const workoutTypes = ["gym", "running", "rest", "other"];
+const workoutTypes = ["gym", "running", "bike", "rest", "other"];
 const workoutTypeColors = ref<{ [key: string]: string }>({
 	gym: "#3f88c5",
 	running: "#00b33c",
+	bike: "#fb8c00",
 	rest: "#757575",
 	other: "#FFA726"
 });

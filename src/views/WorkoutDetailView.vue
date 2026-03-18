@@ -72,8 +72,8 @@
 								<n-statistic label="Duration" :value="formatDuration(stravaActivity.moving_time)" />
 							</n-gi>
 							<n-gi>
-								<n-statistic label="Pace"
-									:value="calculatePace(stravaActivity.moving_time, stravaActivity.distance)" />
+								<n-statistic :label="workout.type?.toLowerCase() === 'bike' ? 'Speed' : 'Pace'"
+									:value="workout.type?.toLowerCase() === 'bike' ? calculateSpeed(stravaActivity.moving_time, stravaActivity.distance) : calculatePace(stravaActivity.moving_time, stravaActivity.distance)" />
 							</n-gi>
 							<n-gi v-if="stravaActivity.calories">
 								<n-statistic label="Calories Burned" :value="stravaActivity.calories.toFixed(0)" />
@@ -94,7 +94,7 @@
 								<n-list-item class="split-headers">
 									<n-grid x-gap="12" :cols="10">
 										<n-gi :span="2"><strong>KM</strong></n-gi>
-										<n-gi :span="4"><strong>Pace</strong></n-gi>
+										<n-gi :span="4"><strong>{{ workout.type?.toLowerCase() === 'bike' ? 'Speed' : 'Pace' }}</strong></n-gi>
 										<n-gi :span="2"><strong>Elev (m)</strong></n-gi>
 										<n-gi :span="2"><strong>HR (bpm)</strong></n-gi>
 									</n-grid>
@@ -106,10 +106,10 @@
 										</n-gi>
 										<n-gi :span="4">
 											<div class="pace-display">
-												<span class="pace-value">{{ formatPaceFromSpeed(split.average_speed)
+												<span class="pace-value">{{ formatPaceOrSpeedFromSpeed(split.average_speed)
 												}}</span>
 												<n-progress type="line" status="success" :show-indicator="false"
-													:percentage="(1000 / split.average_speed / maxPaceInSeconds) * 100"
+													:percentage="workout.type?.toLowerCase() === 'bike' ? (split.average_speed * 3.6 / maxSpeedInKmH) * 100 : (1000 / split.average_speed / maxPaceInSeconds) * 100"
 													:height="6" processing />
 											</div>
 										</n-gi>
@@ -174,8 +174,17 @@ const calculatePace = (time: number, distance: number): string => {
 	return `${minutes}:${seconds.toString().padStart(2, '0')} /km`;
 };
 
-const formatPaceFromSpeed = (average_speed: number): string => {
-    if (average_speed === 0) return '0:00 /km';
+const calculateSpeed = (time: number, distance: number): string => {
+	if (!time || time === 0) return '0.0 km/h';
+	const speed = (distance / 1000) / (time / 3600);
+	return `${speed.toFixed(1)} km/h`;
+};
+
+const formatPaceOrSpeedFromSpeed = (average_speed: number): string => {
+    if (average_speed === 0) return '0:00';
+	if (workout.value?.type?.toLowerCase() === 'bike') {
+		return `${(average_speed * 3.6).toFixed(1)} km/h`;
+	}
     const pace_in_seconds_per_km = 1000 / average_speed;
     const minutes = Math.floor(pace_in_seconds_per_km / 60);
     const seconds = Math.floor(pace_in_seconds_per_km % 60);
@@ -188,6 +197,14 @@ const maxPaceInSeconds = computed(() => {
     }
     const paces = (stravaActivity.value.splits_metric as any[]).map((split: any) => 1000 / split.average_speed);
     return Math.max(...paces);
+});
+
+const maxSpeedInKmH = computed(() => {
+    if (!stravaActivity.value?.splits_metric || stravaActivity.value.splits_metric.length === 0) {
+        return 1; 
+    }
+    const speeds = (stravaActivity.value.splits_metric as any[]).map((split: any) => split.average_speed * 3.6);
+    return Math.max(...speeds);
 });
 
 watchEffect((onInvalidate) => {

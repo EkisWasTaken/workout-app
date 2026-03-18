@@ -3,7 +3,7 @@
 		<template #header>
 			<div class="card-header" @click="navigateToDetail">
 				<n-text strong>{{ workout.name }}</n-text>
-				<n-tag :type="workout.type?.toLowerCase() === 'running' ? 'success' : 'default'" size="small">
+				<n-tag :type="isMapType ? 'success' : 'default'" size="small">
 					{{ workout.type }}
 				</n-tag>
 			</div>
@@ -13,12 +13,13 @@
 			<n-spin size="small" />
 		</div>
 
-		<div v-if="workout.type?.toLowerCase() === 'running' && stravaActivity && !stravaActivity.error">
+		<div v-if="isMapType && stravaActivity && !stravaActivity.error">
 			<div ref="mapContainer" class="map-container"></div>
 			<n-space justify="space-around" class="stats-container">
 				<n-statistic label="Duration" :value="formatDuration(stravaActivity.moving_time)" />
 				<n-statistic label="Distance" :value="`${(stravaActivity.distance / 1000).toFixed(2)} km`" />
-				<n-statistic label="Pace" :value="calculatePace(stravaActivity.moving_time, stravaActivity.distance)" />
+				<n-statistic :label="workout.type?.toLowerCase() === 'bike' ? 'Speed' : 'Pace'" 
+          :value="workout.type?.toLowerCase() === 'bike' ? calculateSpeed(stravaActivity.moving_time, stravaActivity.distance) : calculatePace(stravaActivity.moving_time, stravaActivity.distance)" />
 			</n-space>
 			<n-space justify="space-around" class="stats-container"
 				v-if="stravaActivity.calories || stravaActivity.average_heartrate || stravaActivity.total_elevation_gain">
@@ -51,7 +52,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, nextTick, PropType } from 'vue'
+import { ref, onMounted, onUnmounted, nextTick, PropType, computed } from 'vue'
 import { useRouter } from 'vue-router'
 const router = useRouter()
 
@@ -78,6 +79,11 @@ let map: L.Map | null = null;
 const navigateToDetail = () => {
 	router.push({ name: 'WorkoutDetail', params: { id: props.workout.id } })
 }
+
+const isMapType = computed(() => {
+  const type = props.workout.type?.toLowerCase();
+  return type === 'running' || type === 'bike';
+});
 
 const initMap = async () => {
     const polylineStr = stravaActivity.value?.map?.polyline || stravaActivity.value?.map?.summary_polyline;
@@ -151,8 +157,14 @@ const calculatePace = (time: number, distance: number): string => {
 	return `${minutes}:${seconds.toString().padStart(2, '0')} /km`;
 };
 
+const calculateSpeed = (time: number, distance: number): string => {
+  if (!time || time === 0) return '0.0 km/h';
+  const speed = (distance / 1000) / (time / 3600);
+  return `${speed.toFixed(1)} km/h`;
+};
+
 onMounted(async () => {
-	if (props.workout.type?.toLowerCase() === 'running' && props.workout.stravaActivityId) {
+	if (isMapType.value && props.workout.stravaActivityId) {
 		loading.value = true;
 		try {
 			const result = await stravaApi.getStravaActivityById(props.workout.stravaActivityId.toString());
