@@ -97,7 +97,7 @@
 								<n-input v-model:value="newRaceGoal.name" placeholder="RACE_NAME" class="terminal-input" />
 							</n-form-item>
 							<n-form-item label="EVENT_DATE">
-								<n-input v-model:value="newRaceGoal.date" type="date" class="terminal-input" />
+								<input v-model="newRaceGoal.date" type="date" class="terminal-date-input" />
 							</n-form-item>
 							<n-form-item>
 								<n-button @click="addRaceGoal" class="terminal-button" :disabled="!newRaceGoal.name || !newRaceGoal.date">
@@ -258,6 +258,16 @@ const migrateDataToCloud = async () => {
 			// Colors table uses 'type' as PK usually, but upsert handles it
 			const { error: cErr } = await supabase.from('workout_type_colors').upsert(localColors);
 			if (cErr) throw cErr;
+		}
+
+		// 4. Migrate Race Goals
+		migrationStatus.value = "SYNCING_RACE_STRATEGY...";
+		const localRaceGoals = await window.db.getRaceGoals();
+		if (localRaceGoals.length > 0) {
+			migrationStatus.value = `PUSHING ${localRaceGoals.length} RACE GOALS TO CLOUD...`;
+			const raceGoalsToSync = localRaceGoals.map(({ id, ...rest }: any) => rest);
+			const { error: rErr } = await supabase.from('race_goals').upsert(raceGoalsToSync);
+			if (rErr) throw rErr;
 		}
 
 		migrationStatus.value = "MIGRATION_SEQUENCE_COMPLETE";
@@ -534,5 +544,19 @@ onUnmounted(() => {
 
 .terminal-input {
 	background: rgba(0, 0, 0, 0.3) !important;
+}
+
+.terminal-date-input {
+	background: rgba(0, 0, 0, 0.3);
+	border: 1px solid var(--border-color);
+	color: var(--accent-color);
+	padding: 5px 10px;
+	font-family: var(--font-family);
+	outline: none;
+}
+
+.terminal-date-input:focus {
+	border-color: var(--accent-color);
+	box-shadow: 0 0 5px var(--glow-color);
 }
 </style>
