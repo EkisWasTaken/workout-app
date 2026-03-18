@@ -38,6 +38,9 @@ interface Window {
 		getWorkoutTemplateExercises: (templateId: number) => Promise<any[]>;
 		deleteWorkoutTemplate: (templateId: number) => Promise<boolean>;
 		getExercises: () => Promise<any[]>;
+		getRaceGoals: () => Promise<import("../src/types").RaceGoal[]>;
+		addRaceGoal: (raceGoal: import("../src/types").AddRaceGoalPayload) => Promise<number>;
+		deleteRaceGoal: (id: number) => Promise<number>;
 	};
 	fileApi: {
 		openFileDialog: () => Promise<{ canceled: boolean; filePaths: string[] }>;
