@@ -1,5 +1,5 @@
 import { supabase } from './supabase'
-import type { Workout, DailyWeight, WorkoutTemplate, WorkoutTemplateExercise, Exercise } from './types'
+import type { Workout, DailyWeight, WorkoutTemplate, WorkoutTemplateExercise, Exercise, RaceGoal, AddRaceGoalPayload } from './types'
 
 // Helper to check if we are in Electron and the DB bridge is available
 const isElectron = () => {
@@ -7,6 +7,43 @@ const isElectron = () => {
 }
 
 export const db = {
+  // RACE GOALS
+  getRaceGoals: async (): Promise<RaceGoal[]> => {
+    if (isElectron()) return (window as any).db.getRaceGoals()
+    
+    const { data, error } = await supabase
+      .from('race_goals')
+      .select('*')
+      .order('date', { ascending: true })
+    
+    if (error) throw error
+    return data as RaceGoal[]
+  },
+
+  addRaceGoal: async (raceGoal: AddRaceGoalPayload): Promise<number> => {
+    if (isElectron()) return (window as any).db.addRaceGoal(raceGoal)
+    
+    const { data, error } = await supabase
+      .from('race_goals')
+      .insert([raceGoal])
+      .select()
+    
+    if (error) throw error
+    return data[0].id
+  },
+
+  deleteRaceGoal: async (id: number): Promise<number> => {
+    if (isElectron()) return (window as any).db.deleteRaceGoal(id)
+    
+    const { error } = await supabase
+      .from('race_goals')
+      .delete()
+      .eq('id', id)
+    
+    if (error) throw error
+    return 1
+  },
+
   // WORKOUTS
   getWorkouts: async (): Promise<Workout[]> => {
     if (isElectron()) return (window as any).db.getWorkouts()

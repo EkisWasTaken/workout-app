@@ -57,6 +57,7 @@
 		</nav>
 
 		<main class="main-content">
+			<RaceCountdown />
 			<router-view v-slot="{ Component }">
 				<transition name="fade-scan" mode="out-in">
 					<component :is="Component" />
@@ -70,6 +71,7 @@
 import { ref, onMounted, onUnmounted } from 'vue'
 import { RouterLink, RouterView } from 'vue-router'
 import { db } from '@/db'
+import RaceCountdown from '@/components/RaceCountdown.vue'
 
 const menuOptions = [
 	{

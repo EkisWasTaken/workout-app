@@ -86,6 +86,40 @@
 					<div v-else class="ascii-spinner">INITIALIZING_DATA</div>
 				</n-card>
 
+				<!-- Race Goals Card -->
+				<n-card bordered class="terminal-card">
+					<template #header>
+						<typewriter-header text="_RACE_GOALS" tag="span" :delay="1200" :speed="30" />
+					</template>
+					<n-space vertical>
+						<n-form :model="newRaceGoal" inline @submit.prevent="addRaceGoal">
+							<n-form-item label="EVENT_NAME">
+								<n-input v-model:value="newRaceGoal.name" placeholder="RACE_NAME" class="terminal-input" />
+							</n-form-item>
+							<n-form-item label="EVENT_DATE">
+								<n-input v-model:value="newRaceGoal.date" type="date" class="terminal-input" />
+							</n-form-item>
+							<n-form-item>
+								<n-button @click="addRaceGoal" class="terminal-button" :disabled="!newRaceGoal.name || !newRaceGoal.date">
+									<span class="btn-icon">[+]</span> ADD_GOAL
+								</n-button>
+							</n-form-item>
+						</n-form>
+						
+						<div v-if="raceGoals.length > 0" class="race-goals-list">
+							<div v-for="goal in raceGoals" :key="goal.id" class="race-goal-item">
+								<div class="race-goal-info">
+									<span class="prompt">></span> {{ goal.name.toUpperCase() }} ({{ goal.date }})
+								</div>
+								<n-button @click="deleteRaceGoal(goal.id)" size="small" type="error" ghost class="terminal-button-delete">
+									[DELETE]
+								</n-button>
+							</div>
+						</div>
+						<div v-else class="status-text">[NO_ACTIVE_RACE_GOALS]</div>
+					</n-space>
+				</n-card>
+
 				<!-- Migration Card (Only visible in Electron) -->
 				<n-card v-if="isElectronApp" bordered class="terminal-card migration-card">
 					<template #header>
@@ -131,11 +165,13 @@ import {
 	NGrid,
 	NGi,
 	NText,
+	NForm,
 } from "naive-ui";
 import { Strava } from "@vicons/fa";
 import { db } from "@/db";
 import { supabase } from "@/supabase";
 import { stravaApi } from "@/stravaBridge";
+import type { RaceGoal, AddRaceGoalPayload } from "@/types";
 import TypewriterHeader from "../components/TypewriterHeader.vue";
 
 const message = useMessage();
@@ -143,6 +179,44 @@ const userName = ref("");
 const goalWeight = ref<string>("");
 const isStravaConnected = ref(false);
 const connectingToStrava = ref(false);
+
+const raceGoals = ref<RaceGoal[]>([]);
+const newRaceGoal = ref<AddRaceGoalPayload>({
+	name: "",
+	date: "",
+});
+
+const fetchRaceGoals = async () => {
+	try {
+		raceGoals.value = await db.getRaceGoals();
+	} catch (error) {
+		console.error("Failed to fetch race goals:", error);
+	}
+};
+
+const addRaceGoal = async () => {
+	if (!newRaceGoal.value.name || !newRaceGoal.value.date) return;
+	try {
+		await db.addRaceGoal(newRaceGoal.value);
+		newRaceGoal.value = { name: "", date: "" };
+		await fetchRaceGoals();
+		window.dispatchEvent(new CustomEvent("race-goals-updated"));
+		message.success("RACE_GOAL_COMMITTED");
+	} catch (error) {
+		message.error("WRITE_ERROR");
+	}
+};
+
+const deleteRaceGoal = async (id: number) => {
+	try {
+		await db.deleteRaceGoal(id);
+		await fetchRaceGoals();
+		window.dispatchEvent(new CustomEvent("race-goals-updated"));
+		message.success("GOAL_PURGED");
+	} catch (error) {
+		message.error("DELETE_ERROR");
+	}
+};
 
 const isElectronApp = computed(() => !!(window && window.db));
 const migrating = ref(false);
@@ -311,6 +385,7 @@ onMounted(() => {
 	handleWebStravaCallback(); 
 	checkStravaConnection();
 	fetchWorkoutTypeColors(); 
+	fetchRaceGoals();
 	if ((window as any).ipcRenderer) {
 		(window as any).ipcRenderer.on("strava-auth-callback", handleStravaAuthCallback);
 	}
@@ -429,5 +504,35 @@ onUnmounted(() => {
 .prompt {
 	color: var(--accent-color);
 	margin-right: 8px;
+}
+
+.race-goals-list {
+	margin-top: 15px;
+	display: flex;
+	flex-direction: column;
+	gap: 10px;
+}
+
+.race-goal-item {
+	display: flex;
+	justify-content: space-between;
+	align-items: center;
+	padding: 8px 12px;
+	background: rgba(0, 179, 60, 0.05);
+	border: 1px solid rgba(0, 179, 60, 0.2);
+}
+
+.race-goal-info {
+	font-family: 'Courier New', Courier, monospace;
+	font-size: 0.85rem;
+	color: #fff;
+}
+
+.terminal-button-delete {
+	font-size: 0.7rem !important;
+}
+
+.terminal-input {
+	background: rgba(0, 0, 0, 0.3) !important;
 }
 </style>

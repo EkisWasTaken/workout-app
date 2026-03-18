@@ -4,7 +4,7 @@ import path from 'node:path'
 import sqlite3 from 'sqlite3'
 import * as fs from 'fs/promises'
 import { getStravaAuthUrl, exchangeCodeForToken, getActivities, getStravaActivityById, refreshStravaAccessToken } from './strava';
-import { Workout, Nutrition, DailyWeight } from '../src/types'; // Import Workout from shared types
+import { Workout, Nutrition, DailyWeight, RaceGoal } from '../src/types'; // Import Workout from shared types
 
 let win: BrowserWindow | null = null
 
@@ -226,7 +226,17 @@ const db = new sqlite3.Database(dbPath, (err) => {
           )`, (err) => {
             if (err) console.error('Error creating strava_cache table:', err);
             else console.log('strava_cache table checked/created successfully.');
-          });        }
+          });
+
+          db.run(`CREATE TABLE IF NOT EXISTS race_goals (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            date TEXT NOT NULL
+          )`, (err) => {
+            if (err) console.error('Error creating race_goals table:', err);
+            else console.log('race_goals table checked/created successfully.');
+          });
+        }
       });
     });
   }
@@ -1058,6 +1068,45 @@ async function setPersistentCache(id: string, type: string, data: any) {
           reject(err);
         } else {
           resolve(rows);
+        }
+      });
+    });
+  });
+
+  ipcMain.handle('get-race-goals', async () => {
+    return new Promise((resolve, reject) => {
+      db.all('SELECT * FROM race_goals ORDER BY date ASC', [], (err, rows) => {
+        if (err) {
+          reject(err);
+        } else {
+          resolve(rows);
+        }
+      });
+    });
+  });
+
+  ipcMain.handle('add-race-goal', async (_event, raceGoal: RaceGoal) => {
+    return new Promise((resolve, reject) => {
+      db.run('INSERT INTO race_goals (name, date) VALUES (?, ?)',
+        [raceGoal.name, raceGoal.date],
+        function(err) {
+          if (err) {
+            reject(err);
+          } else {
+            resolve(this.lastID);
+          }
+        }
+      );
+    });
+  });
+
+  ipcMain.handle('delete-race-goal', async (_event, id: number) => {
+    return new Promise((resolve, reject) => {
+      db.run('DELETE FROM race_goals WHERE id = ?', [id], function(err) {
+        if (err) {
+          reject(err);
+        } else {
+          resolve(this.changes);
         }
       });
     });

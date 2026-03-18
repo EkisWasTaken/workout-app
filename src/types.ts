@@ -106,3 +106,11 @@ export interface Exercise {
   name: string;
   body_part: string;
 }
+
+export interface RaceGoal {
+	id: number;
+	name: string;
+	date: string;
+}
+
+export type AddRaceGoalPayload = Omit<RaceGoal, 'id'>;

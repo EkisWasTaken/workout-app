@@ -31,6 +31,7 @@
 import { ref, watch, watchEffect } from 'vue';
 import { NModal, NForm, NFormItem, NInputNumber, NSlider, NInput, NSelect } from 'naive-ui';
 import type { Workout, StravaActivity, CompleteWorkoutFormValues } from '../types';
+import { stravaApi } from '../stravaBridge';
 
 const props = defineProps<{
     show: boolean;
@@ -86,7 +87,7 @@ async function loadStravaActivities() {
     if (isStravaLoading.value) return;
     isStravaLoading.value = true;
     try {
-        const activities = await window.stravaApi.getActivities();
+        const activities = await stravaApi.getActivities();
         if (activities && Array.isArray(activities)) {
             stravaActivities.value = activities;
             stravaActivityOptions.value = activities.map((act: StravaActivity) => ({

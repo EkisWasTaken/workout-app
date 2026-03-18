@@ -39,7 +39,10 @@ electron.contextBridge.exposeInMainWorld("db", {
   addWorkoutTemplate: (template) => electron.ipcRenderer.invoke("add-workout-template", template),
   getWorkoutTemplateExercises: (templateId) => electron.ipcRenderer.invoke("get-workout-template-exercises", templateId),
   deleteWorkoutTemplate: (templateId) => electron.ipcRenderer.invoke("delete-workout-template", templateId),
-  getExercises: () => electron.ipcRenderer.invoke("get-exercises")
+  getExercises: () => electron.ipcRenderer.invoke("get-exercises"),
+  getRaceGoals: () => electron.ipcRenderer.invoke("get-race-goals"),
+  addRaceGoal: (raceGoal) => electron.ipcRenderer.invoke("add-race-goal", raceGoal),
+  deleteRaceGoal: (id) => electron.ipcRenderer.invoke("delete-race-goal", id)
 });
 electron.contextBridge.exposeInMainWorld("fileApi", {
   openFileDialog: () => electron.ipcRenderer.invoke("open-file-dialog"),

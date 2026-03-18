@@ -26,6 +26,9 @@
           <div v-for="day in days" :key="day.date.toISOString()" class="day-cell" :class="{ 'not-current-month': !day.isCurrentMonth }" @click.stop="openAddWorkoutModal(day.date)">
             <div class="day-number">{{ day.dayOfMonth }}</div>
             <div class="events">
+              <div v-for="goal in day.raceGoals" :key="goal.id" class="event-tag race-goal-tag">
+                <span class="prompt">!</span> [RACE] {{ goal.name.toUpperCase() }}
+              </div>
               <div v-for="workout in day.workouts" :key="workout.id" class="event-tag workout-tag" :class="getWorkoutClass(workout)" @click.stop="openDetailsModal(workout)">
                 <span class="prompt">></span> {{ workout.name.toUpperCase() }}
               </div>
@@ -228,8 +231,9 @@ import {
   parseISO
 } from 'date-fns';
 import { enUS } from 'date-fns/locale';
-import type { Workout, AddWorkoutPayload, DailyWeight, CompleteWorkoutFormValues } from '../types';
+import type { Workout, AddWorkoutPayload, DailyWeight, CompleteWorkoutFormValues, RaceGoal } from '../types';
 import CustomModal from '../components/CustomModal.vue';
+import { stravaApi } from '../stravaBridge';
 
 const isActionLoading = ref(false);
 const message = useMessage();
@@ -254,13 +258,13 @@ async function loadStravaActivities() {
     console.log('Dashboard: loadStravaActivities triggered');
     isStravaLoading.value = true;
     try {
-        const isConnected = await window.stravaApi.isStravaConnected();
+        const isConnected = await stravaApi.isStravaConnected();
         if (!isConnected) {
             console.warn('Dashboard: Strava not connected, skipping fetch');
             stravaActivityOptions.value = [];
             return;
         }
-        const activities = await window.stravaApi.getActivities();
+        const activities = await stravaApi.getActivities();
         console.log('Dashboard: Fetched Strava response:', activities);
         
         if (activities && Array.isArray(activities)) {
@@ -447,6 +451,7 @@ const days = computed(() => {
     isCurrentMonth: date.getMonth() === currentMonth.value.getMonth(),
     workouts: workoutsByDate.value[formattedDate] || [],
     dailyWeights: dailyWeightsByDate.value[formattedDate] || [],
+    raceGoals: raceGoalsByDate.value[formattedDate] || [],
     };  });
 });
 
@@ -458,6 +463,7 @@ function nextMonth() { currentMonth.value = addMonths(currentMonth.value, 1); }
 // == EXISTING DATA LOGIC ==
 const workouts = ref<Workout[]>([]);
 const dailyWeights = ref<DailyWeight[]>([]);
+const raceGoals = ref<RaceGoal[]>([]);
 
 const getWorkoutType = (workout: Workout): 'gym' | 'running' | 'rest' | 'other' => {
 	if (workout.type) {
@@ -496,11 +502,28 @@ const dailyWeightsByDate = computed(() => {
 	return grouped
 })
 
+const raceGoalsByDate = computed(() => {
+	const grouped = {} as { [key: string]: RaceGoal[] }
+	for (const goal of raceGoals.value) {
+		if (!grouped[goal.date]) grouped[goal.date] = []
+		grouped[goal.date].push(goal)
+	}
+	return grouped
+})
+
+async function loadRaceGoals() {
+  try {
+    raceGoals.value = await db.getRaceGoals();
+  } catch (error) {
+    console.error('Failed to fetch race goals:', error);
+  }
+}
+
 async function loadWorkouts() { workouts.value = await db.getWorkouts(); }
 async function loadDailyWeights() { dailyWeights.value = await db.getDailyWeights(); }
 
-onMounted(() => { loadWorkouts(); loadDailyWeights(); });
-onActivated(() => { loadWorkouts(); loadDailyWeights(); });
+onMounted(() => { loadWorkouts(); loadDailyWeights(); loadRaceGoals(); });
+onActivated(() => { loadWorkouts(); loadDailyWeights(); loadRaceGoals(); });
 
 </script>
 
@@ -729,6 +752,13 @@ onActivated(() => { loadWorkouts(); loadDailyWeights(); });
 .weight-tag {
   border-color: rgba(76, 175, 80, 0.3);
   color: #4caf50;
+}
+
+.race-goal-tag {
+  color: #ff3e3e;
+  border: 1px solid rgba(255, 62, 62, 0.4);
+  background: rgba(255, 62, 62, 0.05);
+  font-weight: bold;
 }
 
 /* Form Styling */

@@ -1,5 +1,5 @@
 import { ipcRenderer, contextBridge } from 'electron'
-import type { Nutrition, DailyWeight, Workout } from '../src/types';
+import type { Nutrition, DailyWeight, Workout, RaceGoal } from '../src/types';
 
 // --------- Expose some API to the Renderer process ---------
 contextBridge.exposeInMainWorld('ipcRenderer', {
@@ -53,6 +53,9 @@ contextBridge.exposeInMainWorld('db', {
   getWorkoutTemplateExercises: (templateId: number) => ipcRenderer.invoke('get-workout-template-exercises', templateId),
   deleteWorkoutTemplate: (templateId: number) => ipcRenderer.invoke('delete-workout-template', templateId),
   getExercises: () => ipcRenderer.invoke('get-exercises'),
+  getRaceGoals: () => ipcRenderer.invoke('get-race-goals'),
+  addRaceGoal: (raceGoal: RaceGoal) => ipcRenderer.invoke('add-race-goal', raceGoal),
+  deleteRaceGoal: (id: number) => ipcRenderer.invoke('delete-race-goal', id),
 })
 
 contextBridge.exposeInMainWorld('fileApi', {

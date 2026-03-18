@@ -17281,6 +17281,14 @@ const db = new sqlite3.Database(dbPath, (err) => {
             if (err3) console.error("Error creating strava_cache table:", err3);
             else console.log("strava_cache table checked/created successfully.");
           });
+          db.run(`CREATE TABLE IF NOT EXISTS race_goals (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            date TEXT NOT NULL
+          )`, (err3) => {
+            if (err3) console.error("Error creating race_goals table:", err3);
+            else console.log("race_goals table checked/created successfully.");
+          });
         }
       });
     });
@@ -18003,6 +18011,43 @@ app.whenReady().then(async () => {
           reject(err);
         } else {
           resolve(rows);
+        }
+      });
+    });
+  });
+  ipcMain.handle("get-race-goals", async () => {
+    return new Promise((resolve, reject) => {
+      db.all("SELECT * FROM race_goals ORDER BY date ASC", [], (err, rows) => {
+        if (err) {
+          reject(err);
+        } else {
+          resolve(rows);
+        }
+      });
+    });
+  });
+  ipcMain.handle("add-race-goal", async (_event, raceGoal) => {
+    return new Promise((resolve, reject) => {
+      db.run(
+        "INSERT INTO race_goals (name, date) VALUES (?, ?)",
+        [raceGoal.name, raceGoal.date],
+        function(err) {
+          if (err) {
+            reject(err);
+          } else {
+            resolve(this.lastID);
+          }
+        }
+      );
+    });
+  });
+  ipcMain.handle("delete-race-goal", async (_event, id) => {
+    return new Promise((resolve, reject) => {
+      db.run("DELETE FROM race_goals WHERE id = ?", [id], function(err) {
+        if (err) {
+          reject(err);
+        } else {
+          resolve(this.changes);
         }
       });
     });
