@@ -58,6 +58,8 @@ function close() {
   max-height: 90vh;
   display: flex;
   flex-direction: column;
+  border-radius: 4px;
+  overflow: hidden;
 }
 
 @media (min-width: 769px) {

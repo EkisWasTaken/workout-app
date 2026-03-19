@@ -17,7 +17,8 @@ export const themeOverrides = computed<GlobalThemeOverrides>(() => {
       primaryColor: primaryColor.value,
       primaryColorHover: primaryColor.value,
       bodyColor: bodyColor.value,
-      cardColor: cardColor.value
+      cardColor: cardColor.value,
+      borderRadius: '4px'
     },
     Layout: {
       color: bodyColor.value,

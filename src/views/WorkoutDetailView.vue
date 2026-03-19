@@ -316,7 +316,7 @@ onMounted(async () => {
 }
 
 .card {
-	border-radius: 15px;
+	border-radius: 4px;
 	width: 100%;
 	display: grid;
 	gap: 16px;

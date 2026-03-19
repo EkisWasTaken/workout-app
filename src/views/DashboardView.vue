@@ -25,9 +25,15 @@
         <div class="calendar-grid">
           <div v-for="day in days" :key="day.date.toISOString()" 
                class="day-cell" 
-               :class="{ 'not-current-month': !day.isCurrentMonth }" 
+               :class="{ 
+                 'not-current-month': !day.isCurrentMonth,
+                 'is-today': day.isToday,
+                 'drag-over': dragOverDate === format(day.date, 'yyyy-MM-dd')
+               }" 
                @click.stop="openAddWorkoutModal(day.date)"
                @dragover.prevent
+               @dragenter.prevent="onDragEnter(day.date)"
+               @dragleave="onDragLeave(day.date)"
                @drop="onDrop($event, day.date)">
             <div class="day-number">{{ day.dayOfMonth }}</div>
             <div class="events">
@@ -36,9 +42,10 @@
               </div>
               <div v-for="workout in day.workouts" :key="workout.id" 
                    class="event-tag workout-tag" 
-                   :class="getWorkoutClass(workout)" 
+                   :class="[getWorkoutClass(workout), { 'dragging': draggingWorkoutId === workout.id }]" 
                    :draggable="workout.isCompleted !== 1"
                    @dragstart="onDragStart($event, workout)"
+                   @dragend="onDragEnd"
                    @click.stop="openDetailsModal(workout)">
                 <div class="workout-gradient-banner"></div>
                 <span class="prompt">></span> {{ workout.name.toUpperCase() }}
@@ -264,6 +271,9 @@ const isActionLoading = ref(false);
 const message = useMessage();
 
 // == DRAG AND DROP LOGIC START ==
+const draggingWorkoutId = ref<number | null>(null);
+const dragOverDate = ref<string | null>(null);
+
 function onDragStart(event: DragEvent, workout: Workout) {
   if (workout.isCompleted === 1) {
     event.preventDefault();
@@ -272,22 +282,30 @@ function onDragStart(event: DragEvent, workout: Workout) {
   if (event.dataTransfer) {
     event.dataTransfer.setData('workoutId', String(workout.id));
     event.dataTransfer.effectAllowed = 'move';
-    
-    // Add a ghost image or styling if desired
-    const target = event.target as HTMLElement;
-    target.style.opacity = '0.5';
-    
-    event.dataTransfer.setDragImage(target, 0, 0);
+    draggingWorkoutId.value = workout.id;
+  }
+}
+
+function onDragEnd() {
+  draggingWorkoutId.value = null;
+  dragOverDate.value = null;
+}
+
+function onDragEnter(date: Date) {
+  dragOverDate.value = format(date, 'yyyy-MM-dd');
+}
+
+function onDragLeave(date: Date) {
+  const dateStr = format(date, 'yyyy-MM-dd');
+  if (dragOverDate.value === dateStr) {
+    dragOverDate.value = null;
   }
 }
 
 async function onDrop(event: DragEvent, date: Date) {
   const workoutId = event.dataTransfer?.getData('workoutId');
-  
-  // Reset opacity for all workout tags (cleanup)
-  document.querySelectorAll('.workout-tag').forEach((el: any) => {
-    el.style.opacity = '1';
-  });
+  dragOverDate.value = null;
+  draggingWorkoutId.value = null;
 
   if (!workoutId) return;
 
@@ -577,10 +595,12 @@ const days = computed(() => {
 
   return dateRange.map(date => {
     const formattedDate = format(date, 'yyyy-MM-dd');
+    const today = format(new Date(), 'yyyy-MM-dd');
     return {
     date,
     dayOfMonth: getDate(date),
     isCurrentMonth: date.getMonth() === currentMonth.value.getMonth(),
+    isToday: formattedDate === today,
     workouts: workoutsByDate.value[formattedDate] || [],
     dailyWeights: dailyWeightsByDate.value[formattedDate] || [],
     raceGoals: raceGoalsByDate.value[formattedDate] || [],
@@ -719,6 +739,8 @@ onActivated(() => { loadWorkouts(); loadDailyWeights(); loadRaceGoals(); });
   border: 1px solid var(--border-color);
   background-color: rgba(6, 8, 6, 0.8);
   box-shadow: 0 0 15px rgba(0, 179, 60, 0.05);
+  border-radius: 4px;
+  overflow: hidden;
 }
 
 .calendar-header {
@@ -738,6 +760,7 @@ onActivated(() => { loadWorkouts(); loadDailyWeights(); loadRaceGoals(); });
   cursor: pointer;
   font-size: 0.7rem;
   font-family: var(--font-family);
+  border-radius: 2px;
 }
 
 .nav-button:hover {
@@ -798,14 +821,11 @@ onActivated(() => { loadWorkouts(); loadDailyWeights(); loadRaceGoals(); });
   flex-direction: column;
   cursor: pointer;
   background-color: rgba(6, 8, 6, 0.2);
+  transition: background-color 0.2s, border-color 0.2s, box-shadow 0.2s;
 }
 
 .day-cell:hover {
   background-color: rgba(0, 179, 60, 0.03);
-}
-
-.day-cell:nth-child(7n) {
-  border-right: none;
 }
 
 .day-cell.header {
@@ -819,45 +839,45 @@ onActivated(() => { loadWorkouts(); loadDailyWeights(); loadRaceGoals(); });
   font-size: 0.75rem;
 }
 
-.day-number {
-  font-weight: bold;
-  margin-bottom: 6px;
-  align-self: flex-end;
-  font-size: 0.8rem;
-  opacity: 0.7;
+.day-cell.drag-over {
+  background-color: rgba(0, 179, 60, 0.1);
+  border: 1px solid var(--accent-color) !important;
+  box-shadow: inset 0 0 10px rgba(0, 179, 60, 0.2);
+  z-index: 10;
 }
 
-.day-cell.not-current-month {
-  display: none; /* Hide days from other months on mobile list view */
+.day-cell.is-today {
+  background-color: rgba(0, 179, 60, 0.08);
+  border-color: rgba(0, 179, 60, 0.3);
 }
 
-@media (min-width: 769px) {
-  .day-cell.not-current-month {
-    display: flex;
-  }
+.is-today .day-number {
+  color: #fff;
+  opacity: 1;
+  text-shadow: 0 0 8px var(--glow-color);
 }
 
-.day-cell.not-current-month .day-number {
-  opacity: 0.2;
-}
-
-.events {
-  flex-grow: 1;
-  overflow-y: auto;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
+.day-cell.is-today:hover {
+  background-color: rgba(0, 179, 60, 0.12);
 }
 
 .event-tag {
-  padding: 2px 6px;
+  padding: 4px 6px;
   font-size: 0.65rem;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   border: 1px solid transparent;
   position: relative;
-  padding-left: 12px;
+  padding-left: 14px;
+  transition: transform 0.1s, opacity 0.1s, box-shadow 0.1s;
+}
+
+.event-tag.dragging {
+  opacity: 0.4;
+  transform: scale(0.95);
+  cursor: grabbing;
+  box-shadow: 0 5px 15px rgba(0, 0, 0, 0.5);
 }
 
 .workout-gradient-banner {
@@ -865,7 +885,7 @@ onActivated(() => { loadWorkouts(); loadDailyWeights(); loadRaceGoals(); });
   left: 0;
   top: 0;
   bottom: 0;
-  width: 4px;
+  width: 6px;
   background-image: linear-gradient(to bottom, var(--gradient-from), var(--gradient-to));
 }
 

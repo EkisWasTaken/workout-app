@@ -426,6 +426,7 @@ onUnmounted(() => {
 .terminal-card {
 	background-color: rgba(6, 8, 6, 0.7) !important;
 	border: 1px solid var(--border-color) !important;
+	border-radius: 4px !important;
 }
 
 .terminal-button {
@@ -433,6 +434,7 @@ onUnmounted(() => {
 	border: 1px solid var(--accent-color) !important;
 	color: var(--accent-color) !important;
 	font-family: var(--font-family);
+	border-radius: 2px !important;
 }
 
 .terminal-button:hover:not(:disabled) {
@@ -495,6 +497,7 @@ onUnmounted(() => {
 	padding: 10px;
 	border: 1px solid rgba(0, 179, 60, 0.1);
 	background: rgba(0, 0, 0, 0.3);
+	border-radius: 4px;
 }
 
 .color-label {
@@ -505,6 +508,7 @@ onUnmounted(() => {
 .terminal-tag {
 	background: transparent !important;
 	border: 1px solid currentColor !important;
+	border-radius: 2px !important;
 }
 
 .btn-icon {
@@ -531,6 +535,7 @@ onUnmounted(() => {
 	padding: 8px 12px;
 	background: rgba(0, 179, 60, 0.05);
 	border: 1px solid rgba(0, 179, 60, 0.2);
+	border-radius: 4px;
 }
 
 .race-goal-info {

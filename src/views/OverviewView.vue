@@ -596,6 +596,7 @@ watch(isWeeklyView, (v) => { if (!v) nextTick(() => createMonthlyWorkoutChart(al
 	position: relative;
     transition: transform 0.3s ease, box-shadow 0.3s ease, border-color 0.3s ease;
     min-width: 0;
+	border-radius: 4px;
 }
 
 .chart-card:hover {
@@ -615,6 +616,7 @@ watch(isWeeklyView, (v) => { if (!v) nextTick(() => createMonthlyWorkoutChart(al
 	color: var(--accent-color);
     letter-spacing: 2px;
     border: 1px solid var(--border-color);
+	border-radius: 2px;
 }
 
 .chart-content {
@@ -631,6 +633,7 @@ watch(isWeeklyView, (v) => { if (!v) nextTick(() => createMonthlyWorkoutChart(al
     width: 100%;
     box-sizing: border-box;
     min-width: 0;
+	border-radius: 4px;
 }
 
 @media (min-width: 769px) {
@@ -693,6 +696,7 @@ watch(isWeeklyView, (v) => { if (!v) nextTick(() => createMonthlyWorkoutChart(al
     border: 1px solid rgba(0, 179, 60, 0.1);
     width: 100%;
     box-sizing: border-box;
+    border-radius: 4px;
 }
 
 .days-labels {
