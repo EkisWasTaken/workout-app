@@ -11,10 +11,12 @@
 
   --color-gym-primary: #3f88c5;
   --color-running-primary: #5cb85c;
+  --color-bike-primary: #fb8c00;
   --color-text-light: #fff;
 
   --color-gym-primary-rgb: 63, 136, 197;
   --color-running-primary-rgb: 92, 184, 92;
+  --color-bike-primary-rgb: 251, 140, 0;
   --color-rest-primary: #757575;
   --color-rest-primary-rgb: 117, 117, 117;
   --color-other-primary: #FFA726;

@@ -8,7 +8,7 @@
         <button @click="showLogWeightModal = true" class="action-button">
           <span class="btn-icon">[W]</span> LOG_WEIGHT
         </button>
-        <button class="action-button">
+        <button @click="handleImportSys" class="action-button">
           <span class="btn-icon">[I]</span> IMPORT_SYS
         </button>
       </div>
@@ -23,13 +23,24 @@
           <div v-for="day in weekDays" :key="day" class="day-cell header">_{{ day.toUpperCase() }}</div>
         </div>
         <div class="calendar-grid">
-          <div v-for="day in days" :key="day.date.toISOString()" class="day-cell" :class="{ 'not-current-month': !day.isCurrentMonth }" @click.stop="openAddWorkoutModal(day.date)">
+          <div v-for="day in days" :key="day.date.toISOString()" 
+               class="day-cell" 
+               :class="{ 'not-current-month': !day.isCurrentMonth }" 
+               @click.stop="openAddWorkoutModal(day.date)"
+               @dragover.prevent
+               @drop="onDrop($event, day.date)">
             <div class="day-number">{{ day.dayOfMonth }}</div>
             <div class="events">
               <div v-for="goal in day.raceGoals" :key="goal.id" class="event-tag race-goal-tag">
                 <span class="prompt">!</span> [RACE] {{ goal.name.toUpperCase() }}
               </div>
-              <div v-for="workout in day.workouts" :key="workout.id" class="event-tag workout-tag" :class="getWorkoutClass(workout)" @click.stop="openDetailsModal(workout)">
+              <div v-for="workout in day.workouts" :key="workout.id" 
+                   class="event-tag workout-tag" 
+                   :class="getWorkoutClass(workout)" 
+                   :draggable="workout.isCompleted !== 1"
+                   @dragstart="onDragStart($event, workout)"
+                   @click.stop="openDetailsModal(workout)">
+                <div class="workout-gradient-banner"></div>
                 <span class="prompt">></span> {{ workout.name.toUpperCase() }}
               </div>
               <div v-for="weight in day.dailyWeights" :key="weight.id" class="event-tag weight-tag">
@@ -212,6 +223,17 @@
           </div>
         </div>
       </CustomModal>
+
+      <!-- Import Editor Modal -->
+      <ImportEditor
+        v-model:show="showImportEditor"
+        :initial-data="[]"
+        initial-delimiter=","
+        :raw-file-content="importRawContent"
+        import-type="workout"
+        csv-model-description="name,date(YYYY-MM-DD),type,duration(min),distance(km),notes,isCompleted(0 or 1)"
+        @confirm="onImportConfirm"
+      />
     </div>
   </div>
 </template>
@@ -235,10 +257,118 @@ import {
 import { enUS } from 'date-fns/locale';
 import type { Workout, AddWorkoutPayload, DailyWeight, CompleteWorkoutFormValues, RaceGoal } from '../types';
 import CustomModal from '../components/CustomModal.vue';
+import ImportEditor from '../components/ImportEditor.vue';
 import { stravaApi } from '../stravaBridge';
 
 const isActionLoading = ref(false);
 const message = useMessage();
+
+// == DRAG AND DROP LOGIC START ==
+function onDragStart(event: DragEvent, workout: Workout) {
+  if (workout.isCompleted === 1) {
+    event.preventDefault();
+    return;
+  }
+  if (event.dataTransfer) {
+    event.dataTransfer.setData('workoutId', String(workout.id));
+    event.dataTransfer.effectAllowed = 'move';
+    
+    // Add a ghost image or styling if desired
+    const target = event.target as HTMLElement;
+    target.style.opacity = '0.5';
+    
+    event.dataTransfer.setDragImage(target, 0, 0);
+  }
+}
+
+async function onDrop(event: DragEvent, date: Date) {
+  const workoutId = event.dataTransfer?.getData('workoutId');
+  
+  // Reset opacity for all workout tags (cleanup)
+  document.querySelectorAll('.workout-tag').forEach((el: any) => {
+    el.style.opacity = '1';
+  });
+
+  if (!workoutId) return;
+
+  const workout = workouts.value.find(w => String(w.id) === workoutId);
+  if (workout && workout.isCompleted !== 1) {
+    const originalDate = workout.date;
+    const newDate = format(date, 'yyyy-MM-dd');
+    
+    if (originalDate === newDate) return;
+
+    isActionLoading.value = true;
+    try {
+      await db.updateWorkout({ ...workout, date: newDate });
+      await loadWorkouts();
+      message.success(`MOVED_TO_${newDate}`);
+    } catch (e) {
+      console.error(e);
+      message.error('FAILED_TO_MOVE_WORKOUT');
+    } finally {
+      isActionLoading.value = false;
+    }
+  }
+}
+// == DRAG AND DROP LOGIC END ==
+
+// == IMPORT LOGIC START ==
+const showImportEditor = ref(false);
+const importRawContent = ref('');
+
+async function handleImportSys() {
+  if (!(window as any).ipcRenderer) {
+    message.error('IMPORT_ONLY_AVAILABLE_IN_DESKTOP_APP');
+    return;
+  }
+
+  try {
+    const { canceled, filePaths } = await (window as any).ipcRenderer.invoke('open-file-dialog');
+    if (canceled || filePaths.length === 0) return;
+
+    const result = await (window as any).ipcRenderer.invoke('read-file', filePaths[0]);
+    if (result.success) {
+      importRawContent.value = result.content;
+      showImportEditor.value = true;
+    } else {
+      message.error('FAILED_TO_READ_FILE: ' + result.error);
+    }
+  } catch (error) {
+    console.error('Import error:', error);
+    message.error('SYSTEM_ERROR_DURING_IMPORT');
+  }
+}
+
+async function onImportConfirm(data: any[]) {
+  isActionLoading.value = true;
+  try {
+    let successCount = 0;
+    for (const row of data) {
+      const workout: any = {
+        name: row.name,
+        date: row.date,
+        type: row.type || 'Other',
+        duration: row.duration ? Number(row.duration) : null,
+        distance: row.distance ? Number(row.distance) : null,
+        notes: row.notes || '',
+        isCompleted: row.isCompleted ? Number(row.isCompleted) : 0,
+        isDeleted: 0
+      };
+      await db.addWorkout(workout);
+      successCount++;
+    }
+    message.success(`SUCCESSFULLY_IMPORTED_${successCount}_WORKOUTS`);
+    await loadWorkouts();
+  } catch (error) {
+    console.error('Import confirmation error:', error);
+    message.error('PARTIAL_IMPORT_ERROR_CHECK_DATABASE');
+  } finally {
+    isActionLoading.value = false;
+    showImportEditor.value = false;
+  }
+}
+// == IMPORT LOGIC END ==
 
 // == DETAILS/EDIT/COMPLETE MODAL LOGIC START ==
 const showDetailsModal = ref(false);
@@ -726,7 +856,44 @@ onActivated(() => { loadWorkouts(); loadDailyWeights(); loadRaceGoals(); });
   text-overflow: ellipsis;
   white-space: nowrap;
   border: 1px solid transparent;
+  position: relative;
+  padding-left: 12px;
 }
+
+.workout-gradient-banner {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 4px;
+  background-image: linear-gradient(to bottom, var(--gradient-from), var(--gradient-to));
+}
+
+.workout-gym .workout-gradient-banner {
+  --gradient-from: var(--color-gym-primary);
+  --gradient-to: rgba(var(--color-gym-primary-rgb), 0.3);
+}
+
+.workout-running .workout-gradient-banner {
+  --gradient-from: var(--color-running-primary);
+  --gradient-to: rgba(var(--color-running-primary-rgb), 0.3);
+}
+
+.workout-bike .workout-gradient-banner {
+  --gradient-from: var(--color-bike-primary);
+  --gradient-to: rgba(var(--color-bike-primary-rgb), 0.3);
+}
+
+.workout-rest .workout-gradient-banner {
+  --gradient-from: var(--color-rest-primary);
+  --gradient-to: rgba(var(--color-rest-primary-rgb), 0.3);
+}
+
+.workout-other .workout-gradient-banner {
+  --gradient-from: var(--color-other-primary);
+  --gradient-to: rgba(var(--color-other-primary-rgb), 0.3);
+}
+
 
 .prompt {
   color: var(--accent-color);
