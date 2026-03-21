@@ -3,9 +3,14 @@
 		<template #header>
 			<div class="card-header" @click="navigateToDetail">
 				<n-text strong>{{ workout.name }}</n-text>
-				<n-tag :type="isMapType ? 'success' : 'default'" size="small">
-					{{ workout.type }}
-				</n-tag>
+				<n-space :size="4">
+					<n-tag v-if="workout.isCompleted" type="success" size="small">
+						DONE
+					</n-tag>
+					<n-tag :type="isMapType ? 'success' : 'default'" size="small">
+						{{ workout.type }}
+					</n-tag>
+				</n-space>
 			</div>
 		</template>
 

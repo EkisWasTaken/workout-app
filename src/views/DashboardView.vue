@@ -926,13 +926,26 @@ onActivated(() => { loadWorkouts(); loadDailyWeights(); loadRaceGoals(); });
 .workout-rest { border-color: #757575; color: #757575; }.workout-other { border-color: var(--color-other-primary); color: var(--color-other-primary); }
 
 .status-completed {
-  background-color: rgba(0, 179, 60, 0.05);
+  background-color: rgba(0, 179, 60, 0.12);
   font-weight: bold;
+  border-style: solid;
+  border-width: 1px;
 }
 
 .status-completed::before {
-  content: "[√] ";
-  font-size: 0.6rem;
+  content: " DONE ";
+  font-size: 0.55rem;
+  color: #040604;
+  background-color: var(--accent-color);
+  padding: 0 4px;
+  margin-right: 6px;
+  border-radius: 2px;
+  font-weight: 900;
+  letter-spacing: 0.5px;
+}
+
+.status-completed .prompt {
+  display: none;
 }
 
 .nutrition-tag {
