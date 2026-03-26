@@ -87,7 +87,7 @@ const linkingActivity = ref(false); // New ref for loading state
 
 const workoutOptions = computed(() =>
   workouts.value
-    .filter(workout => workout.type?.toLowerCase() === 'running')
+    .filter(workout => workout.type?.toLowerCase() === 'running' || workout.type?.toLowerCase() === 'bike')
     .map((workout) => ({
       label: `${workout.name} (${workout.date})`,
       value: workout.id,

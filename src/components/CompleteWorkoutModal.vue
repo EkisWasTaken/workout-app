@@ -14,13 +14,13 @@
             <n-form-item label="Notes">
                 <n-input v-model:value="formValue.notes" type="textarea" placeholder="How did it go?" />
             </n-form-item>
-            <n-form-item v-if="workout?.type === 'running' && stravaActivityOptions.length > 0"
+            <n-form-item v-if="(workout?.type?.toLowerCase() === 'running' || workout?.type?.toLowerCase() === 'bike') && stravaActivityOptions.length > 0"
                 label="Link Strava Activity">
                 <n-select v-model:value="formValue.stravaActivityId" :options="stravaActivityOptions"
                     placeholder="Select a Strava activity" clearable />
             </n-form-item>
-            <n-form-item v-if="workout?.type === 'running' && stravaActivityOptions.length === 0"
-                label="Running Distance (km)">
+            <n-form-item v-if="(workout?.type?.toLowerCase() === 'running' || workout?.type?.toLowerCase() === 'bike') && stravaActivityOptions.length === 0"
+                label="Distance (km)">
                 <n-input-number v-model:value="formValue.distance" clearable :min="0" />
             </n-form-item>
         </n-form>
@@ -75,7 +75,7 @@ watch(() => props.workout, (newWorkout) => {
         formValue.value.stravaActivityId = undefined;
         formValue.value.distance = undefined; // Changed from manualDistance
 
-        if (newWorkout.type === 'running') {
+        if (newWorkout.type?.toLowerCase() === 'running' || newWorkout.type?.toLowerCase() === 'bike') {
             loadStravaActivities();
         }
     }
@@ -107,16 +107,17 @@ async function loadStravaActivities() {
 
 function onPositiveClick() {
     const payload: Partial<Workout> = { ...formValue.value };
-    if (props.workout?.type?.toLowerCase() === 'running') { // Use toLowerCase for robustness
+    const isMapType = props.workout?.type?.toLowerCase() === 'running' || props.workout?.type?.toLowerCase() === 'bike';
+    if (isMapType) { // Use toLowerCase for robustness
         if (payload.stravaActivityId) {
             delete payload.distance; // If stravaId is selected, distance comes from Strava
         } else {
             // payload.distance is already set if manual distance was entered
             delete payload.stravaActivityId; // No strava activity if manual distance
         }
-    } else { // Not a running workout
-        delete payload.distance; // Delete distance for non-running workouts
-        delete payload.stravaActivityId; // Delete stravaActivityId for non-running workouts
+    } else { // Not a running or bike workout
+        delete payload.distance; // Delete distance for non-running/bike workouts
+        delete payload.stravaActivityId; // Delete stravaActivityId for non-running/bike workouts
     }
 
     if (props.workout?.type?.toLowerCase() !== 'gym') { // Use toLowerCase for robustness

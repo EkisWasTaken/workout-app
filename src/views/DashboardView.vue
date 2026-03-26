@@ -193,7 +193,7 @@
             <input type="number" v-model="completionData.totalWeightLifted" />
           </div>
           
-          <div class="form-group" v-if="getWorkoutType(selectedWorkout) === 'running'">
+          <div class="form-group" v-if="getWorkoutType(selectedWorkout) === 'running' || getWorkoutType(selectedWorkout) === 'bike'">
             <label for="strava-activity">_STRAVA_LINK</label>
             <select id="strava-activity" v-model="completionData.stravaActivityId" :disabled="isStravaLoading">
               <option :value="undefined">-- {{ isStravaLoading ? 'LOADING_DATA...' : 'NULL' }} --</option>
@@ -206,7 +206,7 @@
             </select>
           </div>
 
-          <div class="form-group" v-if="getWorkoutType(selectedWorkout) === 'running' && !completionData.stravaActivityId">
+          <div class="form-group" v-if="(getWorkoutType(selectedWorkout) === 'running' || getWorkoutType(selectedWorkout) === 'bike') && !completionData.stravaActivityId">
             <label>_ACTUAL_DIST_KM</label>
             <input type="number" v-model="completionData.distance" />
           </div>
@@ -463,7 +463,8 @@ function openDetailsModal(workout: Workout) {
     stravaActivityId: undefined,
   };
 
-  if (getWorkoutType(workout) === 'running') {
+  const type = getWorkoutType(workout);
+  if (type === 'running' || type === 'bike') {
     loadStravaActivities();
   }
 
