@@ -1,0 +1,156 @@
+/* src/styles/app.css — modern sports dashboard design system */
+
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&display=swap');
+
+:root {
+  /* Surfaces */
+  --background-color: #0b0e14;
+  --surface-color: #141a23;
+  --card-background-color: #141a23;
+  --surface-2: #1c2430;
+  --surface-hover: #202938;
+
+  /* Borders */
+  --border-color: #232c39;
+  --border-strong: #313c4d;
+
+  /* Text */
+  --text-color: #e7edf5;
+  --text-secondary: #9aa7b8;
+  --text-muted: #5e6b7d;
+  --color-text-light: #ffffff;
+
+  /* Brand / accent */
+  --primary-color: #4f8cff;
+  --accent-color: #4f8cff;
+  --primary-soft: rgba(79, 140, 255, 0.14);
+  --primary-strong: #2f6fe6;
+  --glow-color: rgba(79, 140, 255, 0.35);
+
+  /* Semantic */
+  --success-color: #22c55e;
+  --success-soft: rgba(34, 197, 94, 0.14);
+  --danger-color: #ef4444;
+  --danger-soft: rgba(239, 68, 68, 0.14);
+  --warning-color: #f59e0b;
+  --warning-soft: rgba(245, 158, 11, 0.14);
+
+  /* Sport colors (overridden at runtime from DB) */
+  --color-running-primary: #22c55e;
+  --color-running-primary-rgb: 34, 197, 94;
+  --color-gym-primary: #a78bfa;
+  --color-gym-primary-rgb: 167, 139, 250;
+  --color-bike-primary: #fb923c;
+  --color-bike-primary-rgb: 251, 146, 60;
+  --color-rest-primary: #64748b;
+  --color-rest-primary-rgb: 100, 116, 139;
+  --color-other-primary: #f4c152;
+  --color-other-primary-rgb: 244, 193, 82;
+
+  /* Shape & type */
+  --radius-sm: 6px;
+  --radius: 10px;
+  --radius-lg: 16px;
+  --font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: 'JetBrains Mono', 'Fira Code', ui-monospace, monospace;
+
+  /* Layout */
+  --sidebar-width: 240px;
+  --sidebar-collapsed-width: 76px;
+  --mobile-nav-height: 64px;
+
+  color-scheme: dark;
+  color: var(--text-color);
+  background-color: var(--background-color);
+}
+
+body {
+  background-color: var(--background-color);
+  color: var(--text-color);
+  font-family: var(--font-family);
+  margin: 0;
+  padding: 0;
+  min-height: 100vh;
+  overflow-x: hidden;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+#app {
+  min-height: 100vh;
+  display: flex;
+  position: relative;
+  flex-direction: row;
+}
+
+@media (max-width: 768px) {
+  #app { flex-direction: column; }
+}
+
+/* Numeric values look best in mono */
+.mono, .stat-value {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Scrollbars */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-strong) transparent;
+}
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border-radius: 8px;
+  border: 2px solid var(--background-color);
+}
+::-webkit-scrollbar-thumb:hover { background: #41506600; background: #415066; }
+
+/* Headings */
+h1, h2, h3, h4 {
+  color: var(--text-color);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  margin: 0;
+}
+
+a { color: var(--primary-color); text-decoration: none; }
+
+/* Reusable card surface */
+.card {
+  background-color: var(--surface-color);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius);
+}
+
+/* Naive UI light-touch overrides (theme handles most colors) */
+.n-card {
+  background-color: var(--surface-color) !important;
+  border: 1px solid var(--border-color) !important;
+  border-radius: var(--radius) !important;
+}
+
+/* Legacy terminal classes — neutralized to no-ops so old markup is harmless */
+.glitch-alive { animation: none !important; }
+.crt-overlay, .crt-scanline-sweep, .crt-flicker { display: none !important; }
+
+/* Subtle inline loading indicator (replaces ascii spinner) */
+.ascii-spinner::after {
+  content: "";
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  margin-left: 8px;
+  border: 2px solid currentColor;
+  border-top-color: transparent;
+  border-radius: 50%;
+  vertical-align: -2px;
+  animation: spin 0.7s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.fade-enter-active, .fade-leave-active { transition: opacity 0.18s ease; }
+.fade-enter-from, .fade-leave-to { opacity: 0; }

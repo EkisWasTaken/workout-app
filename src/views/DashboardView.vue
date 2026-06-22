@@ -1,26 +1,32 @@
 <template>
   <div class="dashboard-view-wrapper">
     <div class="dashboard-view">
-      <div class="actions-bar">
-        <button @click="openAddWorkoutModal(null)" class="action-button">
-          <span class="btn-icon">[+]</span> ADD_WORKOUT
-        </button>
-        <button @click="showLogWeightModal = true" class="action-button">
-          <span class="btn-icon">[W]</span> LOG_WEIGHT
-        </button>
-        <button @click="handleImportSys" class="action-button">
-          <span class="btn-icon">[I]</span> IMPORT_SYS
-        </button>
+      <div class="page-head">
+        <div>
+          <h1>Schedule</h1>
+          <p class="sub">Plan, drag to reschedule, and complete your sessions</p>
+        </div>
+        <div class="actions-bar">
+          <button @click="openAddWorkoutModal(null)" class="action-button primary">
+            <n-icon :component="AddOutline" /> Add workout
+          </button>
+          <button @click="showLogWeightModal = true" class="action-button">
+            <n-icon :component="BodyOutline" /> Log weight
+          </button>
+          <button @click="handleImportSys" class="action-button">
+            <n-icon :component="CloudUploadOutline" /> Import
+          </button>
+        </div>
       </div>
 
-      <div class="calendar-container glitch-alive">
+      <div class="calendar-container">
         <div class="calendar-header">
-          <button @click="previousMonth" class="nav-button">&lt;&lt; PREV</button>
-          <span class="month-display">{{ formattedCurrentMonth.toUpperCase() }}</span>
-          <button @click="nextMonth" class="nav-button">NEXT &gt;&gt;</button>
+          <button @click="previousMonth" class="nav-button" aria-label="Previous month"><n-icon :component="ChevronBackOutline" /></button>
+          <span class="month-display">{{ formattedCurrentMonth }}</span>
+          <button @click="nextMonth" class="nav-button" aria-label="Next month"><n-icon :component="ChevronForwardOutline" /></button>
         </div>
         <div class="calendar-grid days-header">
-          <div v-for="day in weekDays" :key="day" class="day-cell header">_{{ day.toUpperCase() }}</div>
+          <div v-for="day in weekDays" :key="day" class="day-cell header">{{ day }}</div>
         </div>
         <div class="calendar-grid">
           <div v-for="day in days" :key="day.date.toISOString()" 
@@ -38,20 +44,21 @@
             <div class="day-number">{{ day.dayOfMonth }}</div>
             <div class="events">
               <div v-for="goal in day.raceGoals" :key="goal.id" class="event-tag race-goal-tag">
-                <span class="prompt">!</span> [RACE] {{ goal.name.toUpperCase() }}
+                <n-icon :component="FlagOutline" /> {{ goal.name }}
               </div>
-              <div v-for="workout in day.workouts" :key="workout.id" 
-                   class="event-tag workout-tag" 
-                   :class="[getWorkoutClass(workout), { 'dragging': draggingWorkoutId === workout.id }]" 
+              <div v-for="workout in day.workouts" :key="workout.id"
+                   class="event-tag workout-tag"
+                   :class="[getWorkoutClass(workout), { 'dragging': draggingWorkoutId === workout.id }]"
                    :draggable="workout.isCompleted !== 1"
                    @dragstart="onDragStart($event, workout)"
                    @dragend="onDragEnd"
                    @click.stop="openDetailsModal(workout)">
-                <div class="workout-gradient-banner"></div>
-                <span class="prompt">></span> {{ workout.name.toUpperCase() }}
+                <div class="workout-banner"></div>
+                <n-icon v-if="workout.isCompleted === 1" class="done-check" :component="CheckmarkCircle" />
+                <span class="event-name">{{ workout.name }}</span>
               </div>
               <div v-for="weight in day.dailyWeights" :key="weight.id" class="event-tag weight-tag">
-                <span class="prompt">@</span> {{ weight.weight }} KG
+                <n-icon :component="BodyOutline" /> {{ weight.weight }} kg
               </div>
             </div>
           </div>
@@ -59,18 +66,18 @@
       </div>
       
       <!-- Add Workout Modal -->
-      <CustomModal v-model:show="showAddWorkoutModal" title="[+] NEW_WORKOUT_ENTRY">
+      <CustomModal v-model:show="showAddWorkoutModal" title="New workout">
         <div class="form-container">
           <div class="form-group">
-            <label for="workout-name">_NAME</label>
-            <input type="text" id="workout-name" v-model="newWorkout.name" placeholder="ENTER_WORKOUT_NAME" />
+            <label for="workout-name">Name</label>
+            <input type="text" id="workout-name" v-model="newWorkout.name" placeholder="e.g. Easy run" />
           </div>
           <div class="form-group">
-            <label for="workout-date">_DATE</label>
+            <label for="workout-date">Date</label>
             <input type="date" id="workout-date" v-model="newWorkout.date" />
           </div>
           <div class="form-group">
-            <label for="workout-type">_TYPE</label>
+            <label for="workout-type">Type</label>
             <select id="workout-type" v-model="newWorkout.type">
               <option>Running</option>
               <option>Gym</option>
@@ -79,61 +86,67 @@
               <option>Other</option>
             </select>
           </div>
-          <button @click="saveNewWorkout" class="action-button save-button" :disabled="isActionLoading">
-            <span v-if="!isActionLoading"><span class="btn-icon">[S]</span> SAVE_ENTRY</span>
-            <span v-else class="ascii-spinner">SAVING</span>
+          <button @click="saveNewWorkout" class="action-button primary save-button" :disabled="isActionLoading">
+            <span v-if="!isActionLoading">Save workout</span>
+            <span v-else class="ascii-spinner">Saving</span>
           </button>
         </div>
       </CustomModal>
 
       <!-- Log Weight Modal -->
-      <CustomModal v-model:show="showLogWeightModal" title="[W] LOG_BIOMETRICS">
+      <CustomModal v-model:show="showLogWeightModal" title="Log body weight">
         <div class="form-container">
           <div class="form-group">
-            <label for="weight-amount">_MASS_KG</label>
+            <label for="weight-amount">Weight (kg)</label>
             <input type="number" id="weight-amount" v-model="newWeight.weight" />
           </div>
           <div class="form-group">
-            <label for="weight-date">_DATE</label>
+            <label for="weight-date">Date</label>
             <input type="date" id="weight-date" v-model="newWeight.date" />
           </div>
-          <button @click="saveNewWeight" class="action-button save-button" :disabled="isActionLoading">
-            <span v-if="!isActionLoading"><span class="btn-icon">[S]</span> SAVE_WEIGHT</span>
-            <span v-else class="ascii-spinner">LOGGING</span>
+          <button @click="saveNewWeight" class="action-button primary save-button" :disabled="isActionLoading">
+            <span v-if="!isActionLoading">Save weight</span>
+            <span v-else class="ascii-spinner">Saving</span>
           </button>
         </div>
       </CustomModal>
 
       <!-- Details/Edit/Complete Workout Modal -->
-      <CustomModal v-if="selectedWorkout" v-model:show="showDetailsModal" :title="'[?] ' + modalTitle.toUpperCase()">
+      <CustomModal v-if="selectedWorkout" v-model:show="showDetailsModal" :title="modalTitle">
         <!-- View Mode -->
         <div v-if="modalMode === 'view'" class="details-view">
-          <h2 class="terminal-h2"><span class="prompt">></span> {{ selectedWorkout.name.toUpperCase() }}</h2>
-          <p>_DATE: {{ selectedWorkout.date }}</p>
-          <p>_TYPE: {{ selectedWorkout.type?.toUpperCase() || 'N/A' }}</p>
-          <p v-if="selectedWorkout.duration">_PLANNED_DUR: {{ selectedWorkout.duration }} MIN</p>
-          <p v-if="selectedWorkout.distance">_PLANNED_DIST: {{ selectedWorkout.distance }} KM</p>
-          
-          <div v-if="selectedWorkout.isCompleted">
-            <div class="terminal-divider">--------------------------------</div>
-            <p>_STATUS: [COMPLETED]</p>
-            <p v-if="selectedWorkout.actualDuration">_ACTUAL_DUR: {{ selectedWorkout.actualDuration }} MIN</p>
-            <p v-if="selectedWorkout.totalWeightLifted">_LOAD_MASS: {{ selectedWorkout.totalWeightLifted }} KG</p>
-            <p v-if="selectedWorkout.rpe">_RPE_INDEX: {{ selectedWorkout.rpe }}/10</p>
+          <h2 class="detail-title">{{ selectedWorkout.name }}</h2>
+          <dl class="detail-list">
+            <div><dt>Date</dt><dd>{{ selectedWorkout.date }}</dd></div>
+            <div><dt>Type</dt><dd>{{ selectedWorkout.type || 'N/A' }}</dd></div>
+            <div v-if="selectedWorkout.duration"><dt>Planned duration</dt><dd>{{ selectedWorkout.duration }} min</dd></div>
+            <div v-if="selectedWorkout.distance"><dt>Planned distance</dt><dd>{{ selectedWorkout.distance }} km</dd></div>
+          </dl>
+
+          <div v-if="selectedWorkout.isCompleted" class="detail-completed">
+            <span class="status-pill"><n-icon :component="CheckmarkCircle" /> Completed</span>
+            <dl class="detail-list">
+              <div v-if="selectedWorkout.actualDuration"><dt>Actual duration</dt><dd>{{ selectedWorkout.actualDuration }} min</dd></div>
+              <div v-if="selectedWorkout.totalWeightLifted"><dt>Load lifted</dt><dd>{{ selectedWorkout.totalWeightLifted }} kg</dd></div>
+              <div v-if="selectedWorkout.rpe"><dt>RPE</dt><dd>{{ selectedWorkout.rpe }}/10</dd></div>
+            </dl>
           </div>
 
-          <p v-if="selectedWorkout.notes">_LOG_NOTES: {{ selectedWorkout.notes }}</p>
-          
+          <p v-if="selectedWorkout.notes" class="detail-notes">{{ selectedWorkout.notes }}</p>
+
           <div class="modal-actions">
             <button @click="handleDeleteWorkout" class="action-button delete-button" :disabled="isActionLoading">
-              <span v-if="!isActionLoading"><span class="btn-icon">[X]</span> DELETE</span>
-              <span v-else class="ascii-spinner">DELETING</span>
+              <span v-if="!isActionLoading"><n-icon :component="TrashOutline" /> Delete</span>
+              <span v-else class="ascii-spinner">Deleting</span>
             </button>
             <button @click="modalMode = 'edit'" class="action-button">
-              <span class="btn-icon">[E]</span> EDIT
+              <n-icon :component="CreateOutline" /> Edit
             </button>
-            <button v-if="!selectedWorkout.isCompleted" @click="modalMode = 'complete'" class="action-button save-button">
-              <span class="btn-icon">[√]</span> COMPLETE
+            <button v-if="!selectedWorkout.isCompleted" @click="modalMode = 'complete'" class="action-button primary save-button">
+              <n-icon :component="CheckmarkOutline" /> Complete
+            </button>
+            <button v-else @click="goToDetails" class="action-button primary save-button">
+              <n-icon :component="MapOutline" /> View full details
             </button>
           </div>
         </div>
@@ -141,15 +154,15 @@
         <!-- Edit Mode -->
         <div v-else-if="modalMode === 'edit'" class="form-container">
           <div class="form-group">
-            <label>_NAME</label>
+            <label>Name</label>
             <input type="text" v-model="selectedWorkout.name" />
           </div>
           <div class="form-group">
-            <label>_DATE</label>
+            <label>Date</label>
             <input type="date" v-model="selectedWorkout.date" />
           </div>
           <div class="form-group">
-            <label>_TYPE</label>
+            <label>Type</label>
             <select v-model="selectedWorkout.type">
               <option>Running</option>
               <option>Gym</option>
@@ -159,73 +172,95 @@
             </select>
           </div>
           <div class="form-group">
-            <label>_PLANNED_DUR</label>
+            <label>Planned duration (min)</label>
             <input type="number" v-model="selectedWorkout.duration" />
           </div>
           <div class="form-group">
-            <label>_PLANNED_DIST</label>
+            <label>Planned distance (km)</label>
             <input type="number" v-model="selectedWorkout.distance" />
           </div>
           <div class="form-group">
-            <label>_NOTES</label>
+            <label>Notes</label>
             <textarea v-model="selectedWorkout.notes"></textarea>
           </div>
 
           <div class="modal-actions">
-            <button @click="modalMode = 'view'" class="action-button">
-              <span class="btn-icon">[C]</span> CANCEL
-            </button>
-            <button @click="handleUpdateWorkout" class="action-button save-button" :disabled="isActionLoading">
-              <span v-if="!isActionLoading"><span class="btn-icon">[S]</span> UPDATE_SYS</span>
-              <span v-else class="ascii-spinner">SYNCING</span>
+            <button @click="modalMode = 'view'" class="action-button">Cancel</button>
+            <button @click="handleUpdateWorkout" class="action-button primary save-button" :disabled="isActionLoading">
+              <span v-if="!isActionLoading">Save changes</span>
+              <span v-else class="ascii-spinner">Saving</span>
             </button>
           </div>
         </div>
 
         <!-- Complete Mode -->
         <div v-else-if="modalMode === 'complete'" class="form-container">
-          <div class="form-group">
-            <label>_ACTUAL_DUR_MIN</label>
+          <!-- Running / bike: link Strava as the source of truth -->
+          <template v-if="getWorkoutType(selectedWorkout) === 'running' || getWorkoutType(selectedWorkout) === 'bike'">
+            <div class="form-group">
+              <label for="strava-activity">Strava activity</label>
+              <select id="strava-activity" v-model="completionData.stravaActivityId" :disabled="isStravaLoading">
+                <option :value="undefined">-- {{ isStravaLoading ? 'Loading…' : 'Enter manually' }} --</option>
+                <option v-for="activity in stravaActivityOptions" :key="activity.value" :value="activity.value">
+                  {{ activity.label }}
+                </option>
+                <option v-if="!isStravaLoading && stravaActivityOptions.length === 0" disabled>
+                  -- No activities found --
+                </option>
+              </select>
+            </div>
+
+            <div v-if="stravaPreview" class="strava-preview">
+              <span class="sp-item"><span class="sp-num">{{ stravaPreview.distance }}</span> km</span>
+              <span class="sp-item"><span class="sp-num">{{ stravaPreview.duration }}</span> min</span>
+              <span class="sp-note">pulled from Strava</span>
+            </div>
+
+            <!-- Manual fallback when no Strava activity is linked -->
+            <template v-if="!completionData.stravaActivityId">
+              <div class="form-group">
+                <label>Actual distance (km)</label>
+                <input type="number" v-model="completionData.distance" />
+              </div>
+              <div class="form-group">
+                <label>Actual duration (min)</label>
+                <input type="number" v-model="completionData.actualDuration" />
+              </div>
+            </template>
+          </template>
+
+          <!-- Gym: load lifted is the only manual metric -->
+          <template v-else-if="getWorkoutType(selectedWorkout) === 'gym'">
+            <div class="form-group">
+              <label>Load lifted (kg)</label>
+              <input type="number" v-model="completionData.totalWeightLifted" />
+            </div>
+            <div class="form-group">
+              <label>Actual duration (min)</label>
+              <input type="number" v-model="completionData.actualDuration" />
+            </div>
+          </template>
+
+          <!-- Other -->
+          <div class="form-group" v-else>
+            <label>Actual duration (min)</label>
             <input type="number" v-model="completionData.actualDuration" />
           </div>
-          <div class="form-group" v-if="getWorkoutType(selectedWorkout) === 'gym'">
-            <label>_LOAD_MASS_KG</label>
-            <input type="number" v-model="completionData.totalWeightLifted" />
-          </div>
-          
-          <div class="form-group" v-if="getWorkoutType(selectedWorkout) === 'running' || getWorkoutType(selectedWorkout) === 'bike'">
-            <label for="strava-activity">_STRAVA_LINK</label>
-            <select id="strava-activity" v-model="completionData.stravaActivityId" :disabled="isStravaLoading">
-              <option :value="undefined">-- {{ isStravaLoading ? 'LOADING_DATA...' : 'NULL' }} --</option>
-              <option v-for="activity in stravaActivityOptions" :key="activity.value" :value="activity.value">
-                {{ activity.label }}
-              </option>
-              <option v-if="!isStravaLoading && stravaActivityOptions.length === 0" disabled>
-                -- NO_ACTIVITIES_FOUND --
-              </option>
-            </select>
-          </div>
 
-          <div class="form-group" v-if="(getWorkoutType(selectedWorkout) === 'running' || getWorkoutType(selectedWorkout) === 'bike') && !completionData.stravaActivityId">
-            <label>_ACTUAL_DIST_KM</label>
-            <input type="number" v-model="completionData.distance" />
-          </div>
           <div class="form-group">
-            <label>_RPE_INDEX</label>
+            <label>RPE (1–10)</label>
             <input type="number" min="1" max="10" v-model="completionData.rpe" />
           </div>
           <div class="form-group">
-            <label>_NOTES</label>
+            <label>Notes</label>
             <textarea v-model="completionData.notes"></textarea>
           </div>
 
           <div class="modal-actions">
-            <button @click="modalMode = 'view'" class="action-button">
-              <span class="btn-icon">[C]</span> CANCEL
-            </button>
-            <button @click="handleSaveCompletion" class="action-button save-button" :disabled="isActionLoading">
-              <span v-if="!isActionLoading"><span class="btn-icon">[S]</span> COMMIT_LOG</span>
-              <span v-else class="ascii-spinner">WRITING</span>
+            <button @click="modalMode = 'view'" class="action-button">Cancel</button>
+            <button @click="handleSaveCompletion" class="action-button primary save-button" :disabled="isActionLoading">
+              <span v-if="!isActionLoading">Save completion</span>
+              <span v-else class="ascii-spinner">Saving</span>
             </button>
           </div>
         </div>
@@ -238,7 +273,7 @@
         initial-delimiter=","
         :raw-file-content="importRawContent"
         import-type="workout"
-        csv-model-description="name,date(YYYY-MM-DD),type,duration(min),distance(km),notes,isCompleted(0 or 1)"
+        csv-model-description="name, date (YYYY-MM-DD), type, duration (min), distance (km), isCompleted (0/1), actualDuration (min), rpe, totalWeightLifted (kg), caloriesBurned, targetPace, notes"
         @confirm="onImportConfirm"
       />
     </div>
@@ -247,8 +282,15 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted, onActivated } from 'vue';
-import { useMessage } from 'naive-ui';
+import { useRouter } from 'vue-router';
+import { useMessage, NIcon } from 'naive-ui';
+import {
+  AddOutline, BodyOutline, CloudUploadOutline, ChevronBackOutline, ChevronForwardOutline,
+  FlagOutline, CheckmarkCircle, TrashOutline, CreateOutline, CheckmarkOutline, MapOutline,
+} from '@vicons/ionicons5';
 import { db } from '@/db';
+
+const router = useRouter();
 import { 
   format, 
   startOfMonth, 
@@ -262,7 +304,7 @@ import {
   parseISO
 } from 'date-fns';
 import { enUS } from 'date-fns/locale';
-import type { Workout, AddWorkoutPayload, DailyWeight, CompleteWorkoutFormValues, RaceGoal } from '../types';
+import type { Workout, AddWorkoutPayload, DailyWeight, CompleteWorkoutFormValues, RaceGoal, StravaActivity } from '../types';
 import CustomModal from '../components/CustomModal.vue';
 import ImportEditor from '../components/ImportEditor.vue';
 import { stravaApi } from '../stravaBridge';
@@ -335,52 +377,51 @@ async function onDrop(event: DragEvent, date: Date) {
 const showImportEditor = ref(false);
 const importRawContent = ref('');
 
-async function handleImportSys() {
-  if (!(window as any).ipcRenderer) {
-    message.error('IMPORT_ONLY_AVAILABLE_IN_DESKTOP_APP');
-    return;
-  }
-
-  try {
-    const { canceled, filePaths } = await (window as any).ipcRenderer.invoke('open-file-dialog');
-    if (canceled || filePaths.length === 0) return;
-
-    const result = await (window as any).ipcRenderer.invoke('read-file', filePaths[0]);
-    if (result.success) {
-      importRawContent.value = result.content;
-      showImportEditor.value = true;
-    } else {
-      message.error('FAILED_TO_READ_FILE: ' + result.error);
-    }
-  } catch (error) {
-    console.error('Import error:', error);
-    message.error('SYSTEM_ERROR_DURING_IMPORT');
-  }
+function handleImportSys() {
+  importRawContent.value = '';
+  showImportEditor.value = true;
 }
+
+// Coercion helpers keep the imported rows aligned with the DB workout model.
+const toNum = (v: any): number | undefined => {
+  if (v === undefined || v === null || String(v).trim() === '') return undefined;
+  const n = Number(v);
+  return isNaN(n) ? undefined : n;
+};
+const toStr = (v: any): string | undefined =>
+  v === undefined || v === null || String(v).trim() === '' ? undefined : String(v).trim();
 
 async function onImportConfirm(data: any[]) {
   isActionLoading.value = true;
   try {
     let successCount = 0;
+    let skipped = 0;
     for (const row of data) {
+      if (!row.name || !row.date) { skipped++; continue; }
       const workout: any = {
-        name: row.name,
-        date: row.date,
-        type: row.type || 'Other',
-        duration: row.duration ? Number(row.duration) : null,
-        distance: row.distance ? Number(row.distance) : null,
-        notes: row.notes || '',
-        isCompleted: row.isCompleted ? Number(row.isCompleted) : 0,
-        isDeleted: 0
+        name: String(row.name).trim(),
+        date: String(row.date).trim(),
+        type: toStr(row.type) || 'Other',
+        duration: toNum(row.duration),
+        distance: toNum(row.distance),
+        actualDuration: toNum(row.actualDuration),
+        rpe: toNum(row.rpe),
+        totalWeightLifted: toNum(row.totalWeightLifted),
+        caloriesBurned: toNum(row.caloriesBurned),
+        targetPace: toStr(row.targetPace),
+        gymType: toStr(row.gymType),
+        notes: toStr(row.notes) || '',
+        isCompleted: toNum(row.isCompleted) === 1 ? 1 : 0,
+        isDeleted: 0,
       };
       await db.addWorkout(workout);
       successCount++;
     }
-    message.success(`SUCCESSFULLY_IMPORTED_${successCount}_WORKOUTS`);
+    message.success(`Imported ${successCount} workout${successCount === 1 ? '' : 's'}${skipped ? ` (${skipped} skipped)` : ''}`);
     await loadWorkouts();
   } catch (error) {
     console.error('Import confirmation error:', error);
-    message.error('PARTIAL_IMPORT_ERROR_CHECK_DATABASE');
+    message.error('Some rows failed to import — check the data and try again.');
   } finally {
     isActionLoading.value = false;
     showImportEditor.value = false;
@@ -394,11 +435,24 @@ const selectedWorkout = ref<Workout | null>(null);
 const modalMode = ref<'view' | 'edit' | 'complete'>('view');
 const completionData = ref<Partial<CompleteWorkoutFormValues>>({});
 const stravaActivityOptions = ref<{ label: string; value: number; }[]>([]);
+const stravaActivities = ref<StravaActivity[]>([]);
+
+const selectedStravaActivity = computed(() =>
+  stravaActivities.value.find(a => String(a.id) === String(completionData.value.stravaActivityId)) || null
+);
+const stravaPreview = computed(() => {
+  const a = selectedStravaActivity.value;
+  if (!a) return null;
+  return {
+    distance: a.distance ? (a.distance / 1000).toFixed(2) : '0.00',
+    duration: a.moving_time ? Math.round(a.moving_time / 60) : 0,
+  };
+});
 
 const modalTitle = computed(() => {
-  if (modalMode.value === 'edit') return 'EDIT_WORKOUT';
-  if (modalMode.value === 'complete') return 'MARK_COMPLETED';
-  return 'WORKOUT_INFO';
+  if (modalMode.value === 'edit') return 'Edit workout';
+  if (modalMode.value === 'complete') return 'Complete workout';
+  return 'Workout details';
 });
 
 const isStravaLoading = ref(false);
@@ -418,8 +472,9 @@ async function loadStravaActivities() {
         console.log('Dashboard: Fetched Strava response:', activities);
         
         if (activities && Array.isArray(activities)) {
+            stravaActivities.value = activities;
             stravaActivityOptions.value = activities.map((act: any) => {
-                let dateStr = 'UNKNOWN_DATE';
+                let dateStr = 'unknown date';
                 try {
                     if (act.start_date_local) {
                         dateStr = format(parseISO(act.start_date_local), 'dd/MM/yy');
@@ -429,7 +484,7 @@ async function loadStravaActivities() {
                 }
                 const distKm = act.distance ? (act.distance / 1000).toFixed(2) : '0.00';
                 return {
-                    label: `${(act.name || 'UNNAMED_RUN').toUpperCase()} - ${dateStr} [${distKm}KM]`,
+                    label: `${act.name || 'Unnamed activity'} · ${dateStr} · ${distKm} km`,
                     value: act.id,
                 };
             });
@@ -449,6 +504,13 @@ async function loadStravaActivities() {
     } finally {
         isStravaLoading.value = false;
     }
+}
+
+function goToDetails() {
+  if (!selectedWorkout.value?.id) return;
+  const id = selectedWorkout.value.id;
+  showDetailsModal.value = false;
+  router.push(`/workout/${id}`);
 }
 
 function openDetailsModal(workout: Workout) {
@@ -485,7 +547,7 @@ async function handleUpdateWorkout() {
 
 async function handleDeleteWorkout() {
   if (!selectedWorkout.value || selectedWorkout.value.id === undefined) return;
-  if (confirm(`ARE_YOU_SURE_YOU_WANT_TO_PURGE_ENTRY: "${selectedWorkout.value.name.toUpperCase()}"?`)) {
+  if (confirm(`Delete "${selectedWorkout.value.name}"? This can't be undone.`)) {
     isActionLoading.value = true;
     try {
       await db.deleteWorkout(selectedWorkout.value.id);
@@ -507,9 +569,15 @@ async function handleSaveCompletion() {
       ...completionData.value
     };
 
+    // For Strava-linked runs/rides, the activity is the source of truth:
+    // pull actual distance (km) and moving time (min) straight from Strava.
     if (payload.stravaActivityId) {
       payload.stravaActivityId = String(payload.stravaActivityId);
-      delete payload.distance;
+      const act = selectedStravaActivity.value;
+      if (act) {
+        if (act.distance) payload.distance = Math.round((act.distance / 1000) * 100) / 100;
+        if (act.moving_time) payload.actualDuration = Math.round(act.moving_time / 60);
+      }
     }
 
     await db.completeWorkout(payload);
@@ -682,389 +750,146 @@ onActivated(() => { loadWorkouts(); loadDailyWeights(); loadRaceGoals(); });
 
 </script>
 
+
 <style scoped>
-.dashboard-view-wrapper {
-  height: 100%;
-}
+.dashboard-view-wrapper { height: 100%; }
+.dashboard-view { padding: 24px 28px 40px; max-width: 1100px; margin: 0 auto; width: 100%; box-sizing: border-box; color: var(--text-color); }
+@media (max-width: 768px) { .dashboard-view { padding: 16px 16px 32px; } }
 
-.dashboard-view {
-  padding: 16px;
-  color: var(--text-color);
-  font-family: var(--font-family);
-}
+.page-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; flex-wrap: wrap; margin-bottom: 22px; }
+.page-head h1 { font-size: 1.5rem; font-weight: 700; }
+.sub { margin: 4px 0 0; color: var(--text-secondary); font-size: 0.9rem; }
 
-.actions-bar {
-  display: flex;
-  gap: 12px;
-  margin-bottom: 20px;
-  flex-wrap: wrap;
-}
-
-@media (max-width: 768px) {
-  .actions-bar {
-    flex-direction: column;
-    gap: 8px;
-  }
-  .action-button {
-    width: 100%;
-    justify-content: center;
-  }
-}
+.actions-bar { display: flex; gap: 10px; flex-wrap: wrap; }
+@media (max-width: 600px) { .actions-bar { width: 100%; } .action-button { flex: 1; justify-content: center; } }
 
 .action-button {
-  background: #050505;
+  background: var(--surface-2);
   border: 1px solid var(--border-color);
   color: var(--text-color);
-  padding: 10px 16px;
+  padding: 9px 15px;
+  border-radius: var(--radius-sm);
   cursor: pointer;
   font-family: var(--font-family);
-  font-size: 0.8rem;
-  transition: all 0.2s;
-  display: flex;
+  font-size: 0.85rem;
+  font-weight: 500;
+  display: inline-flex;
   align-items: center;
+  gap: 7px;
+  transition: background 0.15s, border-color 0.15s;
 }
+.action-button:hover:not(:disabled) { background: var(--surface-hover); border-color: var(--border-strong); }
+.action-button .n-icon { font-size: 1.1rem; }
+.action-button.primary { background: var(--primary-color); border-color: var(--primary-color); color: #fff; }
+.action-button.primary:hover:not(:disabled) { background: var(--primary-strong); border-color: var(--primary-strong); }
 
-.action-button:hover {
-  border-color: var(--accent-color);
-  background-color: rgba(0, 179, 60, 0.05);
-  box-shadow: 0 0 10px var(--glow-color);
-}
+.calendar-container { border: 1px solid var(--border-color); background: var(--surface-color); border-radius: var(--radius); overflow: hidden; }
+.calendar-header { display: flex; justify-content: space-between; align-items: center; padding: 14px 16px; border-bottom: 1px solid var(--border-color); }
+.nav-button { background: var(--surface-2); border: 1px solid var(--border-color); color: var(--text-secondary); width: 34px; height: 34px; border-radius: var(--radius-sm); cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 1.1rem; transition: background 0.15s, color 0.15s; }
+.nav-button:hover { background: var(--surface-hover); color: var(--text-color); }
+.month-display { font-weight: 600; font-size: 1.1rem; color: var(--text-color); }
 
-.btn-icon {
-  margin-right: 8px;
-  color: var(--accent-color);
-  font-weight: bold;
-}
-
-.calendar-container {
-  border: 1px solid var(--border-color);
-  background-color: rgba(6, 8, 6, 0.8);
-  box-shadow: 0 0 15px rgba(0, 179, 60, 0.05);
-  border-radius: 4px;
-  overflow: hidden;
-}
-
-.calendar-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 12px;
-  background-color: #050505;
-  border-bottom: 1px solid var(--border-color);
-}
-
-.nav-button {
-  background: transparent;
-  border: 1px solid var(--border-color);
-  color: #008f11;
-  padding: 6px 12px;
-  cursor: pointer;
-  font-size: 0.7rem;
-  font-family: var(--font-family);
-  border-radius: 2px;
-}
-
-.nav-button:hover {
-  color: var(--accent-color);
-  border-color: var(--accent-color);
-}
-
-.month-display {
-  font-weight: bold;
-  font-size: 1.1rem;
-  color: var(--accent-color);
-  letter-spacing: 2px;
-  text-align: center;
-}
-
-.calendar-grid {
-  display: grid;
-  grid-template-columns: repeat(7, 1fr);
-}
-
-@media (max-width: 768px) {
-  .calendar-grid {
-    grid-template-columns: 1fr;
-  }
-  .days-header {
-    display: none;
-  }
-  .day-cell {
-    min-height: auto !important;
-    border-right: none !important;
-    border-bottom: 1px solid rgba(0, 179, 60, 0.1);
-    padding: 12px 8px !important;
-    flex-direction: row !important;
-    align-items: flex-start;
-    gap: 12px;
-  }
-  .day-number {
-    width: 30px;
-    align-self: flex-start !important;
-    margin-bottom: 0 !important;
-    font-size: 1rem !important;
-  }
-  .events {
-    width: 100%;
-  }
-}
-
-.days-header {
-  border-bottom: 1px solid rgba(0, 179, 60, 0.1);
-}
+.calendar-grid { display: grid; grid-template-columns: repeat(7, 1fr); }
+.days-header { border-bottom: 1px solid var(--border-color); }
+.day-cell.header { min-height: auto; text-align: center; font-weight: 600; padding: 10px 4px; cursor: default; color: var(--text-muted); font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.04em; }
 
 .day-cell {
-  min-height: 110px;
-  border-right: 1px solid rgba(0, 179, 60, 0.1);
-  border-top: 1px solid rgba(0, 179, 60, 0.1);
+  min-height: 112px;
+  border-right: 1px solid var(--border-color);
+  border-top: 1px solid var(--border-color);
   padding: 6px;
   display: flex;
   flex-direction: column;
   cursor: pointer;
-  background-color: rgba(6, 8, 6, 0.2);
-  transition: background-color 0.2s, border-color 0.2s, box-shadow 0.2s;
+  transition: background 0.15s, box-shadow 0.15s;
 }
+.day-cell:hover { background: var(--surface-2); }
+.day-cell.not-current-month { opacity: 0.4; }
+.day-number { font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 4px; font-weight: 500; }
+.day-cell.is-today { background: var(--primary-soft); }
+.is-today .day-number { color: var(--primary-color); font-weight: 700; }
+.day-cell.drag-over { background: var(--primary-soft); box-shadow: inset 0 0 0 2px var(--primary-color); }
 
-.day-cell:hover {
-  background-color: rgba(0, 179, 60, 0.03);
-}
-
-.day-cell.header {
-  min-height: auto;
-  text-align: center;
-  font-weight: bold;
-  padding: 10px 4px;
-  border-top: none;
-  cursor: default;
-  color: #008f11;
-  font-size: 0.75rem;
-}
-
-.day-cell.drag-over {
-  background-color: rgba(0, 179, 60, 0.1);
-  border: 1px solid var(--accent-color) !important;
-  box-shadow: inset 0 0 10px rgba(0, 179, 60, 0.2);
-  z-index: 10;
-}
-
-.day-cell.is-today {
-  background-color: rgba(0, 179, 60, 0.08);
-  border-color: rgba(0, 179, 60, 0.3);
-}
-
-.is-today .day-number {
-  color: #fff;
-  opacity: 1;
-  text-shadow: 0 0 8px var(--glow-color);
-}
-
-.day-cell.is-today:hover {
-  background-color: rgba(0, 179, 60, 0.12);
-}
-
+.events { display: flex; flex-direction: column; gap: 4px; }
 .event-tag {
-  padding: 4px 6px;
-  font-size: 0.65rem;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  border: 1px solid transparent;
-  position: relative;
-  padding-left: 14px;
-  transition: transform 0.1s, opacity 0.1s, box-shadow 0.1s;
+  font-size: 0.7rem; padding: 4px 7px; border-radius: 5px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  display: flex; align-items: center; gap: 5px; position: relative;
+  transition: transform 0.1s, opacity 0.1s;
+}
+.event-tag .n-icon { font-size: 0.85rem; flex-shrink: 0; }
+.event-name { overflow: hidden; text-overflow: ellipsis; }
+.workout-tag { padding-left: 11px; background: var(--surface-2); color: var(--text-color); cursor: grab; }
+.workout-banner { position: absolute; left: 0; top: 0; bottom: 0; width: 4px; border-radius: 5px 0 0 5px; background: var(--tag-color, var(--text-muted)); }
+.event-tag.dragging { opacity: 0.4; transform: scale(0.96); cursor: grabbing; }
+.done-check { color: var(--tag-color); }
+
+.workout-gym { --tag-color: var(--color-gym-primary); }
+.workout-running { --tag-color: var(--color-running-primary); }
+.workout-bike { --tag-color: var(--color-bike-primary); }
+.workout-rest { --tag-color: var(--color-rest-primary); }
+.workout-other { --tag-color: var(--color-other-primary); }
+
+.status-completed { background: color-mix(in srgb, var(--tag-color) 18%, transparent); }
+.status-completed .event-name { font-weight: 600; }
+
+.weight-tag { background: var(--success-soft); color: var(--success-color); }
+.race-goal-tag { background: var(--danger-soft); color: var(--danger-color); font-weight: 600; }
+
+@media (max-width: 768px) {
+  .calendar-grid { grid-template-columns: 1fr; }
+  .days-header { display: none; }
+  .day-cell { min-height: auto; border-right: none; flex-direction: row; align-items: flex-start; gap: 12px; padding: 12px 10px; }
+  .day-cell.not-current-month { display: none; }
+  .day-number { width: 28px; flex-shrink: 0; }
+  .events { width: 100%; }
 }
 
-.event-tag.dragging {
-  opacity: 0.4;
-  transform: scale(0.95);
-  cursor: grabbing;
-  box-shadow: 0 5px 15px rgba(0, 0, 0, 0.5);
-}
-
-.workout-gradient-banner {
-  position: absolute;
-  left: 0;
-  top: 0;
-  bottom: 0;
-  width: 6px;
-  background-image: linear-gradient(to bottom, var(--gradient-from), var(--gradient-to));
-}
-
-.workout-gym .workout-gradient-banner {
-  --gradient-from: var(--color-gym-primary);
-  --gradient-to: rgba(var(--color-gym-primary-rgb), 0.3);
-}
-
-.workout-running .workout-gradient-banner {
-  --gradient-from: var(--color-running-primary);
-  --gradient-to: rgba(var(--color-running-primary-rgb), 0.3);
-}
-
-.workout-bike .workout-gradient-banner {
-  --gradient-from: var(--color-bike-primary);
-  --gradient-to: rgba(var(--color-bike-primary-rgb), 0.3);
-}
-
-.workout-rest .workout-gradient-banner {
-  --gradient-from: var(--color-rest-primary);
-  --gradient-to: rgba(var(--color-rest-primary-rgb), 0.3);
-}
-
-.workout-other .workout-gradient-banner {
-  --gradient-from: var(--color-other-primary);
-  --gradient-to: rgba(var(--color-other-primary-rgb), 0.3);
-}
-
-
-.prompt {
-  color: var(--accent-color);
-  margin-right: 4px;
-}
-
-.workout-gym { border-color: var(--color-gym-primary); color: var(--color-gym-primary); }
-.workout-running { border-color: var(--color-running-primary); color: var(--color-running-primary); }
-.workout-bike { border-color: var(--color-bike-primary); color: var(--color-bike-primary); }
-.workout-rest { border-color: #757575; color: #757575; }.workout-other { border-color: var(--color-other-primary); color: var(--color-other-primary); }
-
-.status-completed {
-  background-color: rgba(0, 179, 60, 0.12);
-  font-weight: bold;
-  border-style: solid;
-  border-width: 1px;
-}
-
-.status-completed::before {
-  content: " DONE ";
-  font-size: 0.55rem;
-  color: #040604;
-  background-color: var(--accent-color);
-  padding: 0 4px;
-  margin-right: 6px;
-  border-radius: 2px;
-  font-weight: 900;
-  letter-spacing: 0.5px;
-}
-
-.status-completed .prompt {
-  display: none;
-}
-
-.nutrition-tag {
-  border-color: rgba(255, 179, 0, 0.3);
-  color: #ffb300;
-}
-
-.weight-tag {
-  border-color: rgba(76, 175, 80, 0.3);
-  color: #4caf50;
-}
-
-.race-goal-tag {
-  color: #ff3e3e;
-  border: 1px solid rgba(255, 62, 62, 0.4);
-  background: rgba(255, 62, 62, 0.05);
-  font-weight: bold;
-}
-
-/* Form Styling */
-.form-container {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-  padding: 10px 0;
-}
-
-.form-group {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-label {
-  font-weight: bold;
-  color: #008f11;
-  font-size: 0.7rem;
-  letter-spacing: 1px;
-}
-
+/* Forms */
+.form-container { display: flex; flex-direction: column; gap: 16px; padding: 6px 0; }
+.form-group { display: flex; flex-direction: column; gap: 6px; }
+label { font-weight: 500; color: var(--text-secondary); font-size: 0.8rem; }
 input, select, textarea {
-  background-color: #050505;
+  background: var(--surface-2);
   border: 1px solid var(--border-color);
-  color: var(--accent-color);
+  color: var(--text-color);
   font-family: var(--font-family);
-  padding: 10px;
-  font-size: 16px; /* Prevent zoom on mobile iOS */
+  padding: 10px 12px;
+  font-size: 16px;
+  border-radius: var(--radius-sm);
   outline: none;
+  transition: border-color 0.15s, box-shadow 0.15s;
 }
+@media (min-width: 769px) { input, select, textarea { font-size: 0.88rem; } }
+input:focus, select:focus, textarea:focus { border-color: var(--primary-color); box-shadow: 0 0 0 3px var(--primary-soft); }
+textarea { min-height: 70px; resize: vertical; }
 
-@media (min-width: 769px) {
-  input, select, textarea {
-    font-size: 0.8rem;
-  }
+.strava-preview {
+  display: flex; align-items: center; gap: 16px;
+  background: var(--surface-2); border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm); padding: 10px 14px; margin-top: -4px;
 }
+.sp-item { font-size: 0.9rem; color: var(--text-color); }
+.sp-num { font-family: var(--font-mono); font-weight: 700; font-size: 1.05rem; }
+.sp-note { margin-left: auto; font-size: 0.72rem; color: #fc5100; font-weight: 600; }
 
-input:focus, select:focus, textarea:focus {
-  border-color: var(--accent-color);
-  box-shadow: 0 0 5px var(--glow-color);
-}
+.save-button { margin-top: 6px; align-self: flex-end; }
+@media (max-width: 600px) { .save-button { width: 100%; justify-content: center; } }
 
-.save-button {
-  margin-top: 10px;
-  align-self: flex-end;
-  background-color: transparent;
-  color: var(--accent-color);
-  border-color: var(--accent-color);
-}
+/* Details view */
+.detail-title { font-size: 1.2rem; font-weight: 700; margin-bottom: 14px; }
+.detail-list { margin: 0; display: flex; flex-direction: column; gap: 8px; }
+.detail-list > div { display: flex; justify-content: space-between; gap: 12px; font-size: 0.88rem; }
+.detail-list dt { color: var(--text-secondary); margin: 0; }
+.detail-list dd { margin: 0; color: var(--text-color); font-weight: 500; }
+.detail-completed { margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--border-color); display: flex; flex-direction: column; gap: 12px; }
+.status-pill { align-self: flex-start; display: inline-flex; align-items: center; gap: 6px; background: var(--success-soft); color: var(--success-color); padding: 5px 12px; border-radius: 999px; font-size: 0.8rem; font-weight: 600; }
+.detail-notes { margin-top: 14px; color: var(--text-secondary); font-size: 0.88rem; background: var(--surface-2); padding: 10px 12px; border-radius: var(--radius-sm); }
 
-@media (max-width: 768px) {
-  .save-button {
-    width: 100%;
-  }
-}
+.modal-actions { margin-top: 22px; display: flex; justify-content: flex-end; gap: 10px; flex-wrap: wrap; }
+@media (max-width: 600px) { .modal-actions { flex-direction: column-reverse; } .modal-actions .action-button { width: 100%; justify-content: center; } }
+.delete-button { border-color: var(--danger-soft); color: var(--danger-color); margin-right: auto; }
+.delete-button:hover:not(:disabled) { background: var(--danger-color); border-color: var(--danger-color); color: #fff; }
 
-.save-button:hover:not(:disabled) {
-  background-color: var(--accent-color);
-  color: #050505;
-}
-
-.terminal-divider {
-  color: var(--border-color);
-  margin: 15px 0;
-  opacity: 0.5;
-}
-
-.terminal-h2 {
-  color: var(--accent-color);
-  margin-bottom: 15px;
-  font-size: 1rem;
-}
-
-.modal-actions {
-  margin-top: 24px;
-  display: flex;
-  justify-content: flex-end;
-  gap: 12px;
-}
-
-@media (max-width: 768px) {
-  .modal-actions {
-    flex-direction: column;
-  }
-}
-
-.delete-button {
-  border-color: #800000;
-  color: #ff4d4d;
-}
-
-.delete-button:hover:not(:disabled) {
-  background-color: #ff4d4d;
-  color: #050505;
-  border-color: #ff4d4d;
-}
-
-button:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
+button:disabled { opacity: 0.5; cursor: not-allowed; }
 </style>

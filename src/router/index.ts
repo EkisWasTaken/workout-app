@@ -1,20 +1,15 @@
 import { createRouter, createWebHashHistory } from "vue-router";
-import LandingView from "@/views/LandingView.vue";
+import HomeView from "@/views/HomeView.vue";
 
 const routes = [
 	{
 		path: "/",
-		name: "Landing",
-		component: LandingView,
+		name: "Home",
+		component: HomeView,
 	},
 	{
-		path: "/overview",
-		name: "Overview",
-		component: () => import("@/views/OverviewView.vue"),
-	},
-	{
-		path: "/dashboard",
-		name: "Dashboard",
+		path: "/schedule",
+		name: "Schedule",
 		component: () => import("@/views/DashboardView.vue"),
 	},
 	{
@@ -37,6 +32,10 @@ const routes = [
 		name: "Exercises",
 		component: () => import("@/views/ExercisesView.vue"),
 	},
+	// Legacy redirects
+	{ path: "/overview", redirect: "/" },
+	{ path: "/progress", redirect: "/" },
+	{ path: "/dashboard", redirect: "/schedule" },
 ];
 
 const router = createRouter({

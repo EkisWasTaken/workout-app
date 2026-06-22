@@ -1,58 +1,50 @@
 <template>
 	<div class="profile-view-wrapper">
 		<div class="profile-content">
-			<typewriter-header text="SYSTEM_USER_PROFILE" tag="h1" />
-			
+			<h1 class="page-title">Profile &amp; settings</h1>
+
 			<n-space vertical size="large" style="width: 100%">
 				<!-- Settings Card -->
-				<n-card bordered class="terminal-card">
-					<template #header>
-						<typewriter-header text="_PREFERENCES" tag="span" :delay="300" :speed="30" />
-					</template>
+				<n-card bordered class="settings-card">
+					<template #header><span class="card-title">Preferences</span></template>
 					<n-space vertical>
-						<n-form-item label="USER_IDENTIFIER">
-							<n-input v-model:value="userName" placeholder="ENTER_ID" class="terminal-input" />
+						<n-form-item label="Your name">
+							<n-input v-model:value="userName" placeholder="Enter your name" />
 						</n-form-item>
-						<n-form-item label="GOAL_BODY_MASS_KG">
-							<n-input v-model:value="goalWeight" type="text" placeholder="ENTER_GOAL_VALUE (e.g. 75.5)" class="terminal-input" />
+						<n-form-item label="Goal body weight (kg)">
+							<n-input v-model:value="goalWeight" type="text" placeholder="e.g. 75.5" />
 						</n-form-item>
-						<n-button @click="saveProfile" class="terminal-button">
-							<span class="btn-icon">[S]</span> COMMIT_PROFILE_DATA
-						</n-button>
+						<n-button @click="saveProfile" type="primary">Save profile</n-button>
 					</n-space>
 				</n-card>
 
 				<!-- Integrations Card -->
-				<n-card bordered class="terminal-card">
-					<template #header>
-						<typewriter-header text="_EXTERNAL_UPLINKS" tag="span" :delay="600" :speed="30" />
-					</template>
+				<n-card bordered class="settings-card">
+					<template #header><span class="card-title">Integrations</span></template>
 					<n-spin :show="connectingToStrava">
 						<n-space vertical>
 							<div class="uplink-item">
 								<div class="uplink-header">
 									<div class="uplink-info">
-										<span class="prompt">></span> STRAVA_V3_API_UPLINK
+										<n-icon color="#fc5100" :component="Strava" /> Strava
 									</div>
-									<n-tag :type="isStravaConnected ? 'success' : 'error'" class="terminal-tag">
-										{{ isStravaConnected ? "LINK_ACTIVE" : "LINK_OFFLINE" }}
+									<n-tag :type="isStravaConnected ? 'success' : 'error'" round>
+										{{ isStravaConnected ? "Connected" : "Not connected" }}
 									</n-tag>
 								</div>
-								
+
 								<div class="strava-button-line-tag-group">
-									<n-button 
-										@click="handleConnectToStrava" 
-										class="terminal-button"
+									<n-button
+										@click="handleConnectToStrava"
 										:type="isStravaConnected ? 'default' : 'primary'"
 									>
 										<template #icon>
 											<n-icon color="#fc5100" :component="Strava" />
 										</template>
-										{{ isStravaConnected ? "RE-ESTABLISH_LINK" : "ESTABLISH_NEW_LINK" }}
+										{{ isStravaConnected ? "Reconnect" : "Connect Strava" }}
 									</n-button>
-									<div class="horizontal-gap-line" :class="{ 'horizontal-gap-line--active': isStravaConnected }"></div>
 									<div class="status-text" :class="{ 'text-success': isStravaConnected }">
-										{{ isStravaConnected ? "[ONLINE_SYNC_READY]" : "[AWAITING_AUTH]" }}
+										{{ isStravaConnected ? "Sync ready" : "Awaiting authorization" }}
 									</div>
 								</div>
 							</div>
@@ -61,83 +53,72 @@
 				</n-card>
 
 				<!-- Visual Config Card -->
-				<n-card bordered class="terminal-card">
-					<template #header>
-						<typewriter-header text="_INTERFACE_COLORS" tag="span" :delay="900" :speed="30" />
-					</template>
+				<n-card bordered class="settings-card">
+					<template #header><span class="card-title">Sport colors</span></template>
 					<n-space vertical v-if="Object.keys(workoutTypeColors).length > 0">
 						<n-grid :cols="2" :x-gap="20" :y-gap="12">
 							<n-gi v-for="type in workoutTypes" :key="type">
 								<div class="color-picker-item">
-									<span class="color-label">{{ type.toUpperCase() }}</span>
-									<n-color-picker 
-										v-model:value="workoutTypeColors[type]" 
+									<span class="color-label">{{ type }}</span>
+									<n-color-picker
+										v-model:value="workoutTypeColors[type]"
 										:modes="['hex']"
-										:show-alpha="false" 
-										class="terminal-color-picker"
+										:show-alpha="false"
 									/>
 								</div>
 							</n-gi>
 						</n-grid>
-						<n-button @click="saveWorkoutTypeColors" class="terminal-button">
-							<span class="btn-icon">[U]</span> SYNC_INTERFACE_COLORS
-						</n-button>
+						<n-button @click="saveWorkoutTypeColors" type="primary">Save colors</n-button>
 					</n-space>
-					<div v-else class="ascii-spinner">INITIALIZING_DATA</div>
+					<div v-else class="ascii-spinner">Loading</div>
 				</n-card>
 
 				<!-- Race Goals Card -->
-				<n-card bordered class="terminal-card">
-					<template #header>
-						<typewriter-header text="_RACE_GOALS" tag="span" :delay="1200" :speed="30" />
-					</template>
+				<n-card bordered class="settings-card">
+					<template #header><span class="card-title">Race goals</span></template>
 					<n-space vertical>
 						<n-form :model="newRaceGoal" inline @submit.prevent="addRaceGoal">
-							<n-form-item label="EVENT_NAME">
-								<n-input v-model:value="newRaceGoal.name" placeholder="RACE_NAME" class="terminal-input" />
+							<n-form-item label="Event name">
+								<n-input v-model:value="newRaceGoal.name" placeholder="e.g. Oslo Marathon" />
 							</n-form-item>
-							<n-form-item label="EVENT_DATE">
-								<input v-model="newRaceGoal.date" type="date" class="terminal-date-input" />
+							<n-form-item label="Date">
+								<input v-model="newRaceGoal.date" type="date" class="date-input" />
 							</n-form-item>
 							<n-form-item>
-								<n-button @click="addRaceGoal" class="terminal-button" :disabled="!newRaceGoal.name || !newRaceGoal.date">
-									<span class="btn-icon">[+]</span> ADD_GOAL
+								<n-button @click="addRaceGoal" type="primary" :disabled="!newRaceGoal.name || !newRaceGoal.date">
+									Add goal
 								</n-button>
 							</n-form-item>
 						</n-form>
-						
+
 						<div v-if="raceGoals.length > 0" class="race-goals-list">
 							<div v-for="goal in raceGoals" :key="goal.id" class="race-goal-item">
 								<div class="race-goal-info">
-									<span class="prompt">></span> {{ goal.name.toUpperCase() }} ({{ goal.date }})
+									<n-icon :component="FlagOutline" /> {{ goal.name }} <span class="goal-date">{{ goal.date }}</span>
 								</div>
-								<n-button @click="deleteRaceGoal(goal.id)" size="small" type="error" ghost class="terminal-button-delete">
-									[DELETE]
+								<n-button @click="deleteRaceGoal(goal.id)" size="small" type="error" ghost>
+									Delete
 								</n-button>
 							</div>
 						</div>
-						<div v-else class="status-text">[NO_ACTIVE_RACE_GOALS]</div>
+						<div v-else class="status-text">No race goals yet.</div>
 					</n-space>
 				</n-card>
 
 				<!-- Migration Card (Only visible in Electron) -->
-				<n-card v-if="isElectronApp" bordered class="terminal-card migration-card">
-					<template #header>
-						<typewriter-header text="_CLOUD_MIGRATION" tag="span" :delay="1200" :speed="30" />
-					</template>
+				<n-card v-if="isElectronApp" bordered class="settings-card">
+					<template #header><span class="card-title">Cloud sync</span></template>
 					<n-space vertical>
 						<n-text depth="3" class="migration-note">
-							Detected local SQLite data. Push local records to your Supabase cloud instance.
-							This will merge your local workouts, weights, and settings into the cloud.
+							Detected local data. Push your local workouts, weights, and settings to your Supabase cloud instance.
 						</n-text>
-						<n-button 
-							@click="migrateDataToCloud" 
+						<n-button
+							@click="migrateDataToCloud"
 							:loading="migrating"
-							class="terminal-button migration-btn"
 							type="warning"
 							ghost
 						>
-							<span class="btn-icon">[M]</span> START_MIGRATION_SEQUENCE
+							Migrate data to cloud
 						</n-button>
 						<div v-if="migrationStatus" class="migration-log">
 							{{ migrationStatus }}
@@ -168,11 +149,11 @@ import {
 	NForm,
 } from "naive-ui";
 import { Strava } from "@vicons/fa";
+import { FlagOutline } from "@vicons/ionicons5";
 import { db } from "@/db";
 import { supabase } from "@/supabase";
 import { stravaApi } from "@/stravaBridge";
 import type { RaceGoal, AddRaceGoalPayload } from "@/types";
-import TypewriterHeader from "../components/TypewriterHeader.vue";
 
 const message = useMessage();
 const userName = ref("");
@@ -410,159 +391,49 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
-.profile-view-wrapper {
-	width: 100%;
-	min-height: 100%;
-	display: flex;
-	flex-direction: column;
-}
+.profile-view-wrapper { width: 100%; min-height: 100%; }
+.profile-content { padding: 24px 28px 40px; max-width: 760px; margin: 0 auto; width: 100%; box-sizing: border-box; }
+@media (max-width: 768px) { .profile-content { padding: 16px 16px 32px; } }
 
-.profile-content {
-	padding: 24px;
-	width: 100%;
-	box-sizing: border-box;
-}
+.page-title { font-size: 1.5rem; font-weight: 700; margin-bottom: 20px; }
+.card-title { font-size: 1rem; font-weight: 600; color: var(--text-color); }
 
-.terminal-card {
-	background-color: rgba(6, 8, 6, 0.7) !important;
-	border: 1px solid var(--border-color) !important;
-	border-radius: 4px !important;
-}
+.settings-card { border-radius: var(--radius) !important; }
 
-.terminal-button {
-	background: transparent !important;
-	border: 1px solid var(--accent-color) !important;
-	color: var(--accent-color) !important;
-	font-family: var(--font-family);
-	border-radius: 2px !important;
-}
-
-.terminal-button:hover:not(:disabled) {
-	background: var(--accent-color) !important;
-	color: #040604 !important;
-	box-shadow: 0 0 15px var(--glow-color);
-}
-
-.uplink-item {
-	display: flex;
-	flex-direction: column;
-	gap: 16px;
-}
-
-.uplink-header {
-	display: flex;
-	justify-content: space-between;
-	align-items: center;
-}
-
-.uplink-info {
-	font-weight: bold;
-	color: var(--accent-color);
-	letter-spacing: 1px;
-}
-
-.strava-button-line-tag-group {
-	display: flex;
-	align-items: center;
-	gap: 12px;
-}
-
-.horizontal-gap-line {
-	width: 40px;
-	height: 1px;
-	background-color: var(--border-color);
-	opacity: 0.3;
-}
-
-.horizontal-gap-line--active {
-	background-color: var(--accent-color);
-	opacity: 1;
-	box-shadow: 0 0 5px var(--accent-color);
-}
-
-.status-text {
-	font-size: 0.7rem;
-	color: #800000;
-	font-weight: bold;
-}
-
-.text-success {
-	color: var(--accent-color);
-}
+.uplink-item { display: flex; flex-direction: column; gap: 16px; }
+.uplink-header { display: flex; justify-content: space-between; align-items: center; }
+.uplink-info { display: flex; align-items: center; gap: 8px; font-weight: 600; color: var(--text-color); }
+.strava-button-line-tag-group { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+.status-text { font-size: 0.8rem; color: var(--text-muted); }
+.text-success { color: var(--success-color); }
 
 .color-picker-item {
-	display: flex;
-	justify-content: space-between;
-	align-items: center;
-	padding: 10px;
-	border: 1px solid rgba(0, 179, 60, 0.1);
-	background: rgba(0, 0, 0, 0.3);
-	border-radius: 4px;
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 10px 12px; border: 1px solid var(--border-color);
+  background: var(--surface-2); border-radius: var(--radius-sm);
 }
+.color-label { font-size: 0.82rem; color: var(--text-secondary); text-transform: capitalize; }
 
-.color-label {
-	font-size: 0.75rem;
-	color: #008f11;
-}
-
-.terminal-tag {
-	background: transparent !important;
-	border: 1px solid currentColor !important;
-	border-radius: 2px !important;
-}
-
-.btn-icon {
-	margin-right: 8px;
-	font-weight: bold;
-}
-
-.prompt {
-	color: var(--accent-color);
-	margin-right: 8px;
-}
-
-.race-goals-list {
-	margin-top: 15px;
-	display: flex;
-	flex-direction: column;
-	gap: 10px;
-}
-
+.race-goals-list { margin-top: 12px; display: flex; flex-direction: column; gap: 8px; }
 .race-goal-item {
-	display: flex;
-	justify-content: space-between;
-	align-items: center;
-	padding: 8px 12px;
-	background: rgba(0, 179, 60, 0.05);
-	border: 1px solid rgba(0, 179, 60, 0.2);
-	border-radius: 4px;
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 10px 14px; background: var(--surface-2);
+  border: 1px solid var(--border-color); border-radius: var(--radius-sm);
 }
+.race-goal-info { display: flex; align-items: center; gap: 8px; font-size: 0.9rem; color: var(--text-color); }
+.goal-date { color: var(--text-muted); font-size: 0.82rem; }
 
-.race-goal-info {
-	font-family: 'Courier New', Courier, monospace;
-	font-size: 0.85rem;
-	color: #fff;
+.date-input {
+  background: var(--surface-2); border: 1px solid var(--border-color);
+  color: var(--text-color); padding: 7px 10px; font-family: var(--font-family);
+  border-radius: var(--radius-sm); outline: none;
 }
+.date-input:focus { border-color: var(--primary-color); box-shadow: 0 0 0 3px var(--primary-soft); }
 
-.terminal-button-delete {
-	font-size: 0.7rem !important;
-}
-
-.terminal-input {
-	background: rgba(0, 0, 0, 0.3) !important;
-}
-
-.terminal-date-input {
-	background: rgba(0, 0, 0, 0.3);
-	border: 1px solid var(--border-color);
-	color: var(--accent-color);
-	padding: 5px 10px;
-	font-family: var(--font-family);
-	outline: none;
-}
-
-.terminal-date-input:focus {
-	border-color: var(--accent-color);
-	box-shadow: 0 0 5px var(--glow-color);
+.migration-note { font-size: 0.88rem; }
+.migration-log {
+  margin-top: 6px; font-family: var(--font-mono); font-size: 0.78rem;
+  color: var(--text-secondary); background: var(--surface-2);
+  padding: 10px 12px; border-radius: var(--radius-sm);
 }
 </style>

@@ -1,7 +1,7 @@
 import { createApp } from 'vue'
 import './style.css'
 import 'leaflet/dist/leaflet.css'
-import './styles/terminal.css'
+import './styles/app.css'
 import App from './App.vue'
 import router from './router'
 

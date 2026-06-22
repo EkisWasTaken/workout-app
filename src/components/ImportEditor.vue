@@ -1,52 +1,70 @@
 <template>
-	<n-modal v-model:show="showModal" preset="card" :title="`Import ${importType === 'workout' ? 'Workouts' : 'Nutrition'}`" style="width: 800px;">
-		<n-space vertical>
-			<n-alert type="info" :show-icon="false">
-				Review and edit your {{ importType }} data before importing.
-			</n-alert>
-
-			<div>
-				<n-text depth="3">Source:</n-text>
-				<n-radio-group v-model:value="sourceMode" size="small">
-					<n-radio-button value="file" :disabled="!rawFileContent">File Content</n-radio-button>
-					<n-radio-button value="paste">Paste Text</n-radio-button>
-				</n-radio-group>
+	<n-modal v-model:show="showModal" preset="card"
+		:title="`Import ${importType === 'workout' ? 'workouts' : 'nutrition'}`"
+		style="width: 860px; max-width: 96vw;">
+		<n-space vertical size="large">
+			<!-- Source: drop a file or paste -->
+			<div class="import-sources">
+				<div class="dropzone" :class="{ dragging: isDragging }"
+					@click="fileInput?.click()"
+					@dragover.prevent="isDragging = true"
+					@dragleave.prevent="isDragging = false"
+					@drop.prevent="onDrop">
+					<input ref="fileInput" type="file" accept=".csv,.txt,text/csv" style="display: none" @change="onFileChange" />
+					<n-icon :component="CloudUploadOutline" class="dz-icon" />
+					<div v-if="!fileName" class="dz-text"><strong>Drop a CSV file</strong> or click to browse</div>
+					<div v-else class="file-chip" @click.stop>
+						<n-icon :component="DocumentTextOutline" /> {{ fileName }}
+						<button class="chip-x" @click="clearFile" aria-label="Remove file">✕</button>
+					</div>
+				</div>
+				<div class="paste-divider"><span>or paste rows</span></div>
+				<n-input v-model:value="rawPastedText" type="textarea" :rows="3"
+					:disabled="!!fileName" placeholder="Paste CSV/TSV rows here (including the header line)…" />
 			</div>
 
-			<div v-if="sourceMode === 'paste'">
-				<n-input v-model:value="rawPastedText" type="textarea" :rows="5"
-					placeholder="Paste your CSV data here..." />
-			</div>
-			<div v-if="sourceMode === 'file'">
-				<n-input :value="rawFileContent" type="textarea" :rows="5" readonly
-					placeholder="File content will appear here..." />
-			</div>
-
-			<n-alert v-if="sourceMode === 'paste' && props.csvModelDescription" title="CSV Format Guide" type="info">
-				<n-space vertical>
-					<n-code :code="props.csvModelDescription" language="csv" :word-wrap="true" />
-					<n-button @click="handleCopyCsvFormat" size="small" type="primary">Copy Format</n-button>
+			<!-- Controls -->
+			<div class="import-toolbar">
+				<div class="delim">
+					<span class="lbl">Delimiter</span>
+					<n-radio-group v-model:value="selectedDelimiter" size="small">
+						<n-radio-button value=",">,</n-radio-button>
+						<n-radio-button value=";">;</n-radio-button>
+						<n-radio-button value="\t">Tab</n-radio-button>
+						<n-radio-button value="|">|</n-radio-button>
+					</n-radio-group>
+				</div>
+				<n-space size="small">
+					<n-button v-if="importType === 'workout'" size="small" @click="downloadTemplate">
+						<template #icon><n-icon :component="DownloadOutline" /></template>
+						Template
+					</n-button>
+					<n-button size="small" @click="addEmptyRow">
+						<template #icon><n-icon :component="AddOutline" /></template>
+						Add row
+					</n-button>
 				</n-space>
-			</n-alert>
-
-			<div>
-				<n-text depth="3">Delimiter:</n-text>
-				<n-radio-group v-model:value="selectedDelimiter" size="small">
-					<n-radio-button value=",">,</n-radio-button>
-					<n-radio-button value=";">;</n-radio-button>
-					<n-radio-button value="\t">Tab</n-radio-button>
-					<n-radio-button value="|">|</n-radio-button>
-				</n-radio-group>
 			</div>
 
-			<!-- Table to display and edit data will go here -->
-			<n-data-table :columns="columns" :data="editableData" :pagination="false" :max-height="400"
-				:scroll-x="1800" />
+			<n-alert v-if="csvModelDescription" type="default" :show-icon="false">
+				<span class="fmt-label">Columns:</span> <code class="fmt-code">{{ csvModelDescription }}</code>
+			</n-alert>
 
-			<n-space justify="end">
-				<n-button @click="cancelImport">Cancel</n-button>
-				<n-button type="primary" @click="confirmImport" :disabled="hasErrors">Import Selected</n-button>
-			</n-space>
+			<n-data-table :columns="columns" :data="editableData" :pagination="false"
+				:max-height="360" :scroll-x="1900" size="small"
+				:row-key="(r: DataRow) => r.id" />
+
+			<div class="import-footer">
+				<span class="row-count" :class="{ err: hasErrors }">
+					{{ editableData.length }} row{{ editableData.length === 1 ? '' : 's' }}<template v-if="hasErrors"> · fix highlighted cells to import</template>
+				</span>
+				<n-space>
+					<n-button @click="cancelImport">Cancel</n-button>
+					<n-button type="primary" @click="confirmImport" :disabled="hasErrors || editableData.length === 0">
+						Import {{ editableData.length || '' }}
+					</n-button>
+				</n-space>
+			</div>
 		</n-space>
 	</n-modal>
 </template>
@@ -54,13 +72,12 @@
 <script setup lang="ts">
 import { ref, watch, h, computed } from 'vue'
 import {
-	NModal, NSpace, NButton, NAlert, NRadioGroup, NRadioButton, NDataTable, NInput, NText, NTooltip, NCode, useMessage
+	NModal, NSpace, NButton, NAlert, NRadioGroup, NRadioButton, NDataTable, NInput, NTooltip, NIcon
 } from 'naive-ui'
 import type { DataTableColumns } from 'naive-ui'
+import { CloudUploadOutline, DocumentTextOutline, DownloadOutline, AddOutline } from '@vicons/ionicons5'
 import Papa from 'papaparse'
 import type { ParseResult } from 'papaparse';
-
-const message = useMessage(); // Add useMessage hook
 
 interface DataRow {
 	[key: string]: string | number | undefined;
@@ -97,20 +114,48 @@ const props = defineProps({
 const emit = defineEmits(['update:show', 'confirm', 'cancel']);
 
 const showModal = ref(props.show);
-const selectedDelimiter = ref(props.initialDelimiter);
+const selectedDelimiter = ref(props.initialDelimiter || ',');
 const editableData = ref<DataRow[]>([]);
 const validationErrors = ref<Record<number, Record<string, string>>>({});
-const hasErrors = computed(() => {
-  const errorsExist = Object.keys(validationErrors.value).length > 0;
-  return errorsExist;
-});
+const hasErrors = computed(() => Object.keys(validationErrors.value).length > 0);
 
 const rawPastedText = ref('');
-const sourceMode = ref<'file' | 'paste'>(props.rawFileContent ? 'file' : 'paste'); // Default based on rawFileContent
+const localFileContent = ref('');
+const fileName = ref('');
+const isDragging = ref(false);
+const fileInput = ref<HTMLInputElement | null>(null);
 
-const currentRawContent = computed(() => {
-	return sourceMode.value === 'file' ? props.rawFileContent : rawPastedText.value;
-});
+// A loaded file (dropped/browsed, or provided by the parent) takes precedence over pasted text.
+const currentRawContent = computed(() =>
+	localFileContent.value || props.rawFileContent || rawPastedText.value
+);
+
+const readFile = (file: File) => {
+	if (!file) return;
+	const reader = new FileReader();
+	reader.onload = () => {
+		localFileContent.value = String(reader.result || '');
+		fileName.value = file.name;
+	};
+	reader.readAsText(file);
+};
+
+const onFileChange = (e: Event) => {
+	const file = (e.target as HTMLInputElement).files?.[0];
+	if (file) readFile(file);
+};
+
+const onDrop = (e: DragEvent) => {
+	isDragging.value = false;
+	const file = e.dataTransfer?.files?.[0];
+	if (file) readFile(file);
+};
+
+const clearFile = () => {
+	localFileContent.value = '';
+	fileName.value = '';
+	if (fileInput.value) fileInput.value.value = '';
+};
 
 const parseContent = (content: string) => {
 	if (!content) {
@@ -121,12 +166,9 @@ const parseContent = (content: string) => {
 		header: true,
 		skipEmptyLines: true,
 		delimiter: selectedDelimiter.value,
+		transformHeader: (h: string) => h.trim(),
 		complete: (results: ParseResult<any>) => {
-			console.log('PapaParse results.data:', results.data);
-			if (results.errors.length) {
-				// Handle errors, maybe display them to the user
-				console.error("Parsing errors:", results.errors);
-			}
+			if (results.errors.length) console.error('Parsing errors:', results.errors);
 			initializeEditableData(results.data);
 			validateAllRows();
 		}
@@ -136,24 +178,39 @@ const parseContent = (content: string) => {
 watch(() => props.show, (newVal) => {
 	showModal.value = newVal;
 	if (newVal) {
-		// When modal opens, re-initialize data
-		rawPastedText.value = ''; // Clear pasted text on open
-		sourceMode.value = props.rawFileContent ? 'file' : 'paste';
-		parseContent(currentRawContent.value); // Initial parse
+		rawPastedText.value = '';
+		localFileContent.value = '';
+		fileName.value = '';
+		parseContent(currentRawContent.value);
 	}
 });
 
-watch(showModal, (newVal) => {
-	emit('update:show', newVal);
-});
+watch(showModal, (newVal) => emit('update:show', newVal));
 
-watch([currentRawContent, selectedDelimiter, sourceMode], () => {
-	parseContent(currentRawContent.value);
-});
+watch([currentRawContent, selectedDelimiter], () => parseContent(currentRawContent.value));
 
-watch(editableData, () => {
-	validateAllRows();
-}, { deep: true });
+watch(editableData, () => validateAllRows(), { deep: true });
+
+const addEmptyRow = () => {
+	editableData.value.push({ id: Date.now() + editableData.value.length } as DataRow);
+};
+
+const downloadTemplate = () => {
+	const keys = workoutColumns.map(c => String((c as any).key));
+	const example: Record<string, string> = {
+		name: 'Easy run', date: '2026-06-22', type: 'running', duration: '45', distance: '8',
+		isCompleted: '1', actualDuration: '44', rpe: '5', totalWeightLifted: '', caloriesBurned: '',
+		targetPace: '5:30/km', gymType: '', notes: 'Felt good',
+	};
+	const csv = `${keys.join(',')}\n${keys.map(k => example[k] ?? '').join(',')}\n`;
+	const blob = new Blob([csv], { type: 'text/csv' });
+	const url = URL.createObjectURL(blob);
+	const a = document.createElement('a');
+	a.href = url;
+	a.download = 'workout-import-template.csv';
+	a.click();
+	URL.revokeObjectURL(url);
+};
 
 const validateWorkoutRow = (row: DataRow): Record<string, string> => {
 	const errors: Record<string, string> = {};
@@ -825,26 +882,33 @@ const confirmImport = () => {
 	emit('confirm', editableData.value);
 	showModal.value = false;
 };
-
-async function handleCopyCsvFormat() {
-	if (props.csvModelDescription) {
-		try {
-			const prefix = 'Expected CSV format: ';
-			let formattedDescription = props.csvModelDescription;
-			if (formattedDescription.startsWith(prefix)) {
-				formattedDescription = formattedDescription.substring(prefix.length);
-			}
-
-			const columnNames = formattedDescription
-				.split(',')
-				.map(part => part.split('(')[0].trim()) // Split by '(' and take the first part, then trim whitespace
-				.join(',');
-			await navigator.clipboard.writeText(columnNames);
-			message.success('CSV column titles copied to clipboard!');
-		} catch (err) {
-			message.error('Failed to copy CSV format.');
-		}
-	}
-}
-
 </script>
+
+<style scoped>
+.import-sources { display: flex; flex-direction: column; gap: 10px; }
+.dropzone {
+	display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px;
+	padding: 22px; border: 1.5px dashed var(--border-strong); border-radius: var(--radius);
+	background: var(--surface-2); cursor: pointer; transition: border-color 0.15s, background 0.15s;
+	color: var(--text-secondary);
+}
+.dropzone:hover, .dropzone.dragging { border-color: var(--primary-color); background: var(--primary-soft); }
+.dz-icon { font-size: 1.6rem; color: var(--text-muted); }
+.dz-text strong { color: var(--text-color); }
+.file-chip { display: inline-flex; align-items: center; gap: 8px; color: var(--text-color); font-size: 0.9rem; }
+.chip-x { background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 0.9rem; }
+.chip-x:hover { color: var(--danger-color); }
+.paste-divider { display: flex; align-items: center; color: var(--text-muted); font-size: 0.78rem; }
+.paste-divider span { white-space: nowrap; }
+
+.import-toolbar { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+.delim { display: flex; align-items: center; gap: 10px; }
+.delim .lbl { color: var(--text-secondary); font-size: 0.82rem; }
+
+.fmt-label { color: var(--text-secondary); font-weight: 500; margin-right: 6px; }
+.fmt-code { font-family: var(--font-mono); font-size: 0.78rem; color: var(--text-secondary); }
+
+.import-footer { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+.row-count { font-size: 0.82rem; color: var(--text-secondary); }
+.row-count.err { color: var(--warning-color); }
+</style>

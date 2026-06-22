@@ -1,29 +1,26 @@
 <template>
-  <div v-if="upcomingRaces.length > 0" class="race-countdown-container glitch-alive">
-    <!-- Next Event (Main Highlight) -->
-    <div v-if="nextRace" class="next-race-detailed">
-      <div class="countdown-label">NEXT_EVENT:</div>
-      <div class="race-info">
-        <span class="race-name">{{ nextRace.name.toUpperCase() }}</span>
-        <div class="countdown-precision" :class="{ 'urgent': isUrgent }">
-          T-MINUS {{ countdown.days }}D:{{ countdown.hours }}H:{{ countdown.minutes }}M:{{ countdown.seconds }}S
-        </div>
-      </div>
+  <div v-if="upcomingRaces.length > 0" class="race-bar" :class="{ urgent: isUrgent }">
+    <div v-if="nextRace" class="next-race">
+      <span class="race-flag"><n-icon :component="FlagOutline" /></span>
+      <span class="race-label">Next race</span>
+      <span class="race-name">{{ nextRace.name }}</span>
+      <span class="race-count" :class="{ urgent: isUrgent }">
+        in {{ countdown.days }} day{{ countdown.days === '01' ? '' : 's' }}
+      </span>
     </div>
 
-    <!-- Event Chain (Following 3) -->
     <div v-if="followingRaces.length > 0" class="race-chain">
-      <div v-for="race in followingRaces" :key="race.id" class="chain-item">
-        <span class="chain-prompt">>></span>
-        <span class="chain-name">{{ race.name.toUpperCase() }}</span>
-        <span class="chain-date">{{ formatDateShort(race.date) }}</span>
-      </div>
+      <span v-for="race in followingRaces" :key="race.id" class="chain-item">
+        {{ race.name }} · {{ formatDateShort(race.date) }}
+      </span>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, onMounted, computed, onUnmounted } from 'vue';
+import { NIcon } from 'naive-ui';
+import { FlagOutline } from '@vicons/ionicons5';
 import { db } from '@/db';
 import type { RaceGoal } from '@/types';
 import { differenceInSeconds, parseISO, startOfDay, addHours, format } from 'date-fns';
@@ -100,117 +97,34 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
-.race-countdown-container {
+.race-bar {
   display: flex;
-  flex-direction: column;
-  padding: 8px 15px;
-  background: rgba(0, 0, 0, 0.9);
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 10px 28px;
+  background: var(--surface-color);
   border-bottom: 1px solid var(--border-color);
-  font-family: 'Courier New', Courier, monospace;
+  flex-wrap: wrap;
 }
+.race-bar.urgent { background: var(--danger-soft); }
 
-.next-race-detailed {
-  display: flex;
-  align-items: center;
-  gap: 15px;
-  margin-bottom: 4px;
+.next-race { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.race-flag { display: flex; align-items: center; color: var(--primary-color); font-size: 1.1rem; }
+.race-bar.urgent .race-flag { color: var(--danger-color); }
+.race-label { font-size: 0.72rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.04em; }
+.race-name { font-weight: 600; color: var(--text-color); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.race-count {
+  font-size: 0.78rem; font-weight: 600; color: var(--primary-color);
+  background: var(--primary-soft); padding: 4px 10px; border-radius: 999px; white-space: nowrap;
 }
+.race-count.urgent { color: var(--danger-color); background: transparent; }
 
-.countdown-label {
-  color: var(--accent-color);
-  font-weight: bold;
-  font-size: 0.75rem;
-  opacity: 0.8;
-}
-
-.race-info {
-  display: flex;
-  gap: 15px;
-  align-items: center;
-  flex: 1;
-}
-
-.race-name {
-  color: #fff;
-  font-size: 1rem;
-  letter-spacing: 1px;
-  font-weight: bold;
-}
-
-.countdown-precision {
-  color: var(--accent-color);
-  font-size: 1.1rem;
-  font-weight: bold;
-  text-shadow: 0 0 8px var(--glow-color);
-  letter-spacing: 1.5px;
-}
-
-.countdown-precision.urgent {
-  color: #ff3e3e;
-  text-shadow: 0 0 10px rgba(255, 62, 62, 0.8);
-  animation: flicker-urgent 1.5s infinite;
-}
-
-.race-chain {
-  display: flex;
-  gap: 20px;
-  margin-left: 100px;
-  opacity: 0.6;
-}
-
-.chain-item {
-  display: flex;
-  gap: 6px;
-  align-items: baseline;
-  font-size: 0.75rem;
-  color: #aaa;
-}
-
-.chain-prompt {
-  color: var(--accent-color);
-}
-
-.chain-name {
-  color: #eee;
-}
-
-.chain-date {
-  color: #888;
-  font-size: 0.65rem;
-}
-
-@keyframes flicker-urgent {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.6; }
-}
-
-@media (max-width: 1024px) {
-  .race-chain {
-    margin-left: 0;
-    flex-wrap: wrap;
-    gap: 10px;
-  }
-}
+.race-chain { display: flex; gap: 16px; color: var(--text-muted); font-size: 0.76rem; }
 
 @media (max-width: 768px) {
-  .race-countdown-container {
-    padding: 5px 10px;
-  }
-  .next-race-detailed {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 2px;
-  }
-  .race-info {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 2px;
-  }
-  .countdown-precision {
-    font-size: 0.9rem;
-  }
-  .race-chain {
-    display: none; /* Hide chain on mobile to save space */
-  }
+  .race-bar { padding: 8px 16px; }
+  .race-chain { display: none; }
+  .race-label { display: none; }
 }
 </style>

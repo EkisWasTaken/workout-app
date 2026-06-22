@@ -5,9 +5,9 @@ import { darkTheme, GlobalThemeOverrides } from 'naive-ui'
 export const themes = ['dark', 'light', 'dark-blue', 'light-solarized', 'dark-solarized']
 export const theme = ref('dark')
 
-export const primaryColor = ref('#00b33c')
-export const bodyColor = ref('#040604')
-export const cardColor = ref('rgba(6, 8, 6, 0.85)')
+export const primaryColor = ref('#4f8cff')
+export const bodyColor = ref('#0b0e14')
+export const cardColor = ref('#141a23')
 
 export const naiveTheme = computed(() => (theme.value.includes('dark') ? darkTheme : null))
 

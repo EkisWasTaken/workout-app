@@ -828,6 +828,7 @@ async function setPersistentCache(id: string, type: string, data: any) {
     const { id, isCompleted, actualDuration, rpe, notes, totalWeightLifted, stravaActivityId, distance: manualDistance } = data; // Deconstruct manualDistance
 
     let finalDistance: number | undefined = manualDistance; // Initialize finalDistance with manualDistance, if provided
+    let finalActualDuration: number | undefined = actualDuration; // May be overridden by Strava moving time
     let stravaSportType = '';
 
     if (stravaActivityId) {
@@ -838,6 +839,7 @@ async function setPersistentCache(id: string, type: string, data: any) {
           const activity = await getStravaActivityById(accessToken, String(stravaActivityId));
           console.log('Successfully fetched Strava activity. Distance (m):', activity.distance);
           finalDistance = activity.distance / 1000; // Convert meters to kilometers
+          if (activity.moving_time) finalActualDuration = Math.round(activity.moving_time / 60); // seconds -> minutes
           stravaSportType = activity.sport_type || activity.type;
         } else {
           console.error('No valid Strava access token found.');
@@ -857,7 +859,7 @@ async function setPersistentCache(id: string, type: string, data: any) {
       const columns: string[] = ['isCompleted = ?'];
       const values: any[] = [isCompleted];
 
-      if (actualDuration !== undefined) { columns.push('actualDuration = ?'); values.push(actualDuration); }
+      if (finalActualDuration !== undefined) { columns.push('actualDuration = ?'); values.push(finalActualDuration); }
       if (rpe !== undefined) { columns.push('rpe = ?'); values.push(rpe); }
       if (notes !== undefined) { columns.push('notes = ?'); values.push(notes); }
       if (totalWeightLifted !== undefined) { columns.push('totalWeightLifted = ?'); values.push(totalWeightLifted); }

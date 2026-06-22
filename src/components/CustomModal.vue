@@ -40,48 +40,45 @@ function close() {
   left: 0;
   width: 100%;
   height: 100%;
-  background-color: rgba(0, 0, 0, 0.7);
+  background-color: rgba(5, 8, 12, 0.6);
+  backdrop-filter: blur(3px);
   display: flex;
   justify-content: center;
   align-items: center;
   z-index: 1000;
+  padding: 16px;
+  box-sizing: border-box;
 }
 
 .modal-content {
-  width: 95%;
-  max-width: 600px;
-  background-color: var(--background-color);
+  width: 100%;
+  max-width: 520px;
+  background-color: var(--surface-color);
   border: 1px solid var(--border-color);
-  box-shadow: 0 0 15px rgba(0, 255, 0, 0.5);
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.5);
   color: var(--text-color);
   font-family: var(--font-family);
   max-height: 90vh;
   display: flex;
   flex-direction: column;
-  border-radius: 4px;
+  border-radius: var(--radius-lg);
   overflow: hidden;
-}
-
-@media (min-width: 769px) {
-  .modal-content {
-    width: 50%;
-  }
 }
 
 .modal-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 10px 15px;
+  padding: 16px 20px;
   border-bottom: 1px solid var(--border-color);
-  background-color: #000;
   flex-shrink: 0;
 }
 
 .modal-title {
   margin: 0;
-  font-size: 1.1em;
-  color: var(--accent-color);
+  font-size: 1.05rem;
+  font-weight: 600;
+  color: var(--text-color);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -90,18 +87,20 @@ function close() {
 .close-button {
   background: none;
   border: none;
-  color: var(--text-color);
-  font-size: 1.5em;
+  color: var(--text-muted);
+  font-size: 1.6rem;
+  line-height: 1;
   cursor: pointer;
-  padding: 0 5px;
+  padding: 0 4px;
+  transition: color 0.15s;
 }
 
 .close-button:hover {
-  color: var(--link-hover-color);
+  color: var(--text-color);
 }
 
 .modal-body {
-  padding: 20px 15px;
+  padding: 20px;
   overflow-y: auto;
   flex-grow: 1;
 }

@@ -1,43 +1,31 @@
 <template>
 	<div class="layout" :class="{ 'is-mobile': isMobile }">
-		<!-- CRT Overlays -->
-		<div class="crt-overlay"></div>
-		<div class="crt-scanline-sweep"></div>
-		<div class="crt-flicker"></div>
-		
 		<!-- Desktop Sidebar -->
-		<aside class="sidebar glitch-alive" :class="{ 'collapsed': collapsed }">
+		<aside class="sidebar" :class="{ 'collapsed': collapsed }">
 			<div class="sidebar-header">
-				<span v-if="!collapsed" class="glitch-text">[TERMINAL-FITNESS]</span>
-				<span v-else>[T-F]</span>
-				<div class="power-indicator"></div>
+				<span class="brand-mark"><n-icon :component="PulseOutline" /></span>
+				<span v-if="!collapsed" class="brand-name">Trainlog</span>
 			</div>
+
 			<nav class="navigation">
 				<ul>
 					<li v-for="item in menuOptions" :key="item.key">
-						<router-link :to="item.to" class="navigation-link">
-							<span class="prompt">></span>
-							<span class="icon">
-								<n-icon :component="item.icon" />
-							</span>
+						<router-link :to="item.to" class="navigation-link" :title="item.label">
+							<span class="icon"><n-icon :component="item.icon" /></span>
 							<span v-if="!collapsed" class="label">{{ item.label }}</span>
-							<div class="active-dot"></div>
 						</router-link>
 					</li>
 				</ul>
 			</nav>
+
 			<div class="sidebar-footer">
-				<button @click="toggleCollapse" class="collapse-button" :title="collapsed ? 'EXPAND' : 'COLLAPSE'">
-					<n-icon v-if="collapsed" :component="ChevronForwardOutline" />
-					<template v-else>
-						<n-icon :component="ChevronBackOutline" />
-						<span style="margin-left: 8px;">_COLLAPSE_SYS</span>
-					</template>
-				</button>
-				<router-link to="/profile" class="profile-link" :title="'USER_PROFILE'">
-					<n-icon :component="PersonOutline" />
-					<span v-if="!collapsed" style="margin-left: 8px;">_USER_PROFILE</span>
+				<router-link to="/profile" class="profile-link" title="Profile">
+					<n-icon :component="PersonCircleOutline" />
+					<span v-if="!collapsed">Profile</span>
 				</router-link>
+				<button @click="toggleCollapse" class="collapse-button" :title="collapsed ? 'Expand' : 'Collapse'">
+					<n-icon :component="collapsed ? ChevronForwardOutline : ChevronBackOutline" />
+				</button>
 			</div>
 		</aside>
 
@@ -45,21 +33,15 @@
 		<nav class="mobile-nav">
 			<ul>
 				<li v-for="item in menuOptions" :key="item.key">
-					<router-link :to="item.to">
-						<span class="icon">
-							<n-icon :component="item.icon" />
-						</span>
-						<span class="mobile-label">{{ item.label.slice(0, 4) }}</span>
-						<div class="active-indicator" v-if="$route.name === item.key"></div>
+					<router-link :to="item.to" :class="{ active: $route.name === item.key }">
+						<span class="icon"><n-icon :component="item.icon" /></span>
+						<span class="mobile-label">{{ item.label }}</span>
 					</router-link>
 				</li>
 				<li>
-					<router-link to="/profile">
-						<span class="icon">
-							<n-icon :component="PersonOutline" />
-						</span>
-						<span class="mobile-label">USER</span>
-						<div class="active-indicator" v-if="$route.name === 'Profile'"></div>
+					<router-link to="/profile" :class="{ active: $route.name === 'Profile' }">
+						<span class="icon"><n-icon :component="PersonCircleOutline" /></span>
+						<span class="mobile-label">Profile</span>
 					</router-link>
 				</li>
 			</ul>
@@ -68,7 +50,7 @@
 		<main class="main-content">
 			<RaceCountdown />
 			<router-view v-slot="{ Component }">
-				<transition name="fade-scan" mode="out-in">
+				<transition name="fade" mode="out-in">
 					<component :is="Component" />
 				</transition>
 			</router-view>
@@ -82,51 +64,25 @@ import { RouterLink, RouterView } from 'vue-router'
 import { db } from '@/db'
 import RaceCountdown from '@/components/RaceCountdown.vue'
 import { NIcon } from 'naive-ui'
-import { 
-	ListOutline, 
-	StatsChartOutline, 
-	CalendarOutline, 
-	ColorWandOutline, 
-	FitnessOutline,
-	PersonOutline,
+import {
+	GridOutline,
+	CalendarOutline,
+	CopyOutline,
+	BarbellOutline,
+	PersonCircleOutline,
+	PulseOutline,
 	ChevronBackOutline,
 	ChevronForwardOutline
 } from '@vicons/ionicons5'
 
 const menuOptions = [
-	{
-		label: 'FEED',
-		key: 'Landing',
-		to: { name: 'Landing' },
-		icon: markRaw(ListOutline)
-	},
-	{
-		label: 'OVERVIEW',
-		key: 'Overview',
-		to: { name: 'Overview' },
-		icon: markRaw(StatsChartOutline)
-	},
-	{
-		label: 'DASHBOARD',
-		key: 'Dashboard',
-		to: { name: 'Dashboard' },
-		icon: markRaw(CalendarOutline)
-	},
-	{
-		label: 'TEMPLATES',
-		key: 'Templates',
-		to: { name: 'Templates' },
-		icon: markRaw(ColorWandOutline)
-	},
-	{
-		label: 'EXERCISES',
-		key: 'Exercises',
-		to: { name: 'Exercises' },
-		icon: markRaw(FitnessOutline)
-	}
+	{ label: 'Home', key: 'Home', to: { name: 'Home' }, icon: markRaw(GridOutline) },
+	{ label: 'Schedule', key: 'Schedule', to: { name: 'Schedule' }, icon: markRaw(CalendarOutline) },
+	{ label: 'Templates', key: 'Templates', to: { name: 'Templates' }, icon: markRaw(CopyOutline) },
+	{ label: 'Exercises', key: 'Exercises', to: { name: 'Exercises' }, icon: markRaw(BarbellOutline) },
 ]
 
-const collapsed = ref(true)
+const collapsed = ref(false)
 const isMobile = ref(window.innerWidth <= 768)
 
 function toggleCollapse() {
@@ -162,9 +118,10 @@ const fetchWorkoutTypeColors = async () => {
 	try {
 		const colors = await db.getWorkoutTypeColors();
 		const colorsMap: { [key: string]: string } = {};
+		const found = (type: string) => colors.find((c: any) => c.type === type)?.color;
 		workoutTypes.forEach(type => {
-			const found = colors.find((c: any) => c.type === type);
-			colorsMap[type] = found ? found.color : '#CCCCCC';
+			const c = found(type);
+			if (c) colorsMap[type] = c;
 		});
 		applyGlobalCssColors(colorsMap);
 	} catch (error) {
@@ -179,6 +136,7 @@ onMounted(() => {
 });
 
 onUnmounted(() => {
+	window.removeEventListener('colors-updated', fetchWorkoutTypeColors);
 	window.removeEventListener('resize', handleResize);
 });
 </script>
@@ -194,260 +152,134 @@ onUnmounted(() => {
 }
 
 .sidebar {
-	width: 250px;
-	background-color: #050505;
+	width: var(--sidebar-width);
+	background-color: var(--surface-color);
 	border-right: 1px solid var(--border-color);
 	display: flex;
 	flex-direction: column;
-	transition: width 0.3s ease;
-	padding: 10px;
+	transition: width 0.22s ease;
+	padding: 14px 12px;
 	z-index: 1000;
+	flex-shrink: 0;
 }
 
 .sidebar.collapsed {
-	width: 80px;
-}
-
-/* Mobile Nav Styles */
-.mobile-nav {
-	display: none;
-	position: fixed;
-	bottom: 0;
-	left: 0;
-	width: 100%;
-	height: 60px;
-	background-color: #050505;
-	border-top: 1px solid var(--border-color);
-	z-index: 1000;
-	padding-bottom: env(safe-area-inset-bottom);
-}
-
-.mobile-nav ul {
-	display: flex;
-	justify-content: space-around;
-	align-items: center;
-	height: 100%;
-	padding: 0;
-	margin: 0;
-	list-style: none;
-}
-
-.mobile-nav li {
-	flex: 1;
-}
-
-.mobile-nav a {
-	display: flex;
-	flex-direction: column;
-	align-items: center;
-	justify-content: center;
-	color: var(--accent-color);
-	text-decoration: none;
-	font-size: 0.6rem;
-	gap: 4px;
-	height: 100%;
-	position: relative;
-}
-
-.mobile-nav .icon {
-	font-size: 1rem;
-}
-
-.active-indicator {
-	position: absolute;
-	top: 0;
-	width: 40%;
-	height: 2px;
-	background-color: var(--accent-color);
-	box-shadow: 0 0 5px var(--accent-color);
-}
-
-@media (max-width: 768px) {
-	.sidebar {
-		display: none !important;
-	}
-	.mobile-nav {
-		display: block !important;
-	}
-	.layout {
-		flex-direction: column;
-	}
-	.main-content {
-		padding-bottom: 70px; /* Space for mobile nav */
-		height: calc(100vh - 60px);
-	}
+	width: var(--sidebar-collapsed-width);
 }
 
 .sidebar-header {
-	padding: 15px 10px;
-	text-align: center;
-	font-weight: bold;
-	color: var(--accent-color);
+	display: flex;
+	align-items: center;
+	gap: 12px;
+	padding: 8px 8px 18px;
+	margin-bottom: 10px;
 	border-bottom: 1px solid var(--border-color);
-	margin-bottom: 20px;
-	position: relative;
-	min-height: 20px;
 }
 
-.glitch-text {
-	text-shadow: 0 0 5px var(--glow-color);
-	animation: terminal-glow 4s ease-in-out infinite;
-	display: inline-block;
-	letter-spacing: 1px;
+.brand-mark {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	width: 36px;
+	height: 36px;
+	border-radius: var(--radius-sm);
+	background: var(--primary-soft);
+	color: var(--primary-color);
+	font-size: 1.3rem;
+	flex-shrink: 0;
 }
 
-@keyframes terminal-glow {
-	0%, 100% { 
-		opacity: 1;
-		text-shadow: 0 0 5px var(--glow-color);
-	}
-	50% { 
-		opacity: 0.8;
-		text-shadow: 0 0 15px var(--glow-color), 0 0 20px var(--glow-color);
-		transform: scale(1.02);
-	}
+.brand-name {
+	font-size: 1.15rem;
+	font-weight: 700;
+	letter-spacing: -0.02em;
+	color: var(--text-color);
 }
 
-.power-indicator {
-	position: absolute;
-	top: 5px;
-	right: 5px;
-	width: 6px;
-	height: 6px;
-	background-color: var(--accent-color);
-	border-radius: 50%;
-	box-shadow: 0 0 5px var(--accent-color);
-	animation: blink 2s infinite;
-}
-
-@keyframes blink {
-	0%, 100% { opacity: 1; }
-	50% { opacity: 0.3; }
-}
-
+.navigation { flex: 1; }
 .navigation ul {
 	list-style: none;
 	padding: 0;
 	margin: 0;
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
 }
 
-.navigation li a {
+.navigation-link {
 	display: flex;
 	align-items: center;
-	padding: 12px 10px;
-	color: var(--accent-color);
+	gap: 14px;
+	padding: 11px 12px;
+	color: var(--text-secondary);
 	text-decoration: none;
+	border-radius: var(--radius-sm);
 	white-space: nowrap;
 	overflow: hidden;
-	transition: all 0.2s ease;
-	border-left: 3px solid transparent;
-	position: relative;
+	transition: background-color 0.15s ease, color 0.15s ease;
+	font-size: 0.92rem;
+	font-weight: 500;
 }
 
-.sidebar.collapsed .navigation li a {
-	justify-content: center;
-	padding-left: 10px;
+.sidebar.collapsed .navigation-link { justify-content: center; }
+
+.navigation-link:hover {
+	background-color: var(--surface-hover);
+	color: var(--text-color);
 }
 
-.navigation li a:hover {
-	background-color: rgba(0, 179, 60, 0.1);
-	border-left-color: var(--accent-color);
-	padding-left: 15px;
-}
-
-.sidebar.collapsed .navigation li a:hover {
-	padding-left: 10px;
-}
-
-.navigation li a.router-link-active {
-	background-color: rgba(0, 179, 60, 0.05);
-	border-left-color: var(--accent-color);
-}
-
-.navigation li a .prompt {
-	margin-right: 10px;
-	color: var(--accent-color);
-}
-
-.sidebar.collapsed .navigation li a .prompt {
-	display: none;
-}
-
-.label {
-	transition: opacity 0.2s ease;
-	margin-right: 8px;
-}
-
-.sidebar.collapsed .label {
-	opacity: 0;
-	margin-right: 0;
-}
-
-.active-dot {
-	width: 4px;
-	height: 4px;
-	background-color: var(--accent-color);
-	border-radius: 50%;
-	box-shadow: 0 0 8px var(--accent-color);
-	margin-left: auto;
-	flex-shrink: 0;
-	display: none;
-}
-
-.navigation li a.router-link-active .active-dot {
-	display: block;
-}
-
-.sidebar.collapsed .active-dot {
-	position: absolute;
-	right: 15px;
-	top: 50%;
-	transform: translateY(-50%);
+.navigation-link.router-link-active {
+	background-color: var(--primary-soft);
+	color: var(--primary-color);
 }
 
 .icon {
 	display: flex;
 	align-items: center;
 	justify-content: center;
-	font-size: 1.2rem;
-	transition: all 0.2s ease;
-}
-
-.navigation li a.router-link-active .icon {
-	filter: drop-shadow(0 0 5px var(--accent-color));
-	color: #fff !important;
+	font-size: 1.35rem;
+	flex-shrink: 0;
 }
 
 .sidebar-footer {
 	margin-top: auto;
-	padding: 10px;
+	padding-top: 12px;
 	border-top: 1px solid var(--border-color);
 	display: flex;
 	flex-direction: column;
-	gap: 10px;
+	gap: 6px;
 }
 
-.collapse-button,
 .profile-link {
+	display: flex;
+	align-items: center;
+	gap: 14px;
+	padding: 10px 12px;
+	border-radius: var(--radius-sm);
+	color: var(--text-secondary);
+	text-decoration: none;
+	font-size: 0.92rem;
+	font-weight: 500;
+	transition: background-color 0.15s, color 0.15s;
+}
+.profile-link:hover { background-color: var(--surface-hover); color: var(--text-color); }
+.profile-link .n-icon { font-size: 1.35rem; }
+
+.collapse-button {
 	background: transparent;
-	border: 1px solid var(--border-color);
-	color: var(--accent-color);
+	border: none;
+	color: var(--text-muted);
 	padding: 8px;
 	cursor: pointer;
-	text-decoration: none;
-	text-align: center;
-	font-size: 0.7rem;
-	transition: all 0.2s;
+	border-radius: var(--radius-sm);
 	display: flex;
 	align-items: center;
 	justify-content: center;
+	font-size: 1.2rem;
+	transition: background-color 0.15s, color 0.15s;
 }
-
-.collapse-button:hover,
-.profile-link:hover {
-	border-color: var(--accent-color);
-	box-shadow: 0 0 10px var(--glow-color);
-}
+.sidebar:not(.collapsed) .collapse-button { align-self: flex-end; }
+.collapse-button:hover { background-color: var(--surface-hover); color: var(--text-color); }
 
 .main-content {
 	flex: 1;
@@ -457,20 +289,54 @@ onUnmounted(() => {
 	width: 100%;
 }
 
-/* Page Transition */
-.fade-scan-enter-active,
-.fade-scan-leave-active {
-  transition: opacity 0.2s, transform 0.2s;
-  width: 100%;
+/* Mobile bottom nav */
+.mobile-nav {
+	display: none;
+	position: fixed;
+	bottom: 0;
+	left: 0;
+	width: 100%;
+	height: var(--mobile-nav-height);
+	background-color: var(--surface-color);
+	border-top: 1px solid var(--border-color);
+	z-index: 1000;
+	padding-bottom: env(safe-area-inset-bottom);
+}
+.mobile-nav ul {
+	display: flex;
+	justify-content: space-around;
+	align-items: center;
+	height: 100%;
+	padding: 0;
+	margin: 0;
+	list-style: none;
+}
+.mobile-nav li { flex: 1; }
+.mobile-nav a {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	color: var(--text-muted);
+	text-decoration: none;
+	font-size: 0.62rem;
+	font-weight: 500;
+	gap: 3px;
+	height: 100%;
+}
+.mobile-nav a .icon { font-size: 1.3rem; }
+.mobile-nav a.active { color: var(--primary-color); }
+
+@media (max-width: 768px) {
+	.sidebar { display: none !important; }
+	.mobile-nav { display: block !important; }
+	.layout { flex-direction: column; }
+	.main-content {
+		padding-bottom: calc(var(--mobile-nav-height) + 8px);
+		height: calc(100vh - var(--mobile-nav-height));
+	}
 }
 
-.fade-scan-enter-from {
-  opacity: 0;
-  transform: translateY(10px);
-}
-
-.fade-scan-leave-to {
-  opacity: 0;
-  transform: translateY(-10px);
-}
+.fade-enter-active, .fade-leave-active { transition: opacity 0.16s ease; }
+.fade-enter-from, .fade-leave-to { opacity: 0; }
 </style>
