@@ -1,10 +1,12 @@
 <script setup lang="ts">
 import { NConfigProvider, NMessageProvider, NDialogProvider, NNotificationProvider, NLoadingBarProvider } from 'naive-ui'
 import MainLayout from './layouts/MainLayout.vue'
+import PinGate from './components/PinGate.vue'
 import { naiveTheme, themeOverrides } from './theme'
 </script>
 
 <template>
+  <PinGate />
   <n-config-provider :theme="naiveTheme" :theme-overrides="themeOverrides" class="full-height">
     <n-loading-bar-provider>
       <n-notification-provider>

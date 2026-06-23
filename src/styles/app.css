@@ -1,6 +1,7 @@
 /* src/styles/app.css — modern sports dashboard design system */
 
 @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Young+Serif&display=swap');
 
 :root {
   /* Surfaces */
@@ -52,6 +53,7 @@
   --radius: 10px;
   --radius-lg: 16px;
   --font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --font-serif: 'Young Serif', Georgia, serif;
   --font-mono: 'JetBrains Mono', 'Fira Code', ui-monospace, monospace;
 
   /* Layout */
@@ -109,7 +111,8 @@ body {
 /* Headings */
 h1, h2, h3, h4 {
   color: var(--text-color);
-  font-weight: 600;
+  font-family: var(--font-serif);
+  font-weight: 400;
   letter-spacing: -0.01em;
   margin: 0;
 }

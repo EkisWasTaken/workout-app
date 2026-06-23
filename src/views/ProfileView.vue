@@ -105,33 +105,13 @@
 					</n-space>
 				</n-card>
 
-				<!-- Migration Card (Only visible in Electron) -->
-				<n-card v-if="isElectronApp" bordered class="settings-card">
-					<template #header><span class="card-title">Cloud sync</span></template>
-					<n-space vertical>
-						<n-text depth="3" class="migration-note">
-							Detected local data. Push your local workouts, weights, and settings to your Supabase cloud instance.
-						</n-text>
-						<n-button
-							@click="migrateDataToCloud"
-							:loading="migrating"
-							type="warning"
-							ghost
-						>
-							Migrate data to cloud
-						</n-button>
-						<div v-if="migrationStatus" class="migration-log">
-							{{ migrationStatus }}
-						</div>
-					</n-space>
-				</n-card>
 			</n-space>
 		</div>
 	</div>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, computed } from "vue";
+import { ref, onMounted } from "vue";
 import {
 	NCard,
 	NSpace,
@@ -145,13 +125,11 @@ import {
 	NColorPicker,
 	NGrid,
 	NGi,
-	NText,
 	NForm,
 } from "naive-ui";
 import { Strava } from "@vicons/fa";
 import { FlagOutline } from "@vicons/ionicons5";
 import { db } from "@/db";
-import { supabase } from "@/supabase";
 import { stravaApi } from "@/stravaBridge";
 import type { RaceGoal, AddRaceGoalPayload } from "@/types";
 
@@ -199,68 +177,6 @@ const deleteRaceGoal = async (id: number) => {
 	}
 };
 
-const isElectronApp = computed(() => !!(window && window.db));
-const migrating = ref(false);
-const migrationStatus = ref("");
-
-const migrateDataToCloud = async () => {
-	if (!window.db) return;
-	
-	migrating.value = true;
-	migrationStatus.value = "INITIALIZING_MIGRATION...";
-	
-	try {
-		// 1. Migrate Workouts
-		migrationStatus.value = "EXTRACTING_LOCAL_WORKOUTS...";
-		const localWorkouts = await window.db.getWorkouts();
-		if (localWorkouts.length > 0) {
-			migrationStatus.value = `PUSHING ${localWorkouts.length} WORKOUTS TO CLOUD...`;
-			// Omit ID to let Supabase generate its own sequences
-			const workoutsToSync = localWorkouts.map(({ id, ...rest }: any) => rest);
-			const { error: wErr } = await supabase.from('workouts').upsert(workoutsToSync);
-			if (wErr) throw wErr;
-		}
-
-		// 2. Migrate Weights
-		migrationStatus.value = "EXTRACTING_LOCAL_BIOMETRICS...";
-		const localWeights = await window.db.getDailyWeights();
-		if (localWeights.length > 0) {
-			migrationStatus.value = `PUSHING ${localWeights.length} WEIGHT RECORDS TO CLOUD...`;
-			// Omit ID and use 'date' as conflict target for daily weights
-			const weightsToSync = localWeights.map(({ id, ...rest }: any) => rest);
-			const { error: tErr } = await supabase.from('daily_weights').upsert(weightsToSync, { onConflict: 'date' });
-			if (tErr) throw tErr;
-		}
-
-		// 3. Migrate Colors
-		migrationStatus.value = "SYNCING_INTERFACE_SCHEMAS...";
-		const localColors = await window.db.getWorkoutTypeColors();
-		if (localColors.length > 0) {
-			// Colors table uses 'type' as PK usually, but upsert handles it
-			const { error: cErr } = await supabase.from('workout_type_colors').upsert(localColors);
-			if (cErr) throw cErr;
-		}
-
-		// 4. Migrate Race Goals
-		migrationStatus.value = "SYNCING_RACE_STRATEGY...";
-		const localRaceGoals = await window.db.getRaceGoals();
-		if (localRaceGoals.length > 0) {
-			migrationStatus.value = `PUSHING ${localRaceGoals.length} RACE GOALS TO CLOUD...`;
-			const raceGoalsToSync = localRaceGoals.map(({ id, ...rest }: any) => rest);
-			const { error: rErr } = await supabase.from('race_goals').upsert(raceGoalsToSync);
-			if (rErr) throw rErr;
-		}
-
-		migrationStatus.value = "MIGRATION_SEQUENCE_COMPLETE";
-		message.success("ALL_DATA_SYNCED_TO_CLOUD");
-	} catch (error: any) {
-		console.error("Migration failed:", error);
-		migrationStatus.value = `CRITICAL_FAILURE: ${error.message}`;
-		message.error("MIGRATION_FAILED");
-	} finally {
-		migrating.value = false;
-	}
-};
 
 const workoutTypes = ["gym", "running", "bike", "rest", "other"];
 const workoutTypeColors = ref<{ [key: string]: string }>({
@@ -374,19 +290,10 @@ const handleWebStravaCallback = async () => {
 
 onMounted(() => {
 	loadProfile();
-	handleWebStravaCallback(); 
+	handleWebStravaCallback();
 	checkStravaConnection();
-	fetchWorkoutTypeColors(); 
+	fetchWorkoutTypeColors();
 	fetchRaceGoals();
-	if ((window as any).ipcRenderer) {
-		(window as any).ipcRenderer.on("strava-auth-callback", handleStravaAuthCallback);
-	}
-});
-
-onUnmounted(() => {
-	if ((window as any).ipcRenderer) {
-		(window as any).ipcRenderer.off("strava-auth-callback", handleStravaAuthCallback);
-	}
 });
 </script>
 
@@ -430,10 +337,4 @@ onUnmounted(() => {
 }
 .date-input:focus { border-color: var(--primary-color); box-shadow: 0 0 0 3px var(--primary-soft); }
 
-.migration-note { font-size: 0.88rem; }
-.migration-log {
-  margin-top: 6px; font-family: var(--font-mono); font-size: 0.78rem;
-  color: var(--text-secondary); background: var(--surface-2);
-  padding: 10px 12px; border-radius: var(--radius-sm);
-}
 </style>

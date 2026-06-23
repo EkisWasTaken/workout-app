@@ -121,6 +121,59 @@
 			</div>
 		</section>
 
+		<!-- Projections -->
+		<template v-if="weightPrediction || runningPrediction">
+			<div class="section-head"><h2>Projections</h2><span class="section-note">based on recent trends</span></div>
+			<section class="pred-grid">
+				<div v-if="runningPrediction" class="pred-card panel">
+					<div class="pred-icon run"><n-icon :component="WalkOutline" /></div>
+					<div class="pred-body">
+						<div class="pred-label">Running volume</div>
+						<div class="pred-main">
+							<span class="mono">{{ fmt(runningPrediction.proj4w) }}<span class="unit"> km</span></span>
+							<span class="pred-timeframe">in 4 weeks</span>
+						</div>
+						<div class="pred-trend" :class="runningPrediction.slopePerWeek >= 0 ? 'pos' : 'neg'">
+							{{ runningPrediction.slopePerWeek >= 0 ? '↑' : '↓' }}
+							{{ fmt(Math.abs(runningPrediction.slopePerWeek)) }} km/week
+							· avg {{ fmt(runningPrediction.currentAvg) }} km
+						</div>
+					</div>
+				</div>
+				<div v-if="weightPrediction && goalWeight" class="pred-card panel">
+					<div class="pred-icon"><n-icon :component="BodyOutline" /></div>
+					<div class="pred-body">
+						<div class="pred-label">Weight projection</div>
+						<div class="pred-main">
+							<span class="mono">{{ fmt(weightPrediction.proj4w) }}<span class="unit"> kg</span></span>
+							<span class="pred-timeframe">in 4 weeks</span>
+						</div>
+						<div v-if="weightPrediction.weeksToGoal !== null && weightPrediction.weeksToGoal > 0" class="pred-trend">
+							Goal est. in {{ weightPrediction.weeksToGoal }} week{{ weightPrediction.weeksToGoal === 1 ? '' : 's' }}
+						</div>
+						<div v-else-if="weightPrediction.weeksToGoal !== null && weightPrediction.weeksToGoal <= 0" class="pred-trend pos">
+							At or past goal ✓
+						</div>
+						<div v-else class="pred-trend muted">Set a goal to project</div>
+					</div>
+				</div>
+				<div v-if="weightPrediction && !goalWeight" class="pred-card panel">
+					<div class="pred-icon"><n-icon :component="BodyOutline" /></div>
+					<div class="pred-body">
+						<div class="pred-label">Weight projection</div>
+						<div class="pred-main">
+							<span class="mono">{{ fmt(weightPrediction.proj4w) }}<span class="unit"> kg</span></span>
+							<span class="pred-timeframe">in 4 weeks</span>
+						</div>
+						<div class="pred-trend" :class="weightPrediction.slopePerWeek < 0 ? 'pos' : weightPrediction.slopePerWeek > 0 ? 'neg' : 'muted'">
+							{{ weightPrediction.slopePerWeek > 0 ? '↑' : weightPrediction.slopePerWeek < 0 ? '↓' : '→' }}
+							{{ fmt(Math.abs(weightPrediction.slopePerWeek)) }} kg/week
+						</div>
+					</div>
+				</div>
+			</section>
+		</template>
+
 		<!-- Activity -->
 		<section class="panel chart-card heatmap-card">
 			<div class="chart-head">
@@ -299,6 +352,53 @@ const prBiggestWeek = computed(() => {
 	return vals.length ? Math.max(...vals) : 0
 })
 
+// ===== Predictions =====
+function linReg(xs: number[], ys: number[]) {
+	const n = xs.length
+	if (n < 2) return null
+	const mx = xs.reduce((s, x) => s + x, 0) / n
+	const my = ys.reduce((s, y) => s + y, 0) / n
+	const num = xs.reduce((s, x, i) => s + (x - mx) * (ys[i] - my), 0)
+	const den = xs.reduce((s, x) => s + (x - mx) ** 2, 0)
+	if (!den) return null
+	const slope = num / den
+	return { slope, predict: (x: number) => slope * x + (my - slope * mx) }
+}
+
+const weightPrediction = computed(() => {
+	const sorted = [...dailyWeights.value].sort((a, b) => a.date.localeCompare(b.date))
+	if (sorted.length < 3) return null
+	const origin = new Date(sorted[0].date).getTime() / 86400000
+	const xs = sorted.map(w => new Date(w.date).getTime() / 86400000 - origin)
+	const ys = sorted.map(w => w.weight)
+	const reg = linReg(xs, ys)
+	if (!reg) return null
+	const slopePerWeek = reg.slope * 7
+	const lastX = xs[xs.length - 1]
+	const proj4w = Math.round(reg.predict(lastX + 28) * 10) / 10
+	const proj12w = Math.round(reg.predict(lastX + 84) * 10) / 10
+	const current = ys[ys.length - 1]
+	const weeksToGoal = goalWeight.value !== null && slopePerWeek !== 0
+		? Math.ceil((goalWeight.value - current) / slopePerWeek)
+		: null
+	return { slopePerWeek, proj4w, proj12w, weeksToGoal }
+})
+
+const runningPrediction = computed(() => {
+	const weeklyData = Array.from({ length: 12 }, (_, i) => {
+		const s = subWeeks(weekStart, 11 - i)
+		const e = endOfWeek(s, { weekStartsOn: 1 })
+		return completed.value.filter(w => isWithinInterval(parseISO(w.date), { start: s, end: e }) && getWorkoutType(w) === 'running').reduce((sum, w) => sum + (w.distance || 0), 0)
+	})
+	const nonZero = weeklyData.filter(v => v > 0)
+	if (nonZero.length < 3) return null
+	const reg = linReg(weeklyData.map((_, i) => i), weeklyData)
+	if (!reg) return null
+	const proj4w = Math.max(0, Math.round(reg.predict(15) * 10) / 10)
+	const currentAvg = Math.round((nonZero.reduce((s, v) => s + v, 0) / nonZero.length) * 10) / 10
+	return { slopePerWeek: reg.slope, proj4w, currentAvg }
+})
+
 // ===== Charts =====
 const isHeatmap = ref(true)
 const heatmapWeeks = ref<any[]>([])
@@ -365,9 +465,37 @@ function buildWeight() {
 	const sorted = [...dailyWeights.value].sort((a, b) => a.date.localeCompare(b.date))
 	const goal = localStorage.getItem('goalWeight')
 	const goalVal = goal ? parseFloat(goal) : null
-	const datasets: any[] = [{ label: 'Weight', data: sorted.map(w => w.weight), borderColor: css('--primary-color'), backgroundColor: 'transparent', borderWidth: 2, tension: 0.3, pointRadius: 0, pointHoverRadius: 4 }]
-	if (goalVal !== null) datasets.push({ label: 'Goal', data: sorted.map(() => goalVal), borderColor: css('--success-color'), borderWidth: 1.5, borderDash: [5, 5], pointRadius: 0 })
-	charts.push(new Chart(weightCanvas.value, { type: 'line', data: { labels: sorted.map(w => format(parseISO(w.date), 'd/M')), datasets }, options: baseOpts('kg') }))
+
+	// Build 12-week projection from linear regression
+	let projLabels: string[] = []
+	let projValues: (number | null)[] = []
+	if (sorted.length >= 3) {
+		const origin = new Date(sorted[0].date).getTime() / 86400000
+		const xs = sorted.map(w => new Date(w.date).getTime() / 86400000 - origin)
+		const reg = linReg(xs, sorted.map(w => w.weight))
+		if (reg) {
+			const lastDate = parseISO(sorted[sorted.length - 1].date)
+			const lastX = xs[xs.length - 1]
+			for (let i = 1; i <= 6; i++) {
+				projLabels.push(format(addDays(lastDate, i * 14), 'd/M'))
+				projValues.push(Math.round(reg.predict(lastX + i * 14) * 10) / 10)
+			}
+		}
+	}
+
+	const allLabels = [...sorted.map(w => format(parseISO(w.date), 'd/M')), ...projLabels]
+	const actualData: (number | null)[] = [...sorted.map(w => w.weight), ...projLabels.map(() => null)]
+	const projData: (number | null)[] = [
+		...sorted.map((_, i) => i === sorted.length - 1 ? sorted[i].weight : null),
+		...projValues,
+	]
+
+	const datasets: any[] = [
+		{ label: 'Weight', data: actualData, borderColor: css('--primary-color'), backgroundColor: 'transparent', borderWidth: 2, tension: 0.3, pointRadius: 0, pointHoverRadius: 4 },
+		...(projValues.length ? [{ label: 'Projected', data: projData, borderColor: css('--primary-color'), backgroundColor: 'transparent', borderWidth: 1.5, borderDash: [5, 4], tension: 0.3, pointRadius: 0, pointHoverRadius: 4 }] : []),
+		...(goalVal !== null ? [{ label: 'Goal', data: allLabels.map(() => goalVal), borderColor: css('--success-color'), borderWidth: 1.5, borderDash: [5, 5], pointRadius: 0 }] : []),
+	]
+	charts.push(new Chart(weightCanvas.value, { type: 'line', data: { labels: allLabels, datasets }, options: baseOpts('kg') }))
 }
 
 function buildMix() {
@@ -448,7 +576,7 @@ onUnmounted(destroyCharts)
 @media (max-width: 768px) { .home-view { padding: 16px 16px 36px; } }
 
 .home-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; flex-wrap: wrap; margin-bottom: 24px; }
-.greeting { font-size: 1.6rem; font-weight: 700; }
+.greeting { font-size: 1.6rem; font-weight: 400; font-family: var(--font-serif); }
 .subgreeting { margin: 4px 0 0; color: var(--text-secondary); font-size: 0.9rem; }
 .header-actions { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 .streak-badge { display: inline-flex; align-items: center; gap: 6px; background: var(--warning-soft); color: var(--warning-color); padding: 7px 12px; border-radius: 999px; font-size: 0.8rem; font-weight: 600; }
@@ -501,7 +629,7 @@ onUnmounted(destroyCharts)
 .day-empty { color: var(--text-muted); margin: auto; }
 
 .race-panel.urgent { border-color: var(--danger-color); }
-.race-name { font-size: 1.1rem; font-weight: 700; margin: 0; }
+.race-name { font-size: 1.1rem; font-weight: 400; font-family: var(--font-serif); margin: 0; }
 .race-date { color: var(--text-secondary); font-size: 0.85rem; margin: 4px 0 16px; }
 .race-counts { display: flex; gap: 10px; }
 .race-count { flex: 1; text-align: center; background: var(--surface-2); border-radius: var(--radius-sm); padding: 12px 0; }
@@ -560,4 +688,20 @@ onUnmounted(destroyCharts)
 .pr-card { background: var(--surface-color); border: 1px solid var(--border-color); border-radius: var(--radius); padding: 14px 16px; display: flex; flex-direction: column; gap: 8px; }
 .pr-label { color: var(--text-secondary); font-size: 0.8rem; display: flex; align-items: center; gap: 6px; }
 .pr-value { font-size: 1.3rem; font-weight: 700; }
+
+/* Projections */
+.pred-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px; }
+@media (max-width: 600px) { .pred-grid { grid-template-columns: 1fr; } }
+.pred-card { display: flex; align-items: flex-start; gap: 14px; padding: 16px 18px; }
+.pred-icon { font-size: 1.4rem; color: var(--text-muted); padding-top: 2px; flex-shrink: 0; }
+.pred-icon.run { color: var(--color-running-primary); }
+.pred-body { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.pred-label { color: var(--text-secondary); font-size: 0.8rem; }
+.pred-main { display: flex; align-items: baseline; gap: 8px; }
+.pred-main .mono { font-size: 1.5rem; font-weight: 700; line-height: 1; }
+.pred-main .unit { font-size: 0.85rem; font-weight: 500; color: var(--text-secondary); }
+.pred-timeframe { font-size: 0.78rem; color: var(--text-muted); }
+.pred-trend { font-size: 0.78rem; color: var(--text-muted); }
+.pred-trend.pos { color: var(--success-color); }
+.pred-trend.neg { color: var(--danger-color); }
 </style>

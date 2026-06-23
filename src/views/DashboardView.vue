@@ -473,7 +473,14 @@ async function loadStravaActivities() {
         
         if (activities && Array.isArray(activities)) {
             stravaActivities.value = activities;
-            stravaActivityOptions.value = activities.map((act: any) => {
+            const workoutType = selectedWorkout.value ? getWorkoutType(selectedWorkout.value) : null;
+            const filtered = activities.filter((act: any) => {
+                const st = (act.sport_type || act.type || '').toLowerCase();
+                if (workoutType === 'running') return st === 'run';
+                if (workoutType === 'bike') return st === 'ride' || st === 'virtualride' || st === 'ebikeride';
+                return true;
+            });
+            stravaActivityOptions.value = filtered.map((act: any) => {
                 let dateStr = 'unknown date';
                 try {
                     if (act.start_date_local) {

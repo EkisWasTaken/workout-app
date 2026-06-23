@@ -1,1 +1,0 @@
-import{q as u}from"./index-CK7CDABy.js";let t=[];const r=new WeakMap;function a(){t.forEach(e=>e(...r.get(e))),t=[]}function s(e,...n){r.set(e,n),!t.includes(e)&&t.push(e)===1&&requestAnimationFrame(a)}function i(e,n){return u(()=>{for(const o of n)if(e[o]!==void 0)return e[o];return e[n[n.length-1]]})}export{s as b,i as u};
