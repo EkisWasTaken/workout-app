@@ -1,368 +1,395 @@
 <template>
-	<div class="workout-detail-wrapper">
-		<div class="container">
-			<n-page-header @back="handleBack">
-				<template #title>
-					Workout Details
-				</template>
-			</n-page-header>
-			<n-spin :show="loading">
-				<n-space vertical v-if="workout" class="workout-details-space" style="width: 100%">
-					<n-card class="card" :title="workout.name" style="width: 100%">
+	<div class="detail-view">
+		<div class="detail-inner">
 
-						<n-grid :x-gap="24" :y-gap="24" :cols="4">
-							<n-gi>
-								<n-statistic label="Type" :value="workout.type" />
-							</n-gi>
-							<n-gi>
-								<n-statistic label="Date" :value="workout.date" />
-							</n-gi>
-							<n-gi>
-								<n-statistic label="Status">
-									<n-tag :type="workout.isCompleted ? 'success' : 'error'">
-										{{ workout.isCompleted ? 'Completed' : 'Incomplete' }}
-									</n-tag>
-								</n-statistic>
-							</n-gi>
-							<n-gi v-if="workout.duration">
-								<n-statistic label="Planned Duration" :value="`${workout.duration} min`" />
-							</n-gi>
-							<n-gi v-if="workout.gymType">
-								<n-statistic label="Gym Type" :value="workout.gymType" />
-							</n-gi>
-							<n-gi v-if="workout.targetPace">
-								<n-statistic label="Target Pace" :value="workout.targetPace" />
-							</n-gi>
-							<n-gi v-if="workout.distance">
-								<n-statistic label="Distance" :value="`${workout.distance} km`" />
-							</n-gi>
-						</n-grid>
-					</n-card>
+			<!-- Header -->
+			<header class="detail-header">
+				<button class="back-btn" @click="handleBack">
+					<n-icon :component="ArrowBackOutline" /> Back
+				</button>
+				<span v-if="workout" class="type-chip" :style="{ color: sportCol, background: sportColSoft }">
+					{{ workout.type }}
+				</span>
+			</header>
 
-					<n-card class="card" v-if="workout.isCompleted" title="Completion Stats">
-						<n-grid :x-gap="24" :y-gap="24" :cols="4">
-							<n-gi v-if="workout.actualDuration">
-								<n-statistic label="Actual Duration" :value="`${workout.actualDuration} min`" />
-							</n-gi>
-							<n-gi v-if="workout.totalWeightLifted">
-								<n-statistic label="Total Weight Lifted" :value="`${workout.totalWeightLifted} kg`" />
-							</n-gi>
-							<n-gi v-if="workout.rpe">
-								<n-statistic label="RPE" :value="workout.rpe" />
-							</n-gi>
-							<n-gi v-if="workout.notes">
-								<n-statistic label="Notes" :value="workout.notes" />
-							</n-gi>
-						</n-grid>
-					</n-card>
-					
-					<n-card class="card" v-if="stravaActivity" :title="stravaActivity.name" size="large">
-						<template #header-extra>
-							{{ new
-								Date(stravaActivity.start_date_local).toLocaleString() }}
-						</template>
-						<div v-if="stravaActivity.map?.polyline" ref="mapContainer"
-							style="height: 400px; margin-top: 16px; border-radius: 10px;"></div>
+			<div v-if="loading" class="loading-state">
+				<n-spin size="large" />
+			</div>
 
-						<n-grid :x-gap="24" :y-gap="24" :cols="3" class="stats-container">
-							<n-gi>
-								<n-statistic label="Distance" :value="`${(stravaActivity.distance / 1000).toFixed(2)} km`" />
-							</n-gi>
-							<n-gi>
-								<n-statistic label="Duration" :value="formatDuration(stravaActivity.moving_time)" />
-							</n-gi>
-							<n-gi>
-								<n-statistic :label="workout.type?.toLowerCase() === 'bike' ? 'Speed' : 'Pace'"
-									:value="workout.type?.toLowerCase() === 'bike' ? calculateSpeed(stravaActivity.moving_time, stravaActivity.distance) : calculatePace(stravaActivity.moving_time, stravaActivity.distance)" />
-							</n-gi>
-							<n-gi v-if="stravaActivity.calories">
-								<n-statistic label="Calories Burned" :value="stravaActivity.calories.toFixed(0)" />
-							</n-gi>
-							<n-gi v-if="stravaActivity.average_heartrate">
-								<n-statistic label="Avg Heart Rate"
-									:value="`${stravaActivity.average_heartrate.toFixed(0)} bpm`" />
-							</n-gi>
-							<n-gi v-if="stravaActivity.total_elevation_gain">
-								<n-statistic label="Elevation Gain"
-									:value="`${stravaActivity.total_elevation_gain.toFixed(0)} m`" />
-							</n-gi>
-						</n-grid>
-						<div class="splits-list-container"
-							v-if="stravaActivity.splits_metric && stravaActivity.splits_metric.length > 0">
-							<h3>Splits Analysis</h3>
-							<n-list class="slimmer-list">
-								<n-list-item class="split-headers">
-									<n-grid x-gap="12" :cols="10">
-										<n-gi :span="2"><strong>KM</strong></n-gi>
-										<n-gi :span="4"><strong>{{ workout.type?.toLowerCase() === 'bike' ? 'Speed' : 'Pace' }}</strong></n-gi>
-										<n-gi :span="2"><strong>Elev (m)</strong></n-gi>
-										<n-gi :span="2"><strong>HR (bpm)</strong></n-gi>
-									</n-grid>
-								</n-list-item>
-								<n-list-item v-for="(split, index) in (stravaActivity.splits_metric as any[])" :key="index">
-									<n-grid x-gap="12" :cols="10" class="split-row">
-										<n-gi :span="2">
-											{{ split.split }}
-										</n-gi>
-										<n-gi :span="4">
-											<div class="pace-display">
-												<span class="pace-value">{{ formatPaceOrSpeedFromSpeed(split.average_speed)
-												}}</span>
-												<n-progress type="line" status="success" :show-indicator="false"
-													:percentage="workout.type?.toLowerCase() === 'bike' ? (split.average_speed * 3.6 / maxSpeedInKmH) * 100 : (1000 / split.average_speed / maxPaceInSeconds) * 100"
-													:height="6" processing />
-											</div>
-										</n-gi>
-										<n-gi :span="2">
-											{{ split.elevation_difference.toFixed(0) }}
-										</n-gi>
-										<n-gi :span="2">
-											{{ split.average_heartrate?.toFixed(0) || 'N/A' }}
-										</n-gi>
-									</n-grid>
-								</n-list-item>
-							</n-list>
+			<template v-else-if="workout">
+
+				<!-- Workout title -->
+				<div class="detail-title-row">
+					<h1 class="detail-title">{{ workout.name }}</h1>
+					<span class="detail-date">{{ formatDate(workout.date) }}</span>
+				</div>
+
+				<!-- Route art -->
+				<div v-if="routeData" class="route-art-wrap">
+					<svg :viewBox="`0 0 ${routeData.vw} ${routeData.vh}`"
+						xmlns="http://www.w3.org/2000/svg"
+						class="route-svg"
+						preserveAspectRatio="xMidYMid meet">
+						<defs>
+							<filter id="lineGlow" x="-40%" y="-40%" width="180%" height="180%">
+								<feGaussianBlur in="SourceGraphic" stdDeviation="5" result="blur1"/>
+								<feGaussianBlur in="SourceGraphic" stdDeviation="2" result="blur2"/>
+								<feMerge>
+									<feMergeNode in="blur1"/>
+									<feMergeNode in="blur2"/>
+									<feMergeNode in="SourceGraphic"/>
+								</feMerge>
+							</filter>
+						</defs>
+						<!-- Wide soft halo -->
+						<polyline :points="routeData.points" fill="none"
+							:stroke="sportCol" stroke-width="14" stroke-opacity="0.1"
+							stroke-linecap="round" stroke-linejoin="round"/>
+						<!-- Medium glow -->
+						<polyline :points="routeData.points" fill="none"
+							:stroke="sportCol" stroke-width="6" stroke-opacity="0.2"
+							stroke-linecap="round" stroke-linejoin="round"/>
+						<!-- Sharp line -->
+						<polyline :points="routeData.points" fill="none"
+							:stroke="sportCol" stroke-width="2"
+							stroke-linecap="round" stroke-linejoin="round"
+							filter="url(#lineGlow)"/>
+						<!-- Start marker -->
+						<circle :cx="routeData.start.x" :cy="routeData.start.y" r="7" :fill="sportCol" opacity="0.9"/>
+						<circle :cx="routeData.start.x" :cy="routeData.start.y" r="13" fill="none" :stroke="sportCol" stroke-width="1.5" opacity="0.35"/>
+						<!-- End marker -->
+						<circle :cx="routeData.end.x" :cy="routeData.end.y" r="7" fill="var(--text-secondary)" opacity="0.7"/>
+						<circle :cx="routeData.end.x" :cy="routeData.end.y" r="13" fill="none" stroke="var(--text-secondary)" stroke-width="1.5" opacity="0.25"/>
+					</svg>
+					<div class="route-legend">
+						<span class="legend-dot" :style="{ background: sportCol }"></span> Start
+						<span class="legend-dot" style="background: var(--text-secondary); margin-left: 12px"></span> Finish
+					</div>
+				</div>
+
+				<!-- Key stats -->
+				<div v-if="stravaActivity" class="stats-row">
+					<div class="stat-item">
+						<span class="stat-label">Distance</span>
+						<span class="stat-value mono">{{ (stravaActivity.distance / 1000).toFixed(2) }}<span class="stat-unit"> km</span></span>
+					</div>
+					<div class="stat-divider"></div>
+					<div class="stat-item">
+						<span class="stat-label">Duration</span>
+						<span class="stat-value mono">{{ formatDuration(stravaActivity.moving_time) }}</span>
+					</div>
+					<div class="stat-divider"></div>
+					<div class="stat-item">
+						<span class="stat-label">{{ workout.type?.toLowerCase() === 'bike' ? 'Speed' : 'Pace' }}</span>
+						<span class="stat-value mono">{{ workout.type?.toLowerCase() === 'bike'
+							? calculateSpeed(stravaActivity.moving_time, stravaActivity.distance)
+							: calculatePace(stravaActivity.moving_time, stravaActivity.distance) }}</span>
+					</div>
+				</div>
+
+				<!-- Non-strava completion stats -->
+				<div v-else-if="workout.isCompleted" class="stats-row">
+					<div class="stat-item" v-if="workout.actualDuration">
+						<span class="stat-label">Duration</span>
+						<span class="stat-value mono">{{ workout.actualDuration }}<span class="stat-unit"> min</span></span>
+					</div>
+					<div class="stat-divider" v-if="workout.actualDuration && workout.totalWeightLifted"></div>
+					<div class="stat-item" v-if="workout.totalWeightLifted">
+						<span class="stat-label">Load</span>
+						<span class="stat-value mono">{{ (workout.totalWeightLifted / 1000).toFixed(1) }}<span class="stat-unit"> t</span></span>
+					</div>
+					<div class="stat-divider" v-if="workout.rpe"></div>
+					<div class="stat-item" v-if="workout.rpe">
+						<span class="stat-label">RPE</span>
+						<span class="stat-value mono">{{ workout.rpe }}<span class="stat-unit"> /10</span></span>
+					</div>
+				</div>
+
+				<!-- Secondary stats -->
+				<div v-if="stravaActivity && (stravaActivity.average_heartrate || stravaActivity.calories || stravaActivity.total_elevation_gain)" class="secondary-stats">
+					<div v-if="stravaActivity.average_heartrate" class="sec-stat">
+						<span class="sec-label">Avg HR</span>
+						<span class="sec-value mono">{{ Math.round(stravaActivity.average_heartrate) }} <span class="sec-unit">bpm</span></span>
+					</div>
+					<div v-if="stravaActivity.calories" class="sec-stat">
+						<span class="sec-label">Calories</span>
+						<span class="sec-value mono">{{ Math.round(stravaActivity.calories) }} <span class="sec-unit">kcal</span></span>
+					</div>
+					<div v-if="stravaActivity.total_elevation_gain" class="sec-stat">
+						<span class="sec-label">Elevation</span>
+						<span class="sec-value mono">{{ Math.round(stravaActivity.total_elevation_gain) }} <span class="sec-unit">m</span></span>
+					</div>
+				</div>
+
+				<!-- Notes -->
+				<div v-if="workout.notes" class="notes-block">
+					<span class="notes-label">Notes</span>
+					<p class="notes-text">{{ workout.notes }}</p>
+				</div>
+
+				<!-- Splits -->
+				<div v-if="stravaActivity?.splits_metric?.length" class="splits-section">
+					<h2 class="splits-title">Splits</h2>
+					<div class="splits-table">
+						<div class="split-head">
+							<span>KM</span>
+							<span>{{ workout.type?.toLowerCase() === 'bike' ? 'Speed' : 'Pace' }}</span>
+							<span>Elev</span>
+							<span>HR</span>
 						</div>
-					</n-card>
+						<div v-for="(split, i) in stravaActivity.splits_metric" :key="i" class="split-row">
+							<span class="mono">{{ split.split }}</span>
+							<span class="split-pace-cell">
+								<span class="mono">{{ formatPaceOrSpeedFromSpeed(split.average_speed) }}</span>
+								<div class="pace-bar-track">
+									<div class="pace-bar-fill" :style="{
+										width: paceBarWidth(split) + '%',
+										background: sportCol
+									}"></div>
+								</div>
+							</span>
+							<span class="mono">{{ split.elevation_difference >= 0 ? '+' : '' }}{{ split.elevation_difference.toFixed(0) }}</span>
+							<span class="mono">{{ split.average_heartrate?.toFixed(0) ?? '—' }}</span>
+						</div>
+					</div>
+				</div>
 
-				</n-space>
-				<n-empty v-else description="Workout not found or loading..."></n-empty>
-			</n-spin>
+			</template>
+
+			<div v-else class="empty-state">Workout not found.</div>
+
 		</div>
 	</div>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, watchEffect, computed } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { NPageHeader, NSpace, NCard, NEmpty, NSpin, NList, NListItem, NGrid, NGi, NStatistic, NProgress, NTag } from 'naive-ui'
-import L from 'leaflet'
-import 'leaflet-polylinedecorator'
+import { NIcon, NSpin } from 'naive-ui'
+import { ArrowBackOutline } from '@vicons/ionicons5'
 import { decode } from '@mapbox/polyline'
+import { format, parseISO } from 'date-fns'
 import { db } from '@/db'
 import { stravaApi } from '@/stravaBridge'
+import { getWorkoutType, getSportColor } from '@/utils/workouts'
 import type { Workout } from '../types'
 
 const route = useRoute()
 const router = useRouter()
 const workout = ref<Workout | null>(null)
 const stravaActivity = ref<any>(null)
-const loading = ref(true);
-const mapContainer = ref<HTMLElement | null>(null)
+const loading = ref(true)
 
-const handleBack = () => {
-	router.go(-1)
-}
+const handleBack = () => router.go(-1)
+const formatDate = (d: string) => format(parseISO(d), 'EEEE, d MMMM yyyy')
 
-const formatDuration = (seconds: number): string => {
-	const hours = Math.floor(seconds / 3600);
-	const minutes = Math.floor((seconds % 3600) / 60);
-	const remainingSeconds = seconds % 60;
+const sportCol = computed(() => workout.value ? getSportColor(getWorkoutType(workout.value)) : '#9aa7b8')
+const sportColSoft = computed(() => {
+	const c = sportCol.value
+	return c.startsWith('#')
+		? c + '22'
+		: 'rgba(159,168,184,0.13)'
+})
 
-	let result = '';
-	if (hours > 0) result += `${hours}h `;
-	if (minutes > 0 || hours > 0) result += `${minutes}m `;
-	result += `${remainingSeconds}s`;
-	return result.trim();
-};
+// ─── Route art ────────────────────────────────────────────────────────────────
+const routeData = computed(() => {
+	const poly = stravaActivity.value?.map?.polyline
+	if (!poly) return null
+	const raw: [number, number][] = decode(poly)
+	if (raw.length < 2) return null
 
-const calculatePace = (time: number, distance: number): string => {
-	if (distance === 0) return '0:00 /km';
-	const pace = time / (distance / 1000);
-	const minutes = Math.floor(pace / 60);
-	const seconds = Math.floor(pace % 60);
-	return `${minutes}:${seconds.toString().padStart(2, '0')} /km`;
-};
+	const toMercY = (lat: number) =>
+		-Math.log(Math.tan((lat * Math.PI / 360) + (Math.PI / 4)))
 
-const calculateSpeed = (time: number, distance: number): string => {
-	if (!time || time === 0) return '0.0 km/h';
-	const speed = (distance / 1000) / (time / 3600);
-	return `${speed.toFixed(1)} km/h`;
-};
+	const pts = raw.map(([lat, lng]) => ({ x: lng, y: toMercY(lat) }))
 
-const formatPaceOrSpeedFromSpeed = (average_speed: number): string => {
-    if (average_speed === 0) return '0:00';
-	if (workout.value?.type?.toLowerCase() === 'bike') {
-		return `${(average_speed * 3.6).toFixed(1)} km/h`;
+	let minX = pts[0].x, maxX = pts[0].x, minY = pts[0].y, maxY = pts[0].y
+	for (const p of pts) {
+		if (p.x < minX) minX = p.x
+		if (p.x > maxX) maxX = p.x
+		if (p.y < minY) minY = p.y
+		if (p.y > maxY) maxY = p.y
 	}
-    const pace_in_seconds_per_km = 1000 / average_speed;
-    const minutes = Math.floor(pace_in_seconds_per_km / 60);
-    const seconds = Math.floor(pace_in_seconds_per_km % 60);
-    return `${minutes}:${seconds.toString().padStart(2, '0')} /km`;
-};
 
-const maxPaceInSeconds = computed(() => {
-    if (!stravaActivity.value?.splits_metric || stravaActivity.value.splits_metric.length === 0) {
-        return 1; 
-    }
-    const paces = (stravaActivity.value.splits_metric as any[]).map((split: any) => 1000 / split.average_speed);
-    return Math.max(...paces);
-});
+	const VW = 900, VH = 480, pad = 56
+	const rangeX = maxX - minX || 0.00001
+	const rangeY = maxY - minY || 0.00001
+	const scale = Math.min((VW - pad * 2) / rangeX, (VH - pad * 2) / rangeY)
+	const ox = (VW - rangeX * scale) / 2
+	const oy = (VH - rangeY * scale) / 2
 
-const maxSpeedInKmH = computed(() => {
-    if (!stravaActivity.value?.splits_metric || stravaActivity.value.splits_metric.length === 0) {
-        return 1; 
-    }
-    const speeds = (stravaActivity.value.splits_metric as any[]).map((split: any) => split.average_speed * 3.6);
-    return Math.max(...speeds);
-});
+	const svgPts = pts.map(p => ({
+		x: ox + (p.x - minX) * scale,
+		y: oy + (p.y - minY) * scale,
+	}))
 
-watchEffect((onInvalidate) => {
-	let map: L.Map | null = null;
-	let decorator: L.PolylineDecorator | null = null;
-
-	const updateDecoratorVisibility = () => {
-		if (map && decorator) {
-			const zoomThreshold = 13;
-			if (map.getZoom() > zoomThreshold) {
-				if (!map.hasLayer(decorator)) {
-					decorator.addTo(map);
-				}
-			} else {
-				if (map.hasLayer(decorator)) {
-					decorator.removeFrom(map);
-				}
-			}
-		}
-	};
-
-	if (stravaActivity.value?.map?.polyline && mapContainer.value) {
-		const decodedPolyline = decode(stravaActivity.value.map.polyline);
-
-		if (decodedPolyline.length > 0) {
-			mapContainer.value.innerHTML = '';
-			map = L.map(mapContainer.value);
-			L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
-			}).addTo(map);
-
-			const polyline = L.polyline(decodedPolyline, { color: '#FF8C00', smoothFactor: 3, weight: 3 }).addTo(map);
-
-			decorator = L.polylineDecorator(polyline, {
-				patterns: [
-					{
-						offset: '10%',
-						repeat: '30%',
-						symbol: L.Symbol.arrowHead({
-							pixelSize: 12,
-							polygon: false,
-							pathOptions: {
-								stroke: true,
-								color: '#FF8C00',
-								weight: 2
-							}
-						})
-					}
-				]
-			});
-
-			map.on('zoomend', updateDecoratorVisibility);
-			updateDecoratorVisibility();
-
-			map.fitBounds(polyline.getBounds());
-		}
-	}
-	onInvalidate(() => {
-		if (map) {
-			map.off('zoomend', updateDecoratorVisibility);
-			map.remove();
-		}
-	});
-});
-
-onMounted(async () => {
-	try {
-		const workoutId = parseInt(route.params.id as string)
-		if (!isNaN(workoutId)) {
-			workout.value = await db.getWorkoutById(workoutId)
-			if (workout.value?.stravaActivityId) {
-				try {
-					stravaActivity.value = await stravaApi.getStravaActivityById(workout.value.stravaActivityId.toString());
-				} catch (error) {
-					console.error('Failed to fetch Strava activity:', error);
-				}
-			}
-		}
-	} finally {
-		loading.value = false;
+	return {
+		points: svgPts.map(p => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' '),
+		start: svgPts[0],
+		end: svgPts[svgPts.length - 1],
+		vw: VW,
+		vh: VH,
 	}
 })
 
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+const formatDuration = (s: number) => {
+	const h = Math.floor(s / 3600)
+	const m = Math.floor((s % 3600) / 60)
+	const sec = s % 60
+	return h > 0 ? `${h}h ${m}m` : `${m}m ${sec}s`
+}
+
+const calculatePace = (time: number, dist: number) => {
+	if (!dist) return '—'
+	const p = time / (dist / 1000)
+	return `${Math.floor(p / 60)}:${String(Math.floor(p % 60)).padStart(2, '0')} /km`
+}
+
+const calculateSpeed = (time: number, dist: number) => {
+	if (!time) return '—'
+	return `${((dist / 1000) / (time / 3600)).toFixed(1)} km/h`
+}
+
+const formatPaceOrSpeedFromSpeed = (spd: number) => {
+	if (!spd) return '—'
+	if (workout.value?.type?.toLowerCase() === 'bike') return `${(spd * 3.6).toFixed(1)} km/h`
+	const s = 1000 / spd
+	return `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')} /km`
+}
+
+const maxRef = computed(() => {
+	const splits: any[] = stravaActivity.value?.splits_metric ?? []
+	if (!splits.length) return 1
+	if (workout.value?.type?.toLowerCase() === 'bike')
+		return Math.max(...splits.map((s: any) => s.average_speed * 3.6))
+	return Math.max(...splits.map((s: any) => 1000 / (s.average_speed || 0.001)))
+}
+)
+
+const paceBarWidth = (split: any) => {
+	if (!split.average_speed) return 0
+	if (workout.value?.type?.toLowerCase() === 'bike') {
+		return Math.min(100, ((split.average_speed * 3.6) / maxRef.value) * 100)
+	}
+	const pace = 1000 / split.average_speed
+	return Math.min(100, (maxRef.value / pace) * 100)
+}
+
+onMounted(async () => {
+	try {
+		const id = parseInt(route.params.id as string)
+		if (!isNaN(id)) {
+			workout.value = await db.getWorkoutById(id)
+			if (workout.value?.stravaActivityId) {
+				try {
+					stravaActivity.value = await stravaApi.getStravaActivityById(
+						workout.value.stravaActivityId.toString()
+					)
+				} catch {}
+			}
+		}
+	} finally {
+		loading.value = false
+	}
+})
 </script>
 
 <style scoped>
-.workout-detail-wrapper {
-	width: 100%;
-}
+.detail-view { width: 100%; min-height: 100vh; }
+.detail-inner { max-width: 820px; margin: 0 auto; padding: 24px 28px 64px; }
+@media (max-width: 600px) { .detail-inner { padding: 16px 16px 48px; } }
 
-.container {
-	display: flex;
-	flex-direction: column;
-	height: 100%;
-	padding: 24px;
-	width: 100%;
+/* Header */
+.detail-header { display: flex; align-items: center; gap: 12px; margin-bottom: 24px; }
+.back-btn {
+	display: inline-flex; align-items: center; gap: 6px;
+	background: var(--surface-color); border: 1px solid var(--border-color);
+	color: var(--text-secondary); padding: 7px 14px; border-radius: var(--radius-sm);
+	cursor: pointer; font-size: 0.85rem; font-family: var(--font-family);
+	transition: border-color 0.15s, color 0.15s;
 }
+.back-btn:hover { border-color: var(--border-strong); color: var(--text-color); }
+.type-chip { font-size: 0.78rem; font-weight: 600; padding: 4px 12px; border-radius: 999px; text-transform: uppercase; letter-spacing: 0.04em; }
 
-.grid {
+/* Title */
+.detail-title-row { margin-bottom: 24px; }
+.detail-title { font-size: 1.8rem; font-weight: 400; font-family: var(--font-serif); margin: 0 0 4px; }
+.detail-date { color: var(--text-muted); font-size: 0.85rem; }
+
+/* Route art */
+.route-art-wrap {
+	background: var(--background-color);
+	border: 1px solid var(--border-color);
+	border-radius: var(--radius);
+	margin-bottom: 20px;
+	overflow: hidden;
+}
+.route-svg { width: 100%; height: auto; display: block; max-height: 420px; }
+.route-legend {
+	display: flex; align-items: center; gap: 6px;
+	padding: 10px 16px; font-size: 0.75rem; color: var(--text-muted);
+	border-top: 1px solid var(--border-color);
+}
+.legend-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+
+/* Key stats */
+.stats-row {
+	display: flex; align-items: stretch;
+	background: var(--surface-color); border: 1px solid var(--border-color);
+	border-radius: var(--radius); margin-bottom: 12px; overflow: hidden;
+}
+.stat-item { flex: 1; display: flex; flex-direction: column; gap: 4px; padding: 18px 20px; }
+.stat-divider { width: 1px; background: var(--border-color); flex-shrink: 0; }
+.stat-label { font-size: 0.75rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.04em; }
+.stat-value { font-size: 1.6rem; font-weight: 700; line-height: 1; }
+.stat-unit { font-size: 0.85rem; font-weight: 400; color: var(--text-secondary); }
+
+/* Secondary stats */
+.secondary-stats {
+	display: flex; gap: 12px; margin-bottom: 12px; flex-wrap: wrap;
+}
+.sec-stat {
+	flex: 1; min-width: 100px;
+	background: var(--surface-color); border: 1px solid var(--border-color);
+	border-radius: var(--radius); padding: 14px 16px;
+	display: flex; flex-direction: column; gap: 3px;
+}
+.sec-label { font-size: 0.72rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.04em; }
+.sec-value { font-size: 1.15rem; font-weight: 600; }
+.sec-unit { font-size: 0.78rem; font-weight: 400; color: var(--text-secondary); }
+
+/* Notes */
+.notes-block {
+	background: var(--surface-color); border: 1px solid var(--border-color);
+	border-radius: var(--radius); padding: 16px 18px; margin-bottom: 12px;
+}
+.notes-label { font-size: 0.72rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.04em; display: block; margin-bottom: 6px; }
+.notes-text { margin: 0; font-size: 0.9rem; color: var(--text-secondary); line-height: 1.6; }
+
+/* Splits */
+.splits-section { margin-top: 24px; }
+.splits-title { font-size: 1rem; font-weight: 400; font-family: var(--font-serif); margin: 0 0 12px; color: var(--text-color); }
+.splits-table {
+	background: var(--surface-color); border: 1px solid var(--border-color);
+	border-radius: var(--radius); overflow: hidden;
+}
+.split-head, .split-row {
 	display: grid;
-	grid-template-columns: 1fr;
-	width: 100%;
+	grid-template-columns: 40px 1fr 56px 56px;
+	gap: 12px; padding: 10px 16px; align-items: center;
 }
+.split-head {
+	font-size: 0.72rem; color: var(--text-muted); text-transform: uppercase;
+	letter-spacing: 0.04em; border-bottom: 1px solid var(--border-color);
+}
+.split-row { font-size: 0.85rem; }
+.split-row + .split-row { border-top: 1px solid var(--border-color); }
+.split-pace-cell { display: flex; align-items: center; gap: 8px; }
+.pace-bar-track { flex: 1; height: 3px; background: var(--surface-2); border-radius: 2px; overflow: hidden; }
+.pace-bar-fill { height: 100%; border-radius: 2px; transition: width 0.3s; }
 
-@media (min-width: 768px) {
-	.grid {
-		grid-template-columns: 1fr 1fr;
-		width: 100%;
-	}
-}
-
-.card {
-	border-radius: 4px;
-	width: 100%;
-	display: grid;
-	gap: 16px;
-	padding: 16px;
-}
-
-.stats-container {
-	padding-top: 20px;
-}
-
-.splits-list-container {
-	margin-top: 20px;
-}
-
-.slimmer-list .n-list-item {
-	padding: 4px 12px;
-}
-
-.slimmer-list .split-headers {
-    font-weight: bold;
-    background-color: transparent;
-    padding-top: 10px;
-    padding-bottom: 10px;
-    border-bottom: 1px solid var(--n-border-color); 
-}
-
-.slimmer-list .n-list-item:not(.split-headers) {
-    border-bottom: none !important;
-}
-
-.split-row {
-	align-items: center;
-	font-size: 0.85em;
-}
-
-.pace-display {
-	display: flex;
-	flex-direction: row;
-	align-items: center;
-	gap: 8px;
-}
-
-.pace-value {
-	min-width: 60px;
-	text-align: right;
-	flex-shrink: 0;
-	font-variant-numeric: tabular-nums;
-}
+/* States */
+.loading-state { display: flex; justify-content: center; padding: 80px 0; }
+.empty-state { text-align: center; color: var(--text-muted); padding: 80px 0; }
 </style>

@@ -87,19 +87,6 @@
 			</div>
 		</section>
 
-		<!-- Recent activities -->
-		<div class="section-head"><h2>Recent activities</h2><span class="section-note">tap to see splits, map &amp; stats</span></div>
-		<section class="panel recent-panel">
-			<router-link v-for="w in recentActivities" :key="w.id" :to="`/workout/${w.id}`" class="recent-row">
-				<span class="recent-dot" :style="{ background: sportColor(w) }"></span>
-				<span class="recent-name">{{ w.name }}</span>
-				<span class="recent-date">{{ formatActivityDate(w.date) }}</span>
-				<span class="recent-stat mono">{{ activityStat(w) }}</span>
-				<n-icon class="recent-chev" :component="ChevronForwardOutline" />
-			</router-link>
-			<div v-if="recentActivities.length === 0" class="recent-empty">No completed workouts yet.</div>
-		</section>
-
 		<!-- Trends -->
 		<div class="section-head"><h2>Trends</h2><span class="section-note">last 12 weeks</span></div>
 		<section class="chart-grid">
@@ -199,16 +186,29 @@
 			<div v-show="!isHeatmap" class="chart-body monthly"><canvas ref="monthlyCanvas"></canvas></div>
 		</section>
 
+		<!-- Recent activities -->
+		<div class="section-head"><h2>Recent activities</h2><span class="section-note">tap to see splits, map &amp; stats</span></div>
+		<section class="panel recent-panel">
+			<router-link v-for="w in recentActivities" :key="w.id" :to="`/workout/${w.id}`" class="recent-row">
+				<span class="recent-dot" :style="{ background: sportColor(w) }"></span>
+				<span class="recent-name">{{ w.name }}</span>
+				<span class="recent-date">{{ formatActivityDate(w.date) }}</span>
+				<span class="recent-stat mono">{{ activityStat(w) }}</span>
+				<n-icon class="recent-chev" :component="ChevronForwardOutline" />
+			</router-link>
+			<div v-if="recentActivities.length === 0" class="recent-empty">No completed workouts yet.</div>
+		</section>
+
 		<!-- Personal records -->
 		<div class="section-head"><h2>Personal records</h2></div>
 		<section class="pr-grid">
 			<div class="pr-card">
 				<span class="pr-label"><n-icon :component="WalkOutline" /> Longest run</span>
-				<span class="pr-value mono">{{ prLongestRun ? fmt(prLongestRun) + ' km' : '—' }}</span>
+				<span class="pr-value mono">{{ prLongestRide ? fmt(prLongestRide) + ' km' : '—' }}</span>
 			</div>
 			<div class="pr-card">
 				<span class="pr-label"><n-icon :component="BicycleOutline" /> Longest ride</span>
-				<span class="pr-value mono">{{ prLongestRide ? fmt(prLongestRide) + ' km' : '—' }}</span>
+				<span class="pr-value mono">{{ prLongestRun ? fmt(prLongestRun) + ' km' : '—' }}</span>
 			</div>
 			<div class="pr-card">
 				<span class="pr-label"><n-icon :component="TrophyOutline" /> Biggest week</span>
