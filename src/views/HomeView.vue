@@ -161,6 +161,36 @@
 			</section>
 		</template>
 
+		<!-- VO2 Max -->
+		<template v-if="vo2HasData">
+			<div class="section-head"><h2>Aerobic fitness</h2><span class="section-note">VO₂ max · estimated from pace + HR</span></div>
+			<section class="panel chart-card vo2-card">
+				<div class="chart-head">
+					<h3>VO₂ max trend</h3>
+					<div class="vo2-badge-row">
+						<template v-if="vo2CurrentRun">
+							<span class="vo2-badge run">
+								<span class="vo2-badge-label">Run</span>
+								<span class="mono">{{ vo2CurrentRun }}</span>
+								<span class="vo2-badge-unit">ml/kg/min</span>
+								<span class="vo2-zone-chip" :style="{ color: vo2Zone(vo2CurrentRun).color }">{{ vo2Zone(vo2CurrentRun).label }}</span>
+							</span>
+						</template>
+						<template v-if="vo2CurrentBike">
+							<span class="vo2-badge bike">
+								<span class="vo2-badge-label">Bike</span>
+								<span class="mono">{{ vo2CurrentBike }}</span>
+								<span class="vo2-badge-unit">ml/kg/min</span>
+								<span class="vo2-zone-chip" :style="{ color: vo2Zone(vo2CurrentBike).color }">{{ vo2Zone(vo2CurrentBike).label }}</span>
+							</span>
+						</template>
+					</div>
+				</div>
+				<div class="chart-body vo2-chart-body"><canvas ref="vo2Canvas"></canvas></div>
+				<p class="vo2-note">8-activity rolling average. Estimated via ACSM oxygen cost + Swain %HRmax→%VO₂max formula. Requires a heart rate monitor. Cycling estimates are less precise without power data.</p>
+			</section>
+		</template>
+
 		<!-- Activity -->
 		<section class="panel chart-card heatmap-card">
 			<div class="chart-head">
@@ -235,6 +265,7 @@ import {
 	isWithinInterval, differenceInCalendarDays, startOfDay, isSameMonth, addMonths,
 } from 'date-fns'
 import { db } from '@/db'
+import { stravaApi } from '@/stravaBridge'
 import type { Workout, DailyWeight, RaceGoal } from '@/types'
 import { getWorkoutType, getSportColor, isDistanceSport, SPORT_TYPES, SPORT_LABELS } from '@/utils/workouts'
 
@@ -399,6 +430,79 @@ const runningPrediction = computed(() => {
 	return { slopePerWeek: reg.slope, proj4w, currentAvg }
 })
 
+// ===== VO2 max =====
+const vo2Estimates = computed(() => {
+	const acts = stravaActivities.value
+	if (!acts.length) return []
+
+	// Use the highest max_heartrate ever seen as the reference
+	const maxHRever = Math.max(...acts.map((a: any) => a.max_heartrate || 0))
+	if (maxHRever < 140) return [] // no usable HR data
+
+	return acts
+		.filter((a: any) => {
+			const st = (a.sport_type || a.type || '').toLowerCase()
+			const ok = st === 'run' || st === 'ride' || st === 'virtualride' || st === 'ebikeride'
+			return ok && a.average_heartrate && a.average_speed && (a.moving_time || 0) >= 600
+		})
+		.map((a: any) => {
+			const st = (a.sport_type || a.type || '').toLowerCase()
+			const isRun = st === 'run'
+			const vMin = a.average_speed * 60 // m/s → m/min
+			// Oxygen cost at this speed (ACSM formula)
+			const vo2AtEffort = isRun ? 3.5 + vMin * 0.2 : 3.5 + vMin * 0.1
+			// %HRmax → %VO2max (Swain et al. 1994)
+			const hrFrac = a.average_heartrate / maxHRever
+			const vo2Frac = 1.537 * hrFrac - 0.537
+			if (vo2Frac < 0.25) return null // effort too light to be reliable
+			const val = Math.round((vo2AtEffort / vo2Frac) * 10) / 10
+			if (val < 22 || val > 82) return null // sanity range
+			return {
+				date: (a.start_date_local || a.start_date || '').slice(0, 10),
+				vo2max: val,
+				sport: isRun ? 'run' : 'bike',
+			}
+		})
+		.filter(Boolean)
+		.sort((a: any, b: any) => a.date.localeCompare(b.date)) as { date: string; vo2max: number; sport: 'run' | 'bike' }[]
+})
+
+const vo2HasData = computed(() => vo2Estimates.value.length >= 3)
+
+// Rolling 28-day average for a given sport
+function vo2Rolling(sport: 'run' | 'bike', dates: string[]) {
+	const pts = vo2Estimates.value.filter(e => e.sport === sport)
+	return dates.map(d => {
+		const cutoff = new Date(d)
+		cutoff.setDate(cutoff.getDate() - 28)
+		const win = pts.filter(e => {
+			const ed = new Date(e.date)
+			return ed <= new Date(d) && ed >= cutoff
+		})
+		return win.length ? Math.round((win.reduce((s, e) => s + e.vo2max, 0) / win.length) * 10) / 10 : null
+	})
+}
+
+const vo2CurrentRun = computed(() => {
+	const pts = vo2Estimates.value.filter(e => e.sport === 'run').slice(-8)
+	if (!pts.length) return null
+	return Math.round((pts.reduce((s, e) => s + e.vo2max, 0) / pts.length) * 10) / 10
+})
+const vo2CurrentBike = computed(() => {
+	const pts = vo2Estimates.value.filter(e => e.sport === 'bike').slice(-8)
+	if (!pts.length) return null
+	return Math.round((pts.reduce((s, e) => s + e.vo2max, 0) / pts.length) * 10) / 10
+})
+
+function vo2Zone(v: number | null) {
+	if (!v) return { label: '', color: 'var(--text-muted)' }
+	if (v >= 60) return { label: 'Superior', color: '#00c9a7' }
+	if (v >= 52) return { label: 'Excellent', color: '#56d364' }
+	if (v >= 43) return { label: 'Good', color: '#f0b429' }
+	if (v >= 35) return { label: 'Fair', color: '#fb8c00' }
+	return { label: 'Poor', color: '#e53935' }
+}
+
 // ===== Charts =====
 const isHeatmap = ref(true)
 const heatmapWeeks = ref<any[]>([])
@@ -407,7 +511,11 @@ const tonnageCanvas = ref<HTMLCanvasElement | null>(null)
 const weightCanvas = ref<HTMLCanvasElement | null>(null)
 const mixCanvas = ref<HTMLCanvasElement | null>(null)
 const monthlyCanvas = ref<HTMLCanvasElement | null>(null)
+const vo2Canvas = ref<HTMLCanvasElement | null>(null)
 let charts: Chart[] = []
+
+const stravaActivities = ref<any[]>([])
+const stravaConnected = ref(false)
 
 const css = (n: string) => getComputedStyle(document.documentElement).getPropertyValue(n).trim()
 
@@ -539,6 +647,102 @@ function buildHeatmap() {
 	heatmapWeeks.value = weeks
 }
 
+function buildVO2() {
+	if (!vo2Canvas.value || !vo2HasData.value) return
+	// Unique sorted dates across all estimates
+	const allDates = [...new Set(vo2Estimates.value.map(e => e.date))].sort()
+	const labels = allDates.map(d => format(parseISO(d), 'd MMM yy'))
+
+	const runColor = getSportColor('running')
+	const bikeColor = getSportColor('bike')
+
+	const pointsForSport = (sport: 'run' | 'bike') =>
+		allDates.map(d => {
+			const match = vo2Estimates.value.find(e => e.date === d && e.sport === sport)
+			return match ? match.vo2max : null
+		})
+
+	charts.push(new Chart(vo2Canvas.value, {
+		type: 'line',
+		data: {
+			labels,
+			datasets: [
+				{
+					label: 'Running',
+					data: pointsForSport('run'),
+					borderColor: runColor,
+					backgroundColor: runColor + '33',
+					borderWidth: 0,
+					pointRadius: 5,
+					pointHoverRadius: 7,
+					pointBackgroundColor: runColor,
+					spanGaps: false,
+					tension: 0,
+					showLine: false,
+				},
+				{
+					label: 'Cycling',
+					data: pointsForSport('bike'),
+					borderColor: bikeColor,
+					backgroundColor: bikeColor + '33',
+					borderWidth: 0,
+					pointRadius: 5,
+					pointHoverRadius: 7,
+					pointBackgroundColor: bikeColor,
+					spanGaps: false,
+					tension: 0,
+					showLine: false,
+				},
+				{
+					label: '28-day avg (run)',
+					data: vo2Rolling('run', allDates),
+					borderColor: runColor,
+					backgroundColor: 'transparent',
+					borderWidth: 2,
+					pointRadius: 0,
+					tension: 0.4,
+					spanGaps: true,
+				},
+				{
+					label: '28-day avg (bike)',
+					data: vo2Rolling('bike', allDates),
+					borderColor: bikeColor,
+					backgroundColor: 'transparent',
+					borderWidth: 2,
+					pointRadius: 0,
+					tension: 0.4,
+					spanGaps: true,
+				},
+			],
+		},
+		options: {
+			...baseOpts('ml/kg/min'),
+			plugins: {
+				...baseOpts('ml/kg/min').plugins,
+				legend: {
+					display: true, position: 'bottom',
+					labels: { color: css('--text-secondary'), boxWidth: 10, font: { size: 10 }, usePointStyle: true },
+				},
+			},
+			scales: {
+				...(baseOpts('ml/kg/min') as any).scales,
+				y: {
+					...(baseOpts('ml/kg/min') as any).scales.y,
+					min: 25,
+					ticks: { color: css('--text-muted'), font: { size: 10 }, stepSize: 5 },
+				},
+				x: {
+					...(baseOpts('ml/kg/min') as any).scales.x,
+					ticks: {
+						color: css('--text-muted'), font: { size: 10 },
+						maxTicksLimit: 10, maxRotation: 0,
+					},
+				},
+			},
+		} as any,
+	}))
+}
+
 function heatColor(day: any) {
 	if (!day.value) return css('--surface-2')
 	const intensity = Math.min(day.value / 3, 1)
@@ -551,7 +755,7 @@ function setMonthly() { isHeatmap.value = false; nextTick(buildMonthly) }
 async function buildAll() {
 	destroyCharts()
 	await nextTick()
-	buildDistance(); buildTonnage(); buildWeight(); buildMix(); buildHeatmap()
+	buildDistance(); buildTonnage(); buildWeight(); buildMix(); buildHeatmap(); buildVO2()
 	if (!isHeatmap.value) buildMonthly()
 }
 
@@ -561,6 +765,20 @@ async function load() {
 	dailyWeights.value = dw
 	raceGoals.value = rg
 	userName.value = localStorage.getItem('userName') || ''
+	// Fetch Strava activities for VO2 max estimation (non-blocking)
+	try {
+		stravaConnected.value = await stravaApi.isStravaConnected()
+		if (stravaConnected.value) {
+			const [p1, p2, p3] = await Promise.all([
+				stravaApi.getActivities(1, 30),
+				stravaApi.getActivities(2, 30),
+				stravaApi.getActivities(3, 30),
+			])
+			stravaActivities.value = [...(p1 || []), ...(p2 || []), ...(p3 || [])]
+		}
+	} catch {
+		// Strava not connected or API error — VO2 section stays hidden
+	}
 	await buildAll()
 }
 
@@ -704,4 +922,19 @@ onUnmounted(destroyCharts)
 .pred-trend { font-size: 0.78rem; color: var(--text-muted); }
 .pred-trend.pos { color: var(--success-color); }
 .pred-trend.neg { color: var(--danger-color); }
+
+/* VO2 max */
+.vo2-card { }
+.vo2-badge-row { display: flex; flex-wrap: wrap; gap: 8px; }
+.vo2-badge {
+	display: inline-flex; align-items: center; gap: 6px;
+	background: var(--surface-2); border: 1px solid var(--border-color);
+	border-radius: var(--radius-sm); padding: 5px 10px; font-size: 0.8rem;
+}
+.vo2-badge-label { color: var(--text-muted); font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.04em; }
+.vo2-badge .mono { font-size: 1.05rem; font-weight: 700; }
+.vo2-badge-unit { color: var(--text-muted); font-size: 0.72rem; }
+.vo2-zone-chip { font-size: 0.72rem; font-weight: 600; margin-left: 2px; }
+.vo2-chart-body { height: 220px; position: relative; margin-top: 14px; }
+.vo2-note { margin: 12px 0 0; font-size: 0.72rem; color: var(--text-muted); line-height: 1.5; }
 </style>
