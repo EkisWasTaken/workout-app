@@ -224,23 +224,6 @@ const handleConnectToStrava = async () => {
 	}
 };
 
-const handleStravaAuthCallback = async (_event: any, url: string) => {
-	console.log("Profile: Auth callback intercepted:", url);
-	try {
-		const urlParams = new URLSearchParams(new URL(url).search);
-		const code = urlParams.get("code");
-		if (code) {
-			await stravaApi.exchangeCodeForToken(code);
-			await checkStravaConnection(); 
-			message.success("UPLINK_ESTABLISHED_SUCCESSFULLY");
-		}
-	} catch (error) {
-		message.error("HANDSHAKE_FAILED");
-		console.error("Strava Auth Error:", error);
-	} finally {
-		connectingToStrava.value = false; 
-	}
-};
 
 const fetchWorkoutTypeColors = async () => {
 	try {
