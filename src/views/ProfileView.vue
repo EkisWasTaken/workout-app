@@ -14,6 +14,9 @@
 						<n-form-item label="Goal body weight (kg)">
 							<n-input v-model:value="goalWeight" type="text" placeholder="e.g. 75.5" />
 						</n-form-item>
+						<n-form-item label="Resting heart rate (bpm)">
+							<n-input v-model:value="restingHR" type="text" placeholder="e.g. 55" />
+						</n-form-item>
 						<n-button @click="saveProfile" type="primary">Save profile</n-button>
 					</n-space>
 				</n-card>
@@ -112,6 +115,7 @@ import type { RaceGoal, AddRaceGoalPayload } from "@/types";
 const message = useMessage();
 const userName = ref("");
 const goalWeight = ref<string>("");
+const restingHR = ref<string>("");
 const isStravaConnected = ref(false);
 const connectingToStrava = ref(false);
 
@@ -159,6 +163,8 @@ const loadProfile = async () => {
 		if (storedName) userName.value = storedName;
 		const storedGoal = localStorage.getItem("goalWeight");
 		if (storedGoal) goalWeight.value = storedGoal;
+		const storedRHR = localStorage.getItem("restingHR");
+		if (storedRHR) restingHR.value = storedRHR;
 	} catch (e) { console.error("Failed to load profile", e); }
 };
 
@@ -167,6 +173,9 @@ const saveProfile = () => {
 		localStorage.setItem("userName", userName.value);
 		if (goalWeight.value !== "") {
 			localStorage.setItem("goalWeight", goalWeight.value);
+		}
+		if (restingHR.value !== "") {
+			localStorage.setItem("restingHR", restingHR.value);
 		}
 		message.success("Profile saved");
 	} catch (e) { message.error("Failed to save"); }

@@ -108,13 +108,22 @@
 			</div>
 		</section>
 
-		<!-- Zone distribution (full-width, grouped under Trends) -->
-		<section v-if="zonesHasData" class="panel chart-card" style="margin-top: 14px">
-			<div class="chart-head">
-				<h3>Training zones</h3>
-				<span class="note">% of weekly run time per zone · max HR {{ maxHRDisplay }} bpm</span>
+		<!-- Zone distribution -->
+		<section v-if="zonesHasData" class="zone-section" style="margin-top: 14px">
+			<div class="panel chart-card">
+				<div class="chart-head">
+					<h3>Weekly zones</h3>
+					<span class="note">% of run time · 12 weeks · Karvonen · max {{ maxHRDisplay }} / rest {{ restingHR }} bpm</span>
+				</div>
+				<div class="chart-body"><canvas ref="zoneCanvas"></canvas></div>
 			</div>
-			<div class="chart-body"><canvas ref="zoneCanvas"></canvas></div>
+			<div class="panel chart-card">
+				<div class="chart-head">
+					<h3>Zone balance</h3>
+					<span class="note">last 4 weeks</span>
+				</div>
+				<div class="chart-body"><canvas ref="zoneDonutCanvas"></canvas></div>
+			</div>
 		</section>
 
 		<!-- Projections -->
@@ -604,6 +613,7 @@ const racePredictor = computed(() => {
 const maxHRDisplay = computed(() =>
 	Math.max(0, ...stravaActivities.value.map((a: any) => a.max_heartrate || 0))
 )
+const restingHR = computed(() => parseInt(localStorage.getItem('restingHR') || '60', 10))
 
 const zonesHasData = computed(() => {
 	if (maxHRDisplay.value < 140) return false
@@ -623,6 +633,7 @@ const mixCanvas = ref<HTMLCanvasElement | null>(null)
 const monthlyCanvas = ref<HTMLCanvasElement | null>(null)
 const vo2Canvas = ref<HTMLCanvasElement | null>(null)
 const zoneCanvas = ref<HTMLCanvasElement | null>(null)
+const zoneDonutCanvas = ref<HTMLCanvasElement | null>(null)
 let charts: Chart[] = []
 
 const stravaActivities = ref<any[]>([])
@@ -824,45 +835,53 @@ function buildVO2() {
 	}))
 }
 
+const PULSE_ZONES = [
+	{ name: 'Z1 Easy',      min: 0,    max: 0.60, color: '#56d364' },
+	{ name: 'Z2 Aerobic',   min: 0.60, max: 0.70, color: '#4f8cff' },
+	{ name: 'Z3 Tempo',     min: 0.70, max: 0.80, color: '#f0b429' },
+	{ name: 'Z4 Threshold', min: 0.80, max: 0.90, color: '#fb8c00' },
+	{ name: 'Z5 VO₂max',   min: 0.90, max: 1.01, color: '#e53935' },
+]
+
+function zoneAbsBpm(z: typeof PULSE_ZONES[number], maxHR: number, restHR: number) {
+	const hrr = maxHR - restHR
+	return { lo: restHR + hrr * z.min, hi: restHR + hrr * z.max }
+}
+
 function buildZones() {
 	if (!zoneCanvas.value || !zonesHasData.value) return
 	const maxHR = maxHRDisplay.value
+	const restHR = restingHR.value
 	const runs = stravaActivities.value.filter((a: any) => {
 		const st = (a.sport_type || a.type || '').toLowerCase()
 		return st === 'run' && a.average_heartrate && a.moving_time
 	})
 	const weeks = weekBuckets(12)
-	const zones = [
-		{ name: 'Z1 Easy',      min: 0,    max: 0.60, color: '#56d364' },
-		{ name: 'Z2 Aerobic',   min: 0.60, max: 0.70, color: '#4f8cff' },
-		{ name: 'Z3 Tempo',     min: 0.70, max: 0.80, color: '#f0b429' },
-		{ name: 'Z4 Threshold', min: 0.80, max: 0.90, color: '#fb8c00' },
-		{ name: 'Z5 VO₂max',   min: 0.90, max: 1.01, color: '#e53935' },
-	]
-	// Pre-compute weekly totals for percentage calculation
 	const weekTotals = weeks.map(wk =>
 		runs.filter((a: any) => {
 			const d = new Date(a.start_date_local || a.start_date)
 			return d >= wk.start && d <= wk.end
 		}).reduce((s: number, a: any) => s + a.moving_time, 0)
 	)
-
-	const datasets = zones.map(z => ({
-		label: z.name,
-		backgroundColor: z.color,
-		data: weeks.map((wk, wi) => {
-			const total = weekTotals[wi]
-			if (!total) return 0
-			const zoneTime = runs.filter((a: any) => {
-				const d = new Date(a.start_date_local || a.start_date)
-				const f = a.average_heartrate / maxHR
-				return d >= wk.start && d <= wk.end && f >= z.min && f < z.max
-			}).reduce((s: number, a: any) => s + a.moving_time, 0)
-			return Math.round((zoneTime / total) * 100)
-		}),
-		borderRadius: 3,
-		maxBarThickness: 22,
-	}))
+	const datasets = PULSE_ZONES.map(z => {
+		const { lo, hi } = zoneAbsBpm(z, maxHR, restHR)
+		return {
+			label: z.name,
+			backgroundColor: z.color,
+			data: weeks.map((wk, wi) => {
+				const total = weekTotals[wi]
+				if (!total) return 0
+				const zoneTime = runs.filter((a: any) => {
+					const d = new Date(a.start_date_local || a.start_date)
+					const hr = a.average_heartrate
+					return d >= wk.start && d <= wk.end && hr >= lo && hr < hi
+				}).reduce((s: number, a: any) => s + a.moving_time, 0)
+				return Math.round((zoneTime / total) * 100)
+			}),
+			borderRadius: 3,
+			maxBarThickness: 22,
+		}
+	})
 	charts.push(new Chart(zoneCanvas.value, {
 		type: 'bar',
 		data: { labels: weeks.map(w => w.label), datasets },
@@ -889,6 +908,57 @@ function buildZones() {
 	}))
 }
 
+function buildZoneDonut() {
+	if (!zoneDonutCanvas.value || !zonesHasData.value) return
+	const maxHR = maxHRDisplay.value
+	const restHR = restingHR.value
+	const runs = stravaActivities.value.filter((a: any) => {
+		const st = (a.sport_type || a.type || '').toLowerCase()
+		return st === 'run' && a.average_heartrate && a.moving_time
+	})
+	const cutoff = subWeeks(new Date(), 4)
+	const recentRuns = runs.filter((a: any) => new Date(a.start_date_local || a.start_date) >= cutoff)
+	const totalTime = recentRuns.reduce((s: number, a: any) => s + a.moving_time, 0)
+	if (!totalTime) return
+
+	const data = PULSE_ZONES.map(z => {
+		const { lo, hi } = zoneAbsBpm(z, maxHR, restHR)
+		const t = recentRuns.filter((a: any) => a.average_heartrate >= lo && a.average_heartrate < hi)
+			.reduce((s: number, a: any) => s + a.moving_time, 0)
+		return Math.round((t / totalTime) * 100)
+	})
+
+	const labels = PULSE_ZONES.map(z => {
+		const { lo, hi } = zoneAbsBpm(z, maxHR, restHR)
+		return `${z.name} (${Math.round(lo)}–${hi > 300 ? maxHR : Math.round(hi)})`
+	})
+
+	charts.push(new Chart(zoneDonutCanvas.value, {
+		type: 'doughnut',
+		data: {
+			labels,
+			datasets: [{ data, backgroundColor: PULSE_ZONES.map(z => z.color), borderWidth: 0, hoverOffset: 6 }],
+		},
+		options: {
+			responsive: true,
+			maintainAspectRatio: false,
+			cutout: '60%',
+			plugins: {
+				legend: {
+					display: true,
+					position: 'right',
+					labels: { color: css('--text-secondary'), boxWidth: 10, font: { size: 9 }, usePointStyle: true, padding: 7 },
+				},
+				tooltip: {
+					backgroundColor: css('--surface-2'), borderColor: css('--border-strong'), borderWidth: 1,
+					titleColor: css('--text-color'), bodyColor: css('--text-secondary'), padding: 10, cornerRadius: 8, displayColors: false,
+					callbacks: { label: (ctx: any) => ` ${ctx.raw}% of run time` },
+				},
+			},
+		} as any,
+	}))
+}
+
 function heatColor(day: any) {
 	if (!day.value) return css('--surface-2')
 	const intensity = Math.min(day.value / 3, 1)
@@ -901,7 +971,7 @@ function setMonthly() { isHeatmap.value = false; nextTick(buildMonthly) }
 async function buildAll() {
 	destroyCharts()
 	await nextTick()
-	buildDistance(); buildTonnage(); buildWeight(); buildMix(); buildHeatmap(); buildVO2(); buildZones()
+	buildDistance(); buildTonnage(); buildWeight(); buildMix(); buildHeatmap(); buildVO2(); buildZones(); buildZoneDonut()
 	if (!isHeatmap.value) buildMonthly()
 }
 
@@ -1028,6 +1098,8 @@ onUnmounted(destroyCharts)
 .chart-body { height: 200px; position: relative; }
 .chart-body.monthly { height: 300px; }
 .heatmap-card { margin-top: 14px; }
+.zone-section { display: grid; grid-template-columns: 2fr 1fr; gap: 14px; }
+@media (max-width: 768px) { .zone-section { grid-template-columns: 1fr; } }
 
 .dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
 .dot.gym { background: var(--color-gym-primary); }
