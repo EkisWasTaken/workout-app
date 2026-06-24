@@ -112,7 +112,7 @@
 		<section v-if="zonesHasData" class="panel chart-card" style="margin-top: 14px">
 			<div class="chart-head">
 				<h3>Training zones</h3>
-				<span class="note">avg HR per run · max {{ maxHRDisplay }} bpm</span>
+				<span class="note">% of weekly run time per zone · max HR {{ maxHRDisplay }} bpm</span>
 			</div>
 			<div class="chart-body"><canvas ref="zoneCanvas"></canvas></div>
 		</section>
@@ -203,26 +203,16 @@
 				<div class="chart-head">
 					<h3>VO₂ max trend</h3>
 					<div class="vo2-badge-row">
-						<template v-if="vo2CurrentRun">
-							<span class="vo2-badge run">
-								<span class="vo2-badge-label">Run</span>
-								<span class="mono">{{ vo2CurrentRun }}</span>
-								<span class="vo2-badge-unit">ml/kg/min</span>
-								<span class="vo2-zone-chip" :style="{ color: vo2Zone(vo2CurrentRun).color }">{{ vo2Zone(vo2CurrentRun).label }}</span>
-							</span>
-						</template>
-						<template v-if="vo2CurrentBike">
-							<span class="vo2-badge bike">
-								<span class="vo2-badge-label">Bike</span>
-								<span class="mono">{{ vo2CurrentBike }}</span>
-								<span class="vo2-badge-unit">ml/kg/min</span>
-								<span class="vo2-zone-chip" :style="{ color: vo2Zone(vo2CurrentBike).color }">{{ vo2Zone(vo2CurrentBike).label }}</span>
-							</span>
-						</template>
+						<span v-if="vo2CurrentRun" class="vo2-badge run">
+							<span class="vo2-badge-label">Running</span>
+							<span class="mono">{{ vo2CurrentRun }}</span>
+							<span class="vo2-badge-unit">ml/kg/min</span>
+							<span class="vo2-zone-chip" :style="{ color: vo2Zone(vo2CurrentRun).color }">{{ vo2Zone(vo2CurrentRun).label }}</span>
+						</span>
 					</div>
 				</div>
 				<div class="chart-body vo2-chart-body"><canvas ref="vo2Canvas"></canvas></div>
-				<p class="vo2-note">8-activity rolling average. Estimated via ACSM oxygen cost + Swain %HRmax→%VO₂max formula. Requires a heart rate monitor. Cycling estimates are less precise without power data.</p>
+				<p class="vo2-note">8-activity rolling average from running. Estimated via ACSM oxygen cost + Swain %HRmax→%VO₂max formula. Requires a heart rate monitor.</p>
 			</section>
 		</template>
 
@@ -503,15 +493,12 @@ const vo2Estimates = computed(() => {
 	return acts
 		.filter((a: any) => {
 			const st = (a.sport_type || a.type || '').toLowerCase()
-			const ok = st === 'run' || st === 'ride' || st === 'virtualride' || st === 'ebikeride'
-			return ok && a.average_heartrate && a.average_speed && (a.moving_time || 0) >= 600
+			return st === 'run' && a.average_heartrate && a.average_speed && (a.moving_time || 0) >= 600
 		})
 		.map((a: any) => {
-			const st = (a.sport_type || a.type || '').toLowerCase()
-			const isRun = st === 'run'
 			const vMin = a.average_speed * 60 // m/s → m/min
-			// Oxygen cost at this speed (ACSM formula)
-			const vo2AtEffort = isRun ? 3.5 + vMin * 0.2 : 3.5 + vMin * 0.1
+			// Oxygen cost at this speed (ACSM formula for running)
+			const vo2AtEffort = 3.5 + vMin * 0.2
 			// %HRmax → %VO2max (Swain et al. 1994)
 			const hrFrac = a.average_heartrate / maxHRever
 			const vo2Frac = 1.537 * hrFrac - 0.537
@@ -521,11 +508,11 @@ const vo2Estimates = computed(() => {
 			return {
 				date: (a.start_date_local || a.start_date || '').slice(0, 10),
 				vo2max: val,
-				sport: isRun ? 'run' : 'bike',
+				sport: 'run' as const,
 			}
 		})
 		.filter(Boolean)
-		.sort((a: any, b: any) => a.date.localeCompare(b.date)) as { date: string; vo2max: number; sport: 'run' | 'bike' }[]
+		.sort((a: any, b: any) => a.date.localeCompare(b.date)) as { date: string; vo2max: number; sport: 'run' }[]
 })
 
 const vo2HasData = computed(() => vo2Estimates.value.length >= 3)
@@ -546,11 +533,6 @@ function vo2Rolling(sport: 'run' | 'bike', dates: string[]) {
 
 const vo2CurrentRun = computed(() => {
 	const pts = vo2Estimates.value.filter(e => e.sport === 'run').slice(-8)
-	if (!pts.length) return null
-	return Math.round((pts.reduce((s, e) => s + e.vo2max, 0) / pts.length) * 10) / 10
-})
-const vo2CurrentBike = computed(() => {
-	const pts = vo2Estimates.value.filter(e => e.sport === 'bike').slice(-8)
 	if (!pts.length) return null
 	return Math.round((pts.reduce((s, e) => s + e.vo2max, 0) / pts.length) * 10) / 10
 })
@@ -778,18 +760,9 @@ function buildHeatmap() {
 
 function buildVO2() {
 	if (!vo2Canvas.value || !vo2HasData.value) return
-	// Unique sorted dates across all estimates
 	const allDates = [...new Set(vo2Estimates.value.map(e => e.date))].sort()
 	const labels = allDates.map(d => format(parseISO(d), 'd MMM yy'))
-
 	const runColor = getSportColor('running')
-	const bikeColor = getSportColor('bike')
-
-	const pointsForSport = (sport: 'run' | 'bike') =>
-		allDates.map(d => {
-			const match = vo2Estimates.value.find(e => e.date === d && e.sport === sport)
-			return match ? match.vo2max : null
-		})
 
 	charts.push(new Chart(vo2Canvas.value, {
 		type: 'line',
@@ -797,10 +770,12 @@ function buildVO2() {
 			labels,
 			datasets: [
 				{
-					label: 'Running',
-					data: pointsForSport('run'),
+					label: 'VO₂max estimate',
+					data: allDates.map(d => {
+						const m = vo2Estimates.value.find(e => e.date === d)
+						return m ? m.vo2max : null
+					}),
 					borderColor: runColor,
-					backgroundColor: runColor + '33',
 					borderWidth: 0,
 					pointRadius: 5,
 					pointHoverRadius: 7,
@@ -810,32 +785,9 @@ function buildVO2() {
 					showLine: false,
 				},
 				{
-					label: 'Cycling',
-					data: pointsForSport('bike'),
-					borderColor: bikeColor,
-					backgroundColor: bikeColor + '33',
-					borderWidth: 0,
-					pointRadius: 5,
-					pointHoverRadius: 7,
-					pointBackgroundColor: bikeColor,
-					spanGaps: false,
-					tension: 0,
-					showLine: false,
-				},
-				{
-					label: '28-day avg (run)',
+					label: '28-day rolling avg',
 					data: vo2Rolling('run', allDates),
 					borderColor: runColor,
-					backgroundColor: 'transparent',
-					borderWidth: 2,
-					pointRadius: 0,
-					tension: 0.4,
-					spanGaps: true,
-				},
-				{
-					label: '28-day avg (bike)',
-					data: vo2Rolling('bike', allDates),
-					borderColor: bikeColor,
 					backgroundColor: 'transparent',
 					borderWidth: 2,
 					pointRadius: 0,
@@ -887,16 +839,27 @@ function buildZones() {
 		{ name: 'Z4 Threshold', min: 0.80, max: 0.90, color: '#fb8c00' },
 		{ name: 'Z5 VO₂max',   min: 0.90, max: 1.01, color: '#e53935' },
 	]
+	// Pre-compute weekly totals for percentage calculation
+	const weekTotals = weeks.map(wk =>
+		runs.filter((a: any) => {
+			const d = new Date(a.start_date_local || a.start_date)
+			return d >= wk.start && d <= wk.end
+		}).reduce((s: number, a: any) => s + a.moving_time, 0)
+	)
+
 	const datasets = zones.map(z => ({
 		label: z.name,
 		backgroundColor: z.color,
-		data: weeks.map(wk =>
-			runs.filter((a: any) => {
+		data: weeks.map((wk, wi) => {
+			const total = weekTotals[wi]
+			if (!total) return 0
+			const zoneTime = runs.filter((a: any) => {
 				const d = new Date(a.start_date_local || a.start_date)
 				const f = a.average_heartrate / maxHR
 				return d >= wk.start && d <= wk.end && f >= z.min && f < z.max
-			}).reduce((s: number, a: any) => s + Math.round(a.moving_time / 60), 0)
-		),
+			}).reduce((s: number, a: any) => s + a.moving_time, 0)
+			return Math.round((zoneTime / total) * 100)
+		}),
 		borderRadius: 3,
 		maxBarThickness: 22,
 	}))
@@ -904,14 +867,23 @@ function buildZones() {
 		type: 'bar',
 		data: { labels: weeks.map(w => w.label), datasets },
 		options: {
-			...baseOpts('min'),
+			...baseOpts('%'),
 			plugins: {
-				...baseOpts('min').plugins,
+				...baseOpts('%').plugins,
 				legend: { display: true, position: 'bottom', labels: { color: css('--text-secondary'), boxWidth: 10, font: { size: 10 }, usePointStyle: true } },
+				tooltip: {
+					...baseOpts('%').plugins.tooltip,
+					callbacks: { label: (ctx: any) => ` ${ctx.dataset.label}: ${ctx.raw}%` },
+				},
 			},
 			scales: {
 				x: { stacked: true, grid: { display: false }, ticks: { color: css('--text-muted'), font: { size: 10 } }, border: { display: false } },
-				y: { stacked: true, grid: { color: css('--border-color') }, ticks: { color: css('--text-muted'), font: { size: 10 } }, border: { display: false } },
+				y: {
+					stacked: true, max: 100,
+					grid: { color: css('--border-color') },
+					ticks: { color: css('--text-muted'), font: { size: 10 }, callback: (v: any) => v + '%' },
+					border: { display: false },
+				},
 			},
 		} as any,
 	}))
