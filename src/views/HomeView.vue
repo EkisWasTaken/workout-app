@@ -108,6 +108,15 @@
 			</div>
 		</section>
 
+		<!-- Zone distribution (full-width, grouped under Trends) -->
+		<section v-if="zonesHasData" class="panel chart-card" style="margin-top: 14px">
+			<div class="chart-head">
+				<h3>Training zones</h3>
+				<span class="note">avg HR per run · max {{ maxHRDisplay }} bpm</span>
+			</div>
+			<div class="chart-body"><canvas ref="zoneCanvas"></canvas></div>
+		</section>
+
 		<!-- Projections -->
 		<template v-if="weightPrediction || runningPrediction">
 			<div class="section-head"><h2>Projections</h2><span class="section-note">based on recent trends</span></div>
@@ -157,6 +166,32 @@
 							{{ fmt(Math.abs(weightPrediction.slopePerWeek)) }} kg/week
 						</div>
 					</div>
+				</div>
+			</section>
+		</template>
+
+		<!-- Race predictor -->
+		<template v-if="racePredictor">
+			<div class="section-head">
+				<h2>Race predictor</h2>
+				<span class="section-note">Riegel formula · {{ racePredictor.basedOn }}</span>
+			</div>
+			<section class="pr-grid">
+				<div class="pr-card">
+					<span class="pr-label"><n-icon :component="TrophyOutline" /> 5 km</span>
+					<span class="pr-value mono">{{ racePredictor.fiveK }}</span>
+				</div>
+				<div class="pr-card">
+					<span class="pr-label"><n-icon :component="TrophyOutline" /> 10 km</span>
+					<span class="pr-value mono">{{ racePredictor.tenK }}</span>
+				</div>
+				<div class="pr-card">
+					<span class="pr-label"><n-icon :component="TrophyOutline" /> Half marathon</span>
+					<span class="pr-value mono">{{ racePredictor.half }}</span>
+				</div>
+				<div class="pr-card">
+					<span class="pr-label"><n-icon :component="TrophyOutline" /> Marathon</span>
+					<span class="pr-value mono">{{ racePredictor.full }}</span>
 				</div>
 			</section>
 		</template>
@@ -234,11 +269,11 @@
 		<section class="pr-grid">
 			<div class="pr-card">
 				<span class="pr-label"><n-icon :component="WalkOutline" /> Longest run</span>
-				<span class="pr-value mono">{{ prLongestRide ? fmt(prLongestRide) + ' km' : '—' }}</span>
+				<span class="pr-value mono">{{ prLongestRun ? fmt(prLongestRun) + ' km' : '—' }}</span>
 			</div>
 			<div class="pr-card">
 				<span class="pr-label"><n-icon :component="BicycleOutline" /> Longest ride</span>
-				<span class="pr-value mono">{{ prLongestRun ? fmt(prLongestRun) + ' km' : '—' }}</span>
+				<span class="pr-value mono">{{ prLongestRide ? fmt(prLongestRide) + ' km' : '—' }}</span>
 			</div>
 			<div class="pr-card">
 				<span class="pr-label"><n-icon :component="TrophyOutline" /> Biggest week</span>
@@ -249,6 +284,32 @@
 				<span class="pr-value mono">{{ prHeaviestGym ? fmt(prHeaviestGym / 1000) + ' t' : '—' }}</span>
 			</div>
 		</section>
+
+		<!-- Running PRs from Strava -->
+		<template v-if="stravaRunPRs">
+			<div class="section-head">
+				<h2>Running PRs</h2>
+				<span class="section-note">best times from Strava</span>
+			</div>
+			<section class="pr-grid">
+				<div v-if="stravaRunPRs.fiveK" class="pr-card">
+					<span class="pr-label"><n-icon :component="TrophyOutline" /> 5 km</span>
+					<span class="pr-value mono">{{ stravaRunPRs.fiveK }}</span>
+				</div>
+				<div v-if="stravaRunPRs.tenK" class="pr-card">
+					<span class="pr-label"><n-icon :component="TrophyOutline" /> 10 km</span>
+					<span class="pr-value mono">{{ stravaRunPRs.tenK }}</span>
+				</div>
+				<div v-if="stravaRunPRs.half" class="pr-card">
+					<span class="pr-label"><n-icon :component="TrophyOutline" /> Half marathon</span>
+					<span class="pr-value mono">{{ stravaRunPRs.half }}</span>
+				</div>
+				<div v-if="stravaRunPRs.full" class="pr-card">
+					<span class="pr-label"><n-icon :component="TrophyOutline" /> Marathon</span>
+					<span class="pr-value mono">{{ stravaRunPRs.full }}</span>
+				</div>
+			</section>
+		</template>
 	</div>
 </template>
 
@@ -503,6 +564,73 @@ function vo2Zone(v: number | null) {
 	return { label: 'Poor', color: '#e53935' }
 }
 
+// ===== Strava Running PRs & Race Predictor =====
+function fmtTime(secs: number) {
+	const h = Math.floor(secs / 3600)
+	const m = Math.floor((secs % 3600) / 60)
+	const s = Math.round(secs % 60)
+	return h > 0
+		? `${h}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`
+		: `${m}:${s.toString().padStart(2, '0')}`
+}
+
+const stravaRunPRs = computed(() => {
+	const runs = stravaActivities.value.filter((a: any) => {
+		const st = (a.sport_type || a.type || '').toLowerCase()
+		return st === 'run' && a.distance && a.moving_time
+	})
+	const bestIn = (minM: number, maxM: number) => {
+		const bucket = runs.filter((a: any) => a.distance >= minM && a.distance <= maxM)
+		if (!bucket.length) return null
+		const fastest = bucket.reduce((b: any, a: any) =>
+			a.moving_time / a.distance < b.moving_time / b.distance ? a : b
+		)
+		return fmtTime(fastest.moving_time)
+	}
+	const r = {
+		fiveK: bestIn(4500, 5800),
+		tenK: bestIn(9000, 11000),
+		half: bestIn(19000, 22000),
+		full: bestIn(40000, 45000),
+	}
+	return Object.values(r).some(v => v !== null) ? r : null
+})
+
+const racePredictor = computed(() => {
+	const runs = stravaActivities.value.filter((a: any) => {
+		const st = (a.sport_type || a.type || '').toLowerCase()
+		return st === 'run' && a.distance >= 5000 && a.moving_time
+	})
+	if (runs.length < 2) return null
+	// Best-pace run as reference (faster = more fit → more reliable predictor)
+	const ref = runs.reduce((b: any, a: any) =>
+		a.moving_time / a.distance < b.moving_time / b.distance ? a : b
+	)
+	const riegel = (targetM: number) => ref.moving_time * Math.pow(targetM / ref.distance, 1.06)
+	const dateStr = (ref.start_date_local || ref.start_date || '').slice(0, 10)
+	const dateLabel = dateStr ? format(parseISO(dateStr), 'd MMM yyyy') : ''
+	return {
+		fiveK: fmtTime(riegel(5000)),
+		tenK: fmtTime(riegel(10000)),
+		half: fmtTime(riegel(21097)),
+		full: fmtTime(riegel(42195)),
+		basedOn: `${fmt(ref.distance / 1000)} km on ${dateLabel}`,
+	}
+})
+
+// ===== Zone distribution =====
+const maxHRDisplay = computed(() =>
+	Math.max(0, ...stravaActivities.value.map((a: any) => a.max_heartrate || 0))
+)
+
+const zonesHasData = computed(() => {
+	if (maxHRDisplay.value < 140) return false
+	return stravaActivities.value.filter((a: any) => {
+		const st = (a.sport_type || a.type || '').toLowerCase()
+		return st === 'run' && a.average_heartrate
+	}).length >= 3
+})
+
 // ===== Charts =====
 const isHeatmap = ref(true)
 const heatmapWeeks = ref<any[]>([])
@@ -512,6 +640,7 @@ const weightCanvas = ref<HTMLCanvasElement | null>(null)
 const mixCanvas = ref<HTMLCanvasElement | null>(null)
 const monthlyCanvas = ref<HTMLCanvasElement | null>(null)
 const vo2Canvas = ref<HTMLCanvasElement | null>(null)
+const zoneCanvas = ref<HTMLCanvasElement | null>(null)
 let charts: Chart[] = []
 
 const stravaActivities = ref<any[]>([])
@@ -743,6 +872,51 @@ function buildVO2() {
 	}))
 }
 
+function buildZones() {
+	if (!zoneCanvas.value || !zonesHasData.value) return
+	const maxHR = maxHRDisplay.value
+	const runs = stravaActivities.value.filter((a: any) => {
+		const st = (a.sport_type || a.type || '').toLowerCase()
+		return st === 'run' && a.average_heartrate && a.moving_time
+	})
+	const weeks = weekBuckets(12)
+	const zones = [
+		{ name: 'Z1 Easy',      min: 0,    max: 0.60, color: '#56d364' },
+		{ name: 'Z2 Aerobic',   min: 0.60, max: 0.70, color: '#4f8cff' },
+		{ name: 'Z3 Tempo',     min: 0.70, max: 0.80, color: '#f0b429' },
+		{ name: 'Z4 Threshold', min: 0.80, max: 0.90, color: '#fb8c00' },
+		{ name: 'Z5 VO₂max',   min: 0.90, max: 1.01, color: '#e53935' },
+	]
+	const datasets = zones.map(z => ({
+		label: z.name,
+		backgroundColor: z.color,
+		data: weeks.map(wk =>
+			runs.filter((a: any) => {
+				const d = new Date(a.start_date_local || a.start_date)
+				const f = a.average_heartrate / maxHR
+				return d >= wk.start && d <= wk.end && f >= z.min && f < z.max
+			}).reduce((s: number, a: any) => s + Math.round(a.moving_time / 60), 0)
+		),
+		borderRadius: 3,
+		maxBarThickness: 22,
+	}))
+	charts.push(new Chart(zoneCanvas.value, {
+		type: 'bar',
+		data: { labels: weeks.map(w => w.label), datasets },
+		options: {
+			...baseOpts('min'),
+			plugins: {
+				...baseOpts('min').plugins,
+				legend: { display: true, position: 'bottom', labels: { color: css('--text-secondary'), boxWidth: 10, font: { size: 10 }, usePointStyle: true } },
+			},
+			scales: {
+				x: { stacked: true, grid: { display: false }, ticks: { color: css('--text-muted'), font: { size: 10 } }, border: { display: false } },
+				y: { stacked: true, grid: { color: css('--border-color') }, ticks: { color: css('--text-muted'), font: { size: 10 } }, border: { display: false } },
+			},
+		} as any,
+	}))
+}
+
 function heatColor(day: any) {
 	if (!day.value) return css('--surface-2')
 	const intensity = Math.min(day.value / 3, 1)
@@ -755,7 +929,7 @@ function setMonthly() { isHeatmap.value = false; nextTick(buildMonthly) }
 async function buildAll() {
 	destroyCharts()
 	await nextTick()
-	buildDistance(); buildTonnage(); buildWeight(); buildMix(); buildHeatmap(); buildVO2()
+	buildDistance(); buildTonnage(); buildWeight(); buildMix(); buildHeatmap(); buildVO2(); buildZones()
 	if (!isHeatmap.value) buildMonthly()
 }
 
