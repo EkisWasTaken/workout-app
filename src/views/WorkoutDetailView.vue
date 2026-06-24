@@ -214,13 +214,13 @@ const routeData = computed(() => {
 	const VW = 900, VH = 480, pad = 56
 	const rangeX = maxX - minX || 0.00001
 	const rangeY = maxY - minY || 0.00001
-	const scale = Math.min((VW - pad * 2) / rangeX, (VH - pad * 2) / rangeY)
-	const ox = (VW - rangeX * scale) / 2
-	const oy = (VH - rangeY * scale) / 2
+	// Scale X and Y independently so the route fills the canvas regardless of orientation
+	const scaleX = (VW - pad * 2) / rangeX
+	const scaleY = (VH - pad * 2) / rangeY
 
 	const svgPts = pts.map(p => ({
-		x: ox + (p.x - minX) * scale,
-		y: oy + (p.y - minY) * scale,
+		x: pad + (p.x - minX) * scaleX,
+		y: pad + (p.y - minY) * scaleY,
 	}))
 
 	return {
@@ -258,22 +258,16 @@ const formatPaceOrSpeedFromSpeed = (spd: number) => {
 	return `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')} /km`
 }
 
-const maxRef = computed(() => {
-	const splits: any[] = stravaActivity.value?.splits_metric ?? []
-	if (!splits.length) return 1
-	if (workout.value?.type?.toLowerCase() === 'bike')
-		return Math.max(...splits.map((s: any) => s.average_speed * 3.6))
-	return Math.max(...splits.map((s: any) => 1000 / (s.average_speed || 0.001)))
-}
-)
-
 const paceBarWidth = (split: any) => {
 	if (!split.average_speed) return 0
 	if (workout.value?.type?.toLowerCase() === 'bike') {
-		return Math.min(100, ((split.average_speed * 3.6) / maxRef.value) * 100)
+		// 45 km/h = full bar, 10 km/h = empty
+		const kmh = split.average_speed * 3.6
+		return Math.max(0, Math.min(100, (kmh - 10) / (45 - 10) * 100))
 	}
+	// Running: 2:50 min/km (170 s/km) = full, 10:00 min/km (600 s/km) = empty
 	const pace = 1000 / split.average_speed
-	return Math.min(100, (maxRef.value / pace) * 100)
+	return Math.max(0, Math.min(100, (600 - pace) / (600 - 170) * 100))
 }
 
 onMounted(async () => {
