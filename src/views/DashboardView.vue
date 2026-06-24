@@ -222,35 +222,17 @@
                 <label>Actual distance (km)</label>
                 <input type="number" v-model="completionData.distance" />
               </div>
-              <div class="form-group">
-                <label>Actual duration (min)</label>
-                <input type="number" v-model="completionData.actualDuration" />
-              </div>
             </template>
           </template>
 
-          <!-- Gym: load lifted is the only manual metric -->
+          <!-- Gym: load lifted -->
           <template v-else-if="getWorkoutType(selectedWorkout) === 'gym'">
             <div class="form-group">
               <label>Load lifted (kg)</label>
               <input type="number" v-model="completionData.totalWeightLifted" />
             </div>
-            <div class="form-group">
-              <label>Actual duration (min)</label>
-              <input type="number" v-model="completionData.actualDuration" />
-            </div>
           </template>
 
-          <!-- Other -->
-          <div class="form-group" v-else>
-            <label>Actual duration (min)</label>
-            <input type="number" v-model="completionData.actualDuration" />
-          </div>
-
-          <div class="form-group">
-            <label>RPE (1–10)</label>
-            <input type="number" min="1" max="10" v-model="completionData.rpe" />
-          </div>
           <div class="form-group">
             <label>Notes</label>
             <textarea v-model="completionData.notes"></textarea>
@@ -524,8 +506,6 @@ function openDetailsModal(workout: Workout) {
   selectedWorkout.value = { ...workout };
   modalMode.value = 'view';
   completionData.value = {
-    actualDuration: workout.duration || 0,
-    rpe: 5,
     notes: workout.notes || '',
     totalWeightLifted: workout.totalWeightLifted || 0,
     distance: workout.distance || 0,

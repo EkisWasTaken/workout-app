@@ -61,7 +61,6 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, markRaw } from 'vue'
 import { RouterLink, RouterView } from 'vue-router'
-import { db } from '@/db'
 import RaceCountdown from '@/components/RaceCountdown.vue'
 import { NIcon } from 'naive-ui'
 import {
@@ -93,52 +92,13 @@ const handleResize = () => {
 	isMobile.value = window.innerWidth <= 768
 }
 
-const workoutTypes = ['gym', 'running', 'bike', 'rest', 'other'];
-
-const hexToRgb = (hex: string) => {
-	const bigint = parseInt(hex.slice(1), 16);
-	const r = (bigint >> 16) & 255;
-	const g = (bigint >> 8) & 255;
-	const b = bigint & 255;
-	return `${r}, ${g}, ${b}`;
-};
-
-const applyGlobalCssColors = (colorsMap: { [key: string]: string }) => {
-	const root = document.documentElement;
-	for (const type of workoutTypes) {
-		const hexColor = colorsMap[type];
-		if (hexColor) {
-			root.style.setProperty(`--color-${type}-primary`, hexColor);
-			root.style.setProperty(`--color-${type}-primary-rgb`, hexToRgb(hexColor));
-		}
-	}
-};
-
-const fetchWorkoutTypeColors = async () => {
-	try {
-		const colors = await db.getWorkoutTypeColors();
-		const colorsMap: { [key: string]: string } = {};
-		const found = (type: string) => colors.find((c: any) => c.type === type)?.color;
-		workoutTypes.forEach(type => {
-			const c = found(type);
-			if (c) colorsMap[type] = c;
-		});
-		applyGlobalCssColors(colorsMap);
-	} catch (error) {
-		console.error('Error fetching workout type colors:', error);
-	}
-};
-
 onMounted(() => {
-	fetchWorkoutTypeColors();
-	window.addEventListener('colors-updated', fetchWorkoutTypeColors);
-	window.addEventListener('resize', handleResize);
-});
+	window.addEventListener('resize', handleResize)
+})
 
 onUnmounted(() => {
-	window.removeEventListener('colors-updated', fetchWorkoutTypeColors);
-	window.removeEventListener('resize', handleResize);
-});
+	window.removeEventListener('resize', handleResize)
+})
 </script>
 
 <style scoped>
@@ -153,7 +113,7 @@ onUnmounted(() => {
 
 .sidebar {
 	width: var(--sidebar-width);
-	background-color: var(--surface-color);
+	background: linear-gradient(180deg, #141e2e 0%, #101620 100%);
 	border-right: 1px solid var(--border-color);
 	display: flex;
 	flex-direction: column;
@@ -180,19 +140,22 @@ onUnmounted(() => {
 	display: flex;
 	align-items: center;
 	justify-content: center;
-	width: 36px;
-	height: 36px;
+	width: 34px;
+	height: 34px;
 	border-radius: var(--radius-sm);
-	background: var(--primary-soft);
+	background: linear-gradient(135deg, rgba(79,140,255,0.22) 0%, rgba(79,140,255,0.10) 100%);
+	border: 1px solid rgba(79,140,255,0.25);
 	color: var(--primary-color);
-	font-size: 1.3rem;
+	font-size: 1.2rem;
 	flex-shrink: 0;
+	box-shadow: 0 0 12px rgba(79,140,255,0.15);
 }
 
 .brand-name {
-	font-size: 1.15rem;
+	font-size: 1.05rem;
 	font-weight: 700;
-	letter-spacing: -0.02em;
+	letter-spacing: 0.04em;
+	text-transform: uppercase;
 	color: var(--text-color);
 }
 
@@ -229,8 +192,10 @@ onUnmounted(() => {
 }
 
 .navigation-link.router-link-active {
-	background-color: var(--primary-soft);
+	background-color: rgba(79, 140, 255, 0.10);
 	color: var(--primary-color);
+	border-left: 2px solid var(--primary-color);
+	padding-left: 10px;
 }
 
 .icon {

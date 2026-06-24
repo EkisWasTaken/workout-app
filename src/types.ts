@@ -47,11 +47,9 @@ export interface StravaActivity {
 }
 
 export interface CompleteWorkoutFormValues {
-    actualDuration: number | undefined;
-    rpe: number;
     notes: string;
     totalWeightLifted: number;
-    stravaActivityId?: number; // Changed from number | null to number | undefined
+    stravaActivityId?: number;
     distance?: number;
 }
 

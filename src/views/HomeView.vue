@@ -801,15 +801,15 @@ onUnmounted(destroyCharts)
 .primary-btn { display: inline-flex; align-items: center; gap: 6px; background: var(--primary-color); color: #fff; padding: 9px 16px; border-radius: var(--radius-sm); font-size: 0.85rem; font-weight: 600; transition: background 0.15s; }
 .primary-btn:hover { background: var(--primary-strong); }
 
-.section-head { display: flex; align-items: baseline; gap: 12px; margin: 28px 2px 14px; }
-.section-head h2 { font-size: 1.1rem; font-weight: 600; }
-.section-note { color: var(--text-muted); font-size: 0.8rem; }
+.section-head { display: flex; align-items: baseline; gap: 12px; margin: 32px 2px 14px; padding-bottom: 10px; border-bottom: 1px solid var(--border-color); }
+.section-head h2 { font-size: 1.05rem; font-weight: 400; font-family: var(--font-serif); letter-spacing: 0; }
+.section-note { color: var(--text-muted); font-size: 0.75rem; margin-left: auto; }
 
 /* Metric cards */
 .metric-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-bottom: 16px; }
 @media (max-width: 900px) { .metric-grid { grid-template-columns: repeat(2, 1fr); } }
 @media (max-width: 480px) { .metric-grid { grid-template-columns: 1fr; } }
-.metric-card { background: var(--surface-color); border: 1px solid var(--border-color); border-radius: var(--radius); padding: 16px 18px; }
+.metric-card { background: var(--surface-color); border: 1px solid var(--border-color); border-radius: var(--radius); padding: 16px 18px; box-shadow: inset 0 1px 0 rgba(255,255,255,0.04), 0 1px 3px rgba(0,0,0,0.3); }
 .metric-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
 .metric-label { color: var(--text-secondary); font-size: 0.82rem; }
 .metric-ico { color: var(--text-muted); font-size: 1.2rem; }
@@ -830,7 +830,7 @@ onUnmounted(destroyCharts)
 /* Row two */
 .row-two { display: grid; grid-template-columns: 1.7fr 1fr; gap: 14px; }
 @media (max-width: 768px) { .row-two { grid-template-columns: 1fr; } }
-.panel { background: var(--surface-color); border: 1px solid var(--border-color); border-radius: var(--radius); padding: 18px 20px; }
+.panel { background: var(--surface-color); border: 1px solid var(--border-color); border-radius: var(--radius); padding: 18px 20px; box-shadow: inset 0 1px 0 rgba(255,255,255,0.04), 0 1px 4px rgba(0,0,0,0.25); }
 .panel-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
 .panel-head h2 { font-size: 1rem; font-weight: 600; display: flex; align-items: center; gap: 7px; }
 .text-link { color: var(--primary-color); font-size: 0.82rem; font-weight: 500; }
@@ -846,7 +846,10 @@ onUnmounted(destroyCharts)
 .day-chip.done { background: var(--c); color: #0b0e14; }
 .day-empty { color: var(--text-muted); margin: auto; }
 
-.race-panel.urgent { border-color: var(--danger-color); }
+.race-panel.urgent {
+	border-color: rgba(239, 68, 68, 0.35);
+	box-shadow: 0 0 0 1px rgba(239, 68, 68, 0.08), inset 0 1px 0 rgba(255,255,255,0.04);
+}
 .race-name { font-size: 1.1rem; font-weight: 400; font-family: var(--font-serif); margin: 0; }
 .race-date { color: var(--text-secondary); font-size: 0.85rem; margin: 4px 0 16px; }
 .race-counts { display: flex; gap: 10px; }
@@ -903,7 +906,7 @@ onUnmounted(destroyCharts)
 /* PRs */
 .pr-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
 @media (max-width: 900px) { .pr-grid { grid-template-columns: repeat(2, 1fr); } }
-.pr-card { background: var(--surface-color); border: 1px solid var(--border-color); border-radius: var(--radius); padding: 14px 16px; display: flex; flex-direction: column; gap: 8px; }
+.pr-card { background: var(--surface-color); border: 1px solid var(--border-color); border-radius: var(--radius); padding: 14px 16px; display: flex; flex-direction: column; gap: 8px; box-shadow: inset 0 1px 0 rgba(255,255,255,0.04), 0 1px 3px rgba(0,0,0,0.25); }
 .pr-label { color: var(--text-secondary); font-size: 0.8rem; display: flex; align-items: center; gap: 6px; }
 .pr-value { font-size: 1.3rem; font-weight: 700; }
 

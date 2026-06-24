@@ -52,27 +52,6 @@
 					</n-spin>
 				</n-card>
 
-				<!-- Visual Config Card -->
-				<n-card bordered class="settings-card">
-					<template #header><span class="card-title">Sport colors</span></template>
-					<n-space vertical v-if="Object.keys(workoutTypeColors).length > 0">
-						<n-grid :cols="2" :x-gap="20" :y-gap="12">
-							<n-gi v-for="type in workoutTypes" :key="type">
-								<div class="color-picker-item">
-									<span class="color-label">{{ type }}</span>
-									<n-color-picker
-										v-model:value="workoutTypeColors[type]"
-										:modes="['hex']"
-										:show-alpha="false"
-									/>
-								</div>
-							</n-gi>
-						</n-grid>
-						<n-button @click="saveWorkoutTypeColors" type="primary">Save colors</n-button>
-					</n-space>
-					<div v-else class="ascii-spinner">Loading</div>
-				</n-card>
-
 				<!-- Race Goals Card -->
 				<n-card bordered class="settings-card">
 					<template #header><span class="card-title">Race goals</span></template>
@@ -122,9 +101,6 @@ import {
 	useMessage,
 	NSpin,
 	NIcon,
-	NColorPicker,
-	NGrid,
-	NGi,
 	NForm,
 } from "naive-ui";
 import { Strava } from "@vicons/fa";
@@ -160,9 +136,9 @@ const addRaceGoal = async () => {
 		newRaceGoal.value = { name: "", date: "" };
 		await fetchRaceGoals();
 		window.dispatchEvent(new CustomEvent("race-goals-updated"));
-		message.success("RACE_GOAL_COMMITTED");
+		message.success("Race goal added");
 	} catch (error) {
-		message.error("WRITE_ERROR");
+		message.error("Failed to save");
 	}
 };
 
@@ -171,27 +147,16 @@ const deleteRaceGoal = async (id: number) => {
 		await db.deleteRaceGoal(id);
 		await fetchRaceGoals();
 		window.dispatchEvent(new CustomEvent("race-goals-updated"));
-		message.success("GOAL_PURGED");
+		message.success("Goal removed");
 	} catch (error) {
-		message.error("DELETE_ERROR");
+		message.error("Failed to delete");
 	}
 };
-
-
-const workoutTypes = ["gym", "running", "bike", "rest", "other"];
-const workoutTypeColors = ref<{ [key: string]: string }>({
-	gym: "#3f88c5",
-	running: "#00b33c",
-	bike: "#fb8c00",
-	rest: "#757575",
-	other: "#FFA726"
-});
 
 const loadProfile = async () => {
 	try {
 		const storedName = localStorage.getItem("userName");
 		if (storedName) userName.value = storedName;
-		
 		const storedGoal = localStorage.getItem("goalWeight");
 		if (storedGoal) goalWeight.value = storedGoal;
 	} catch (e) { console.error("Failed to load profile", e); }
@@ -203,14 +168,13 @@ const saveProfile = () => {
 		if (goalWeight.value !== "") {
 			localStorage.setItem("goalWeight", goalWeight.value);
 		}
-		message.success("LOCAL_IDENTITY_COMMITTED");
-	} catch (e) { message.error("WRITE_ERROR"); }
+		message.success("Profile saved");
+	} catch (e) { message.error("Failed to save"); }
 };
 
 const checkStravaConnection = async () => {
 	try {
 		isStravaConnected.value = await stravaApi.isStravaConnected();
-		console.log('Profile: Strava status updated ->', isStravaConnected.value);
 	} catch (error) { console.error('Error checking Strava connection:', error); }
 };
 
@@ -219,36 +183,8 @@ const handleConnectToStrava = async () => {
 	try {
 		await stravaApi.getAuthUrl();
 	} catch (e) {
-		message.error("API_UNAVAILABLE");
+		message.error("Strava unavailable");
 		connectingToStrava.value = false;
-	}
-};
-
-
-const fetchWorkoutTypeColors = async () => {
-	try {
-		const colors = await db.getWorkoutTypeColors();
-		if (colors && Array.isArray(colors)) {
-			const colorsMap: { [key: string]: string } = {};
-			workoutTypes.forEach((type) => {
-				const found = colors.find((c: any) => c.type === type);
-				colorsMap[type] = found ? found.color : workoutTypeColors.value[type]; 
-			});
-			workoutTypeColors.value = colorsMap;
-		}
-	} catch (error) { console.error("Error fetching colors:", error); }
-};
-
-const saveWorkoutTypeColors = async () => {
-	try {
-		for (const type of workoutTypes) {
-			await db.setWorkoutTypeColor({ type, color: workoutTypeColors.value[type] });
-		}
-		window.dispatchEvent(new CustomEvent("colors-updated"));
-		message.success("GLOBAL_THEME_UPDATED");
-	} catch (error) {
-		message.error("SYNC_ERROR");
-		console.error("Save Error:", error);
 	}
 };
 
@@ -261,10 +197,10 @@ const handleWebStravaCallback = async () => {
 			await stravaApi.exchangeCodeForToken(code);
 			window.history.replaceState({}, document.title, window.location.pathname);
 			await checkStravaConnection();
-			message.success("UPLINK_ESTABLISHED_SUCCESSFULLY");
+			message.success("Strava connected");
 		} catch (e) {
 			console.error("Web OAuth Error:", e);
-			message.error("HANDSHAKE_FAILED");
+			message.error("Connection failed");
 		} finally {
 			connectingToStrava.value = false;
 		}
@@ -275,7 +211,6 @@ onMounted(() => {
 	loadProfile();
 	handleWebStravaCallback();
 	checkStravaConnection();
-	fetchWorkoutTypeColors();
 	fetchRaceGoals();
 });
 </script>
@@ -285,9 +220,8 @@ onMounted(() => {
 .profile-content { padding: 24px 28px 40px; max-width: 760px; margin: 0 auto; width: 100%; box-sizing: border-box; }
 @media (max-width: 768px) { .profile-content { padding: 16px 16px 32px; } }
 
-.page-title { font-size: 1.5rem; font-weight: 700; margin-bottom: 20px; }
+.page-title { font-size: 1.5rem; font-weight: 400; margin-bottom: 20px; }
 .card-title { font-size: 1rem; font-weight: 600; color: var(--text-color); }
-
 .settings-card { border-radius: var(--radius) !important; }
 
 .uplink-item { display: flex; flex-direction: column; gap: 16px; }
@@ -296,13 +230,6 @@ onMounted(() => {
 .strava-button-line-tag-group { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
 .status-text { font-size: 0.8rem; color: var(--text-muted); }
 .text-success { color: var(--success-color); }
-
-.color-picker-item {
-  display: flex; justify-content: space-between; align-items: center;
-  padding: 10px 12px; border: 1px solid var(--border-color);
-  background: var(--surface-2); border-radius: var(--radius-sm);
-}
-.color-label { font-size: 0.82rem; color: var(--text-secondary); text-transform: capitalize; }
 
 .race-goals-list { margin-top: 12px; display: flex; flex-direction: column; gap: 8px; }
 .race-goal-item {
@@ -319,5 +246,4 @@ onMounted(() => {
   border-radius: var(--radius-sm); outline: none;
 }
 .date-input:focus { border-color: var(--primary-color); box-shadow: 0 0 0 3px var(--primary-soft); }
-
 </style>

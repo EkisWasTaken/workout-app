@@ -5,15 +5,17 @@
 
 :root {
   /* Surfaces */
-  --background-color: #0b0e14;
-  --surface-color: #141a23;
-  --card-background-color: #141a23;
-  --surface-2: #1c2430;
-  --surface-hover: #202938;
+  --background-color: #0c0f17;
+  --surface-color: #131b26;
+  --card-background-color: #131b26;
+  --surface-2: #192334;
+  --surface-hover: #1e2c3e;
+  --surface-elevated: #1a2535;
 
   /* Borders */
-  --border-color: #232c39;
-  --border-strong: #313c4d;
+  --border-color: #1f2d3f;
+  --border-strong: #2c3f56;
+  --border-subtle: rgba(255,255,255,0.04);
 
   /* Text */
   --text-color: #e7edf5;
@@ -36,17 +38,17 @@
   --warning-color: #f59e0b;
   --warning-soft: rgba(245, 158, 11, 0.14);
 
-  /* Sport colors (overridden at runtime from DB) */
-  --color-running-primary: #22c55e;
-  --color-running-primary-rgb: 34, 197, 94;
-  --color-gym-primary: #a78bfa;
-  --color-gym-primary-rgb: 167, 139, 250;
-  --color-bike-primary: #fb923c;
-  --color-bike-primary-rgb: 251, 146, 60;
+  /* Sport colors */
+  --color-running-primary: #34d399;
+  --color-running-primary-rgb: 52, 211, 153;
+  --color-gym-primary: #818cf8;
+  --color-gym-primary-rgb: 129, 140, 248;
+  --color-bike-primary: #f97316;
+  --color-bike-primary-rgb: 249, 115, 22;
   --color-rest-primary: #64748b;
   --color-rest-primary-rgb: 100, 116, 139;
-  --color-other-primary: #f4c152;
-  --color-other-primary-rgb: 244, 193, 82;
+  --color-other-primary: #94a3b8;
+  --color-other-primary-rgb: 148, 163, 184;
 
   /* Shape & type */
   --radius-sm: 6px;
@@ -131,6 +133,12 @@ a { color: var(--primary-color); text-decoration: none; }
   background-color: var(--surface-color) !important;
   border: 1px solid var(--border-color) !important;
   border-radius: var(--radius) !important;
+  box-shadow: inset 0 1px 0 var(--border-subtle) !important;
+}
+
+/* Global card rim-light — applies depth to all surface cards */
+.card {
+  box-shadow: inset 0 1px 0 var(--border-subtle);
 }
 
 /* Legacy terminal classes — neutralized to no-ops so old markup is harmless */

@@ -332,6 +332,7 @@ onMounted(async () => {
 	display: flex; align-items: stretch;
 	background: var(--surface-color); border: 1px solid var(--border-color);
 	border-radius: var(--radius); margin-bottom: 12px; overflow: hidden;
+	box-shadow: inset 0 1px 0 rgba(255,255,255,0.04), 0 1px 4px rgba(0,0,0,0.25);
 }
 .stat-item { flex: 1; display: flex; flex-direction: column; gap: 4px; padding: 18px 20px; }
 .stat-divider { width: 1px; background: var(--border-color); flex-shrink: 0; }
