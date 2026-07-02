@@ -3,11 +3,18 @@ name: Deploy to GitHub Pages
 on:
   push:
     branches: [ main ]
+  workflow_dispatch:
 
 permissions:
   contents: read
   pages: write
   id-token: write
+  actions: write
+
+# Only one Pages deploy at a time; newer pushes supersede queued ones.
+concurrency:
+  group: pages
+  cancel-in-progress: true
 
 jobs:
   build-and-deploy:
@@ -19,7 +26,7 @@ jobs:
       - name: Set up Node
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 24
           cache: 'npm'
 
       - name: Install dependencies
@@ -35,6 +42,17 @@ jobs:
 
       - name: Setup Pages
         uses: actions/configure-pages@v4
+
+      # Re-running a failed job leaves the artifact from the previous attempt
+      # in place; deploy-pages then fails with "Multiple artifacts named
+      # github-pages". Delete any stale copies before uploading.
+      - name: Remove stale Pages artifacts
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api "repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/artifacts" \
+            --jq '.artifacts[] | select(.name == "github-pages") | .id' \
+          | xargs -r -I{} gh api -X DELETE "repos/${{ github.repository }}/actions/artifacts/{}"
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
