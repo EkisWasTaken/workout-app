@@ -121,6 +121,46 @@
 					</div>
 				</div>
 
+				<!-- Effort & zones (from raw HR stream) -->
+				<div v-if="effortScore || zoneTimes" class="effort-section">
+					<div v-if="effortScore" class="effort-card">
+						<span class="sec-label">Relative effort</span>
+						<span class="effort-value mono">{{ effortScore }}</span>
+						<span class="effort-note">TRIMP · from heart rate</span>
+					</div>
+					<div v-if="zoneTimes" class="zone-bar-card">
+						<span class="sec-label">Time in zones</span>
+						<div class="zone-bar">
+							<div v-for="(z, i) in zoneSegments" :key="i" class="zone-seg"
+								:style="{ width: z.pct + '%', background: z.color }"
+								:title="`${z.name}: ${z.mins} min (${z.pct}%)`"></div>
+						</div>
+						<div class="zone-legend">
+							<span v-for="(z, i) in zoneSegments.filter(s => s.pct > 0)" :key="i" class="zone-legend-item">
+								<i :style="{ background: z.color }"></i>{{ z.name.split(' ')[0] }} {{ z.pct }}%
+							</span>
+						</div>
+					</div>
+				</div>
+
+				<!-- HR / pace graph from raw streams -->
+				<div v-if="hasStreamChart" class="stream-section">
+					<h2 class="splits-title">Heart rate &amp; pace</h2>
+					<div class="stream-chart-card"><canvas ref="streamCanvas"></canvas></div>
+				</div>
+
+				<!-- Best efforts -->
+				<div v-if="bestEfforts.length" class="best-efforts-section">
+					<h2 class="splits-title">Best efforts</h2>
+					<div class="be-grid">
+						<div v-for="be in bestEfforts" :key="be.name" class="be-card">
+							<span class="be-name">{{ be.name }}</span>
+							<span class="be-time mono">{{ fmtSecs(be.elapsed_time) }}</span>
+							<span class="be-pace mono">{{ effortPace(be) }}</span>
+						</div>
+					</div>
+				</div>
+
 				<!-- Notes -->
 				<div v-if="workout.notes" class="notes-block">
 					<span class="notes-label">Notes</span>
@@ -163,16 +203,18 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { NIcon, NSpin } from 'naive-ui'
 import { ArrowBackOutline } from '@vicons/ionicons5'
 import { decode } from '@mapbox/polyline'
 import { format, parseISO } from 'date-fns'
+import Chart from 'chart.js/auto'
 import { db } from '@/db'
-import { stravaApi } from '@/stravaBridge'
+import { activityApi } from '@/activities'
 import { getWorkoutType, getSportColor } from '@/utils/workouts'
-import type { Workout } from '../types'
+import { PULSE_ZONES, getHRSettings, timeInZones, relativeEffort, fmtSecs } from '@/utils/analysis'
+import type { Workout, BestEffort } from '../types'
 
 const route = useRoute()
 const router = useRouter()
@@ -270,6 +312,99 @@ const paceBarWidth = (split: any) => {
 	return Math.max(0, Math.min(100, (600 - pace) / (600 - 170) * 100))
 }
 
+// ─── Premium analysis (imported activities carry raw streams) ────────────────
+const hrSettings = computed(() => {
+	const a = stravaActivity.value
+	return getHRSettings(a ? [a] : [])
+})
+
+const effortScore = computed(() => {
+	const a = stravaActivity.value
+	if (!a || !hrSettings.value.maxHR) return null
+	return relativeEffort(a, hrSettings.value.maxHR, hrSettings.value.restHR)
+})
+
+const zoneTimes = computed(() => {
+	const a = stravaActivity.value
+	// Only meaningful with real streams; avg-HR-only puts 100% in one zone
+	if (!a?.streams?.heartrate || !hrSettings.value.maxHR) return null
+	return timeInZones(a, hrSettings.value.maxHR, hrSettings.value.restHR)
+})
+
+const zoneSegments = computed(() => {
+	const times = zoneTimes.value
+	if (!times) return []
+	const total = times.reduce((s, t) => s + t, 0)
+	if (!total) return []
+	return PULSE_ZONES.map((z, i) => ({
+		name: z.name,
+		color: z.color,
+		pct: Math.round((times[i] / total) * 100),
+		mins: Math.round(times[i] / 60),
+	}))
+})
+
+const bestEfforts = computed<BestEffort[]>(() => stravaActivity.value?.best_efforts || [])
+const effortPace = (be: BestEffort) => {
+	const p = be.elapsed_time / (be.distance / 1000)
+	return `${Math.floor(p / 60)}:${String(Math.floor(p % 60)).padStart(2, '0')} /km`
+}
+
+const streamCanvas = ref<HTMLCanvasElement | null>(null)
+let streamChart: Chart | null = null
+const hasStreamChart = computed(() => {
+	const s = stravaActivity.value?.streams
+	return !!(s?.time?.length && (s.heartrate || s.velocity))
+})
+
+function buildStreamChart() {
+	const s = stravaActivity.value?.streams
+	if (!streamCanvas.value || !s) return
+	const css = (n: string) => getComputedStyle(document.documentElement).getPropertyValue(n).trim()
+	const labels = s.time.map((t: number) => fmtSecs(t))
+	const isBike = workout.value?.type?.toLowerCase() === 'bike'
+
+	const datasets: any[] = []
+	if (s.heartrate) {
+		datasets.push({
+			label: 'Heart rate (bpm)', data: s.heartrate, yAxisID: 'yHr',
+			borderColor: '#e53935', backgroundColor: 'rgba(229,57,53,0.08)',
+			borderWidth: 1.5, pointRadius: 0, tension: 0.3, spanGaps: true, fill: true,
+		})
+	}
+	if (s.velocity) {
+		datasets.push({
+			label: isBike ? 'Speed (km/h)' : 'Pace (min/km)',
+			data: s.velocity.map((v: number | null) =>
+				v === null || v < 0.4 ? null : isBike ? Math.round(v * 36) / 10 : Math.round((1000 / v / 60) * 100) / 100),
+			yAxisID: 'yPace',
+			borderColor: sportCol.value, borderWidth: 1.5, pointRadius: 0, tension: 0.3, spanGaps: true,
+		})
+	}
+
+	streamChart = new Chart(streamCanvas.value, {
+		type: 'line',
+		data: { labels, datasets },
+		options: {
+			responsive: true, maintainAspectRatio: false, animation: false,
+			interaction: { mode: 'index', intersect: false },
+			plugins: {
+				legend: { display: true, position: 'bottom', labels: { color: css('--text-secondary'), boxWidth: 10, font: { size: 10 }, usePointStyle: true } },
+				tooltip: { backgroundColor: css('--surface-2'), borderColor: css('--border-strong'), borderWidth: 1, titleColor: css('--text-color'), bodyColor: css('--text-secondary'), padding: 10, cornerRadius: 8 },
+			},
+			scales: {
+				x: { ticks: { color: css('--text-muted'), font: { size: 10 }, maxTicksLimit: 8, maxRotation: 0 }, grid: { display: false }, border: { display: false } },
+				yHr: { display: !!s.heartrate, position: 'left', ticks: { color: '#e53935', font: { size: 10 } }, grid: { color: css('--border-color') }, border: { display: false } },
+				yPace: {
+					display: !!s.velocity, position: 'right',
+					reverse: !isBike, // lower pace number = faster, plot it upward
+					ticks: { color: sportCol.value, font: { size: 10 } }, grid: { display: false }, border: { display: false },
+				},
+			},
+		} as any,
+	})
+}
+
 onMounted(async () => {
 	try {
 		const id = parseInt(route.params.id as string)
@@ -277,8 +412,8 @@ onMounted(async () => {
 			workout.value = await db.getWorkoutById(id)
 			if (workout.value?.stravaActivityId) {
 				try {
-					stravaActivity.value = await stravaApi.getStravaActivityById(
-						workout.value.stravaActivityId.toString()
+					stravaActivity.value = await activityApi.getActivityById(
+						workout.value.stravaActivityId
 					)
 				} catch {}
 			}
@@ -286,7 +421,11 @@ onMounted(async () => {
 	} finally {
 		loading.value = false
 	}
+	await nextTick()
+	if (hasStreamChart.value) buildStreamChart()
 })
+
+onUnmounted(() => { streamChart?.destroy() })
 </script>
 
 <style scoped>
@@ -353,6 +492,46 @@ onMounted(async () => {
 .sec-label { font-size: 0.72rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.04em; }
 .sec-value { font-size: 1.15rem; font-weight: 600; }
 .sec-unit { font-size: 0.78rem; font-weight: 400; color: var(--text-secondary); }
+
+/* Effort & zones */
+.effort-section { display: flex; gap: 12px; margin-bottom: 12px; flex-wrap: wrap; }
+.effort-card {
+	background: var(--surface-color); border: 1px solid var(--border-color);
+	border-radius: var(--radius); padding: 14px 18px;
+	display: flex; flex-direction: column; gap: 3px; min-width: 130px;
+}
+.effort-value { font-size: 1.6rem; font-weight: 700; line-height: 1.2; }
+.effort-note { font-size: 0.7rem; color: var(--text-muted); }
+.zone-bar-card {
+	flex: 1; min-width: 240px;
+	background: var(--surface-color); border: 1px solid var(--border-color);
+	border-radius: var(--radius); padding: 14px 18px;
+	display: flex; flex-direction: column; gap: 10px;
+}
+.zone-bar { display: flex; height: 14px; border-radius: 7px; overflow: hidden; background: var(--surface-2); }
+.zone-seg { height: 100%; min-width: 0; }
+.zone-legend { display: flex; gap: 12px; flex-wrap: wrap; font-size: 0.72rem; color: var(--text-secondary); }
+.zone-legend-item { display: inline-flex; align-items: center; gap: 5px; }
+.zone-legend-item i { width: 8px; height: 8px; border-radius: 2px; display: inline-block; }
+
+/* Stream chart */
+.stream-section { margin-top: 24px; }
+.stream-chart-card {
+	background: var(--surface-color); border: 1px solid var(--border-color);
+	border-radius: var(--radius); padding: 14px; height: 260px;
+}
+
+/* Best efforts */
+.best-efforts-section { margin-top: 24px; }
+.be-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 10px; }
+.be-card {
+	background: var(--surface-color); border: 1px solid var(--border-color);
+	border-radius: var(--radius); padding: 12px 14px;
+	display: flex; flex-direction: column; gap: 3px;
+}
+.be-name { font-size: 0.72rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.04em; }
+.be-time { font-size: 1.15rem; font-weight: 700; }
+.be-pace { font-size: 0.74rem; color: var(--text-secondary); }
 
 /* Notes */
 .notes-block {

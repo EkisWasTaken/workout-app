@@ -19,6 +19,7 @@
     "chartjs-adapter-date-fns": "^3.0.0",
     "chartjs-plugin-datalabels": "2.2.0",
     "date-fns": "^4.1.0",
+    "fit-file-parser": "^3.0.2",
     "leaflet": "^1.9.4",
     "leaflet-polylinedecorator": "^1.6.0",
     "naive-ui": "^2.43.2",

@@ -17,6 +17,9 @@
 						<n-form-item label="Resting heart rate (bpm)">
 							<n-input v-model:value="restingHR" type="text" placeholder="e.g. 55" />
 						</n-form-item>
+						<n-form-item label="Max heart rate (bpm) — leave empty to use highest recorded">
+							<n-input v-model:value="maxHR" type="text" placeholder="e.g. 195" />
+						</n-form-item>
 						<n-button @click="saveProfile" type="primary">Save profile</n-button>
 					</n-space>
 				</n-card>
@@ -116,6 +119,7 @@ const message = useMessage();
 const userName = ref("");
 const goalWeight = ref<string>("");
 const restingHR = ref<string>("");
+const maxHR = ref<string>("");
 const isStravaConnected = ref(false);
 const connectingToStrava = ref(false);
 
@@ -165,6 +169,8 @@ const loadProfile = async () => {
 		if (storedGoal) goalWeight.value = storedGoal;
 		const storedRHR = localStorage.getItem("restingHR");
 		if (storedRHR) restingHR.value = storedRHR;
+		const storedMaxHR = localStorage.getItem("maxHR");
+		if (storedMaxHR) maxHR.value = storedMaxHR;
 	} catch (e) { console.error("Failed to load profile", e); }
 };
 
@@ -176,6 +182,11 @@ const saveProfile = () => {
 		}
 		if (restingHR.value !== "") {
 			localStorage.setItem("restingHR", restingHR.value);
+		}
+		if (maxHR.value !== "") {
+			localStorage.setItem("maxHR", maxHR.value);
+		} else {
+			localStorage.removeItem("maxHR");
 		}
 		message.success("Profile saved");
 	} catch (e) { message.error("Failed to save"); }

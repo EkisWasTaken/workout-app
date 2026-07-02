@@ -13,8 +13,11 @@
           <button @click="showLogWeightModal = true" class="action-button">
             <n-icon :component="BodyOutline" /> Log weight
           </button>
+          <button @click="showActivityImport = true" class="action-button">
+            <n-icon :component="WatchOutline" /> Import activities
+          </button>
           <button @click="handleImportSys" class="action-button">
-            <n-icon :component="CloudUploadOutline" /> Import
+            <n-icon :component="CloudUploadOutline" /> Import CSV
           </button>
         </div>
       </div>
@@ -195,10 +198,10 @@
 
         <!-- Complete Mode -->
         <div v-else-if="modalMode === 'complete'" class="form-container">
-          <!-- Running / bike: link Strava as the source of truth -->
+          <!-- Running / bike: link a recorded activity as the source of truth -->
           <template v-if="getWorkoutType(selectedWorkout) === 'running' || getWorkoutType(selectedWorkout) === 'bike'">
             <div class="form-group">
-              <label for="strava-activity">Strava activity</label>
+              <label for="strava-activity">Recorded activity</label>
               <select id="strava-activity" v-model="completionData.stravaActivityId" :disabled="isStravaLoading">
                 <option :value="undefined">-- {{ isStravaLoading ? 'Loading…' : 'Enter manually' }} --</option>
                 <option v-for="activity in stravaActivityOptions" :key="activity.value" :value="activity.value">
@@ -213,7 +216,7 @@
             <div v-if="stravaPreview" class="strava-preview">
               <span class="sp-item"><span class="sp-num">{{ stravaPreview.distance }}</span> km</span>
               <span class="sp-item"><span class="sp-num">{{ stravaPreview.duration }}</span> min</span>
-              <span class="sp-note">pulled from Strava</span>
+              <span class="sp-note">pulled from activity</span>
             </div>
 
             <!-- Manual fallback when no Strava activity is linked -->
@@ -248,6 +251,9 @@
         </div>
       </CustomModal>
 
+      <!-- Activity file import (FIT/GPX/TCX) -->
+      <ImportActivitiesModal v-model:show="showActivityImport" @imported="loadWorkouts" />
+
       <!-- Import Editor Modal -->
       <ImportEditor
         v-model:show="showImportEditor"
@@ -269,6 +275,7 @@ import { useMessage, NIcon } from 'naive-ui';
 import {
   AddOutline, BodyOutline, CloudUploadOutline, ChevronBackOutline, ChevronForwardOutline,
   FlagOutline, CheckmarkCircle, TrashOutline, CreateOutline, CheckmarkOutline, MapOutline,
+  WatchOutline,
 } from '@vicons/ionicons5';
 import { db } from '@/db';
 
@@ -289,7 +296,8 @@ import { enUS } from 'date-fns/locale';
 import type { Workout, AddWorkoutPayload, DailyWeight, CompleteWorkoutFormValues, RaceGoal, StravaActivity } from '../types';
 import CustomModal from '../components/CustomModal.vue';
 import ImportEditor from '../components/ImportEditor.vue';
-import { stravaApi } from '../stravaBridge';
+import ImportActivitiesModal from '../components/ImportActivitiesModal.vue';
+import { activityApi } from '../activities';
 
 const isActionLoading = ref(false);
 const message = useMessage();
@@ -357,6 +365,7 @@ async function onDrop(event: DragEvent, date: Date) {
 
 // == IMPORT LOGIC START ==
 const showImportEditor = ref(false);
+const showActivityImport = ref(false);
 const importRawContent = ref('');
 
 function handleImportSys() {
@@ -441,18 +450,11 @@ const isStravaLoading = ref(false);
 
 async function loadStravaActivities() {
     if (isStravaLoading.value) return;
-    console.log('Dashboard: loadStravaActivities triggered');
     isStravaLoading.value = true;
     try {
-        const isConnected = await stravaApi.isStravaConnected();
-        if (!isConnected) {
-            console.warn('Dashboard: Strava not connected, skipping fetch');
-            stravaActivityOptions.value = [];
-            return;
-        }
-        const activities = await stravaApi.getActivities();
-        console.log('Dashboard: Fetched Strava response:', activities);
-        
+        // Imported FIT/GPX activities merged with Strava (when still connected)
+        const activities = await activityApi.getAllActivities();
+
         if (activities && Array.isArray(activities)) {
             stravaActivities.value = activities;
             const workoutType = selectedWorkout.value ? getWorkoutType(selectedWorkout.value) : null;
@@ -477,13 +479,6 @@ async function loadStravaActivities() {
                     value: act.id,
                 };
             });
-        } else if (activities && activities.error === 'API_ERROR') {
-            const isRateLimit = activities.details?.errors?.some((e: any) => e.code === 'exceeded' || e.message?.includes('Rate Limit'));
-            if (isRateLimit) {
-                console.error('Dashboard: Strava Rate Limit Exceeded');
-                // We could show a toast here if we had a message provider
-            }
-            stravaActivityOptions.value = [];
         } else {
             stravaActivityOptions.value = [];
         }

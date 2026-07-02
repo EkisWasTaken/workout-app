@@ -46,6 +46,35 @@ export interface StravaActivity {
 	}>;
 }
 
+/** Downsampled per-second sensor data kept from an imported FIT/GPX file. */
+export interface ActivityStreams {
+	time: number[];        // seconds since start
+	heartrate?: (number | null)[];
+	velocity?: (number | null)[]; // m/s
+	altitude?: (number | null)[]; // m
+	distance?: (number | null)[]; // cumulative metres
+}
+
+export interface BestEffort {
+	name: string;          // e.g. "1 km", "5 km"
+	distance: number;      // metres
+	elapsed_time: number;  // seconds
+}
+
+/**
+ * An activity imported from a file, normalised to the same shape the
+ * Strava API returns so all existing stats code works unchanged —
+ * plus raw streams and best efforts that Strava never exposed.
+ */
+export interface ImportedActivity extends StravaActivity {
+	source: 'import';
+	average_speed?: number;      // m/s
+	max_heartrate?: number;
+	elapsed_time?: number;
+	streams?: ActivityStreams;
+	best_efforts?: BestEffort[];
+}
+
 export interface CompleteWorkoutFormValues {
     notes: string;
     totalWeightLifted: number;

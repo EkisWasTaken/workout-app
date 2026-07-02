@@ -126,6 +126,23 @@
 			</div>
 		</section>
 
+		<!-- Fitness & freshness -->
+		<template v-if="fitnessHasData">
+			<div class="section-head"><h2>Fitness &amp; freshness</h2><span class="section-note">training load model · last 3 months</span></div>
+			<section class="panel chart-card fitness-card">
+				<div class="chart-head">
+					<h3>Form = fitness − fatigue</h3>
+					<div class="fitness-badges">
+						<span class="fit-badge"><i style="background: #4f8cff"></i>Fitness <span class="mono">{{ currentFitness?.fitness ?? '—' }}</span></span>
+						<span class="fit-badge"><i style="background: #fb8c00"></i>Fatigue <span class="mono">{{ currentFitness?.fatigue ?? '—' }}</span></span>
+						<span class="fit-badge"><i style="background: #56d364"></i>Form <span class="mono">{{ currentFitness?.form ?? '—' }}</span></span>
+					</div>
+				</div>
+				<div class="chart-body fitness-chart-body"><canvas ref="fitnessCanvas"></canvas></div>
+				<p class="vo2-note">Relative Effort (TRIMP) per session from heart-rate data, fed into 42-day fitness / 7-day fatigue exponential averages — the same model as Strava's premium Fitness &amp; Freshness. Gym sessions without HR count via RPE × duration.</p>
+			</section>
+		</template>
+
 		<!-- Projections -->
 		<template v-if="weightPrediction || runningPrediction">
 			<div class="section-head"><h2>Projections</h2><span class="section-note">based on recent trends</span></div>
@@ -288,7 +305,7 @@
 		<template v-if="stravaRunPRs">
 			<div class="section-head">
 				<h2>Running PRs</h2>
-				<span class="section-note">best times from Strava</span>
+				<span class="section-note">best times from your activities</span>
 			</div>
 			<section class="pr-grid">
 				<div v-if="stravaRunPRs.fiveK" class="pr-card">
@@ -325,9 +342,10 @@ import {
 	isWithinInterval, differenceInCalendarDays, startOfDay, isSameMonth, addMonths,
 } from 'date-fns'
 import { db } from '@/db'
-import { stravaApi } from '@/stravaBridge'
+import { activityApi } from '@/activities'
 import type { Workout, DailyWeight, RaceGoal } from '@/types'
 import { getWorkoutType, getSportColor, isDistanceSport, SPORT_TYPES, SPORT_LABELS } from '@/utils/workouts'
+import { PULSE_ZONES, getHRSettings, timeInZones, relativeEffort, fitnessSeries } from '@/utils/analysis'
 
 const workouts = ref<Workout[]>([])
 const dailyWeights = ref<DailyWeight[]>([])
@@ -495,8 +513,8 @@ const vo2Estimates = computed(() => {
 	const acts = stravaActivities.value
 	if (!acts.length) return []
 
-	// Use the highest max_heartrate ever seen as the reference
-	const maxHRever = Math.max(...acts.map((a: any) => a.max_heartrate || 0))
+	// Profile max HR override, else the highest max_heartrate ever seen
+	const maxHRever = getHRSettings(acts).maxHR
 	if (maxHRever < 140) return [] // no usable HR data
 
 	return acts
@@ -555,7 +573,62 @@ function vo2Zone(v: number | null) {
 	return { label: 'Poor', color: '#e53935' }
 }
 
-// ===== Strava Running PRs & Race Predictor =====
+// ===== Fitness & Freshness (CTL/ATL/TSB) =====
+const dailyEfforts = computed<Record<string, number>>(() => {
+	const { maxHR, restHR } = getHRSettings(stravaActivities.value)
+	const efforts: Record<string, number> = {}
+	const add = (date: string, v: number) => { efforts[date] = (efforts[date] || 0) + v }
+
+	if (maxHR >= 120) {
+		for (const a of stravaActivities.value) {
+			if (!(a.streams?.heartrate || a.average_heartrate)) continue
+			const re = relativeEffort(a, maxHR, restHR)
+			const date = (a.start_date_local || a.start_date || '').slice(0, 10)
+			if (re && date) add(date, re)
+		}
+	}
+	// Sessions without HR (gym etc.): session-RPE load as a stand-in
+	for (const w of completed.value) {
+		if (getWorkoutType(w) !== 'gym') continue
+		if (w.rpe && w.actualDuration) add(w.date, Math.round(w.rpe * w.actualDuration / 10))
+	}
+	return efforts
+})
+
+const fitnessData = computed(() => fitnessSeries(dailyEfforts.value, 90))
+const fitnessHasData = computed(() => Object.keys(dailyEfforts.value).length >= 3 && fitnessData.value.length > 0)
+const currentFitness = computed(() => fitnessData.value[fitnessData.value.length - 1] || null)
+
+function buildFitness() {
+	if (!fitnessCanvas.value || !fitnessHasData.value) return
+	const series = fitnessData.value
+	const labels = series.map(p => format(parseISO(p.date), 'd MMM'))
+	charts.push(new Chart(fitnessCanvas.value, {
+		type: 'line',
+		data: {
+			labels,
+			datasets: [
+				{ label: 'Fitness', data: series.map(p => p.fitness), borderColor: '#4f8cff', backgroundColor: 'rgba(79,140,255,0.10)', borderWidth: 2, pointRadius: 0, tension: 0.35, fill: true },
+				{ label: 'Fatigue', data: series.map(p => p.fatigue), borderColor: '#fb8c00', backgroundColor: 'transparent', borderWidth: 1.5, borderDash: [4, 3], pointRadius: 0, tension: 0.35 },
+				{ label: 'Form', data: series.map(p => p.form), borderColor: '#56d364', backgroundColor: 'transparent', borderWidth: 1.5, pointRadius: 0, tension: 0.35 },
+			],
+		},
+		options: {
+			...baseOpts(),
+			interaction: { mode: 'index', intersect: false },
+			plugins: {
+				...baseOpts().plugins,
+				legend: { display: true, position: 'bottom', labels: { color: css('--text-secondary'), boxWidth: 10, font: { size: 10 }, usePointStyle: true } },
+			},
+			scales: {
+				...(baseOpts() as any).scales,
+				x: { ...(baseOpts() as any).scales.x, ticks: { color: css('--text-muted'), font: { size: 10 }, maxTicksLimit: 10, maxRotation: 0 } },
+			},
+		} as any,
+	}))
+}
+
+// ===== Running PRs & Race Predictor =====
 function fmtTime(secs: number) {
 	const h = Math.floor(secs / 3600)
 	const m = Math.floor((secs % 3600) / 60)
@@ -570,19 +643,24 @@ const stravaRunPRs = computed(() => {
 		const st = (a.sport_type || a.type || '').toLowerCase()
 		return st === 'run' && a.distance && a.moving_time
 	})
-	const bestIn = (minM: number, maxM: number) => {
-		const bucket = runs.filter((a: any) => a.distance >= minM && a.distance <= maxM)
-		if (!bucket.length) return null
-		const fastest = bucket.reduce((b: any, a: any) =>
-			a.moving_time / a.distance < b.moving_time / b.distance ? a : b
-		)
-		return fmtTime(fastest.moving_time)
+	// Prefer exact best efforts from imported streams (fastest stretch inside
+	// any run); fall back to whole activities near the target distance.
+	const bestIn = (effortName: string, minM: number, maxM: number) => {
+		let best: number | null = null
+		for (const a of runs) {
+			const be = a.best_efforts?.find((b: any) => b.name === effortName)
+			if (be && (best === null || be.elapsed_time < best)) best = be.elapsed_time
+			if (!a.best_efforts?.length && a.distance >= minM && a.distance <= maxM) {
+				if (best === null || a.moving_time < best) best = a.moving_time
+			}
+		}
+		return best !== null ? fmtTime(best) : null
 	}
 	const r = {
-		fiveK: bestIn(4500, 5800),
-		tenK: bestIn(9000, 11000),
-		half: bestIn(19000, 22000),
-		full: bestIn(40000, 45000),
+		fiveK: bestIn('5 km', 4500, 5800),
+		tenK: bestIn('10 km', 9000, 11000),
+		half: bestIn('Half marathon', 19000, 22000),
+		full: bestIn('Marathon', 40000, 45000),
 	}
 	return Object.values(r).some(v => v !== null) ? r : null
 })
@@ -610,16 +688,14 @@ const racePredictor = computed(() => {
 })
 
 // ===== Zone distribution =====
-const maxHRDisplay = computed(() =>
-	Math.max(0, ...stravaActivities.value.map((a: any) => a.max_heartrate || 0))
-)
+const maxHRDisplay = computed(() => getHRSettings(stravaActivities.value).maxHR)
 const restingHR = computed(() => parseInt(localStorage.getItem('restingHR') || '60', 10))
 
 const zonesHasData = computed(() => {
 	if (maxHRDisplay.value < 140) return false
 	return stravaActivities.value.filter((a: any) => {
 		const st = (a.sport_type || a.type || '').toLowerCase()
-		return st === 'run' && a.average_heartrate
+		return st === 'run' && (a.streams?.heartrate || a.average_heartrate)
 	}).length >= 3
 })
 
@@ -632,12 +708,12 @@ const weightCanvas = ref<HTMLCanvasElement | null>(null)
 const mixCanvas = ref<HTMLCanvasElement | null>(null)
 const monthlyCanvas = ref<HTMLCanvasElement | null>(null)
 const vo2Canvas = ref<HTMLCanvasElement | null>(null)
+const fitnessCanvas = ref<HTMLCanvasElement | null>(null)
 const zoneCanvas = ref<HTMLCanvasElement | null>(null)
 const zoneDonutCanvas = ref<HTMLCanvasElement | null>(null)
 let charts: Chart[] = []
 
 const stravaActivities = ref<any[]>([])
-const stravaConnected = ref(false)
 
 const css = (n: string) => getComputedStyle(document.documentElement).getPropertyValue(n).trim()
 
@@ -835,53 +911,46 @@ function buildVO2() {
 	}))
 }
 
-const PULSE_ZONES = [
-	{ name: 'Z1 Easy',      min: 0,    max: 0.60, color: '#56d364' },
-	{ name: 'Z2 Aerobic',   min: 0.60, max: 0.70, color: '#4f8cff' },
-	{ name: 'Z3 Tempo',     min: 0.70, max: 0.80, color: '#f0b429' },
-	{ name: 'Z4 Threshold', min: 0.80, max: 0.90, color: '#fb8c00' },
-	{ name: 'Z5 VO₂max',   min: 0.90, max: 1.01, color: '#e53935' },
-]
-
-function zoneAbsBpm(z: typeof PULSE_ZONES[number], maxHR: number, restHR: number) {
-	const hrr = maxHR - restHR
-	return { lo: restHR + hrr * z.min, hi: restHR + hrr * z.max }
+/** HR-carrying runs with per-activity zone seconds (stream-accurate when imported). */
+function runZoneData() {
+	const { maxHR, restHR } = getHRSettings(stravaActivities.value)
+	return stravaActivities.value
+		.filter((a: any) => {
+			const st = (a.sport_type || a.type || '').toLowerCase()
+			return st === 'run' && a.moving_time && (a.streams?.heartrate || a.average_heartrate)
+		})
+		.map((a: any) => ({
+			date: new Date(a.start_date_local || a.start_date),
+			zones: timeInZones(a, maxHR, restHR),
+		}))
+		.filter(r => r.zones)
 }
 
 function buildZones() {
 	if (!zoneCanvas.value || !zonesHasData.value) return
-	const maxHR = maxHRDisplay.value
-	const restHR = restingHR.value
-	const runs = stravaActivities.value.filter((a: any) => {
-		const st = (a.sport_type || a.type || '').toLowerCase()
-		return st === 'run' && a.average_heartrate && a.moving_time
-	})
+	const runs = runZoneData()
 	const weeks = weekBuckets(12)
-	const weekTotals = weeks.map(wk =>
-		runs.filter((a: any) => {
-			const d = new Date(a.start_date_local || a.start_date)
-			return d >= wk.start && d <= wk.end
-		}).reduce((s: number, a: any) => s + a.moving_time, 0)
-	)
-	const datasets = PULSE_ZONES.map(z => {
-		const { lo, hi } = zoneAbsBpm(z, maxHR, restHR)
-		return {
-			label: z.name,
-			backgroundColor: z.color,
-			data: weeks.map((wk, wi) => {
-				const total = weekTotals[wi]
-				if (!total) return 0
-				const zoneTime = runs.filter((a: any) => {
-					const d = new Date(a.start_date_local || a.start_date)
-					const hr = a.average_heartrate
-					return d >= wk.start && d <= wk.end && hr >= lo && hr < hi
-				}).reduce((s: number, a: any) => s + a.moving_time, 0)
-				return Math.round((zoneTime / total) * 100)
-			}),
-			borderRadius: 3,
-			maxBarThickness: 22,
+	// zone seconds per week
+	const weekZones = weeks.map(wk => {
+		const sums = new Array(PULSE_ZONES.length).fill(0)
+		for (const r of runs) {
+			if (r.date >= wk.start && r.date <= wk.end) {
+				r.zones!.forEach((t, i) => { sums[i] += t })
+			}
 		}
+		return sums
 	})
+	const weekTotals = weekZones.map(z => z.reduce((s, t) => s + t, 0))
+	const datasets = PULSE_ZONES.map((z, zi) => ({
+		label: z.name,
+		backgroundColor: z.color,
+		data: weeks.map((_, wi) => {
+			const total = weekTotals[wi]
+			return total ? Math.round((weekZones[wi][zi] / total) * 100) : 0
+		}),
+		borderRadius: 3,
+		maxBarThickness: 22,
+	}))
 	charts.push(new Chart(zoneCanvas.value, {
 		type: 'bar',
 		data: { labels: weeks.map(w => w.label), datasets },
@@ -910,27 +979,21 @@ function buildZones() {
 
 function buildZoneDonut() {
 	if (!zoneDonutCanvas.value || !zonesHasData.value) return
-	const maxHR = maxHRDisplay.value
-	const restHR = restingHR.value
-	const runs = stravaActivities.value.filter((a: any) => {
-		const st = (a.sport_type || a.type || '').toLowerCase()
-		return st === 'run' && a.average_heartrate && a.moving_time
-	})
+	const { maxHR, restHR } = getHRSettings(stravaActivities.value)
 	const cutoff = subWeeks(new Date(), 4)
-	const recentRuns = runs.filter((a: any) => new Date(a.start_date_local || a.start_date) >= cutoff)
-	const totalTime = recentRuns.reduce((s: number, a: any) => s + a.moving_time, 0)
+	const recent = runZoneData().filter(r => r.date >= cutoff)
+	const sums = new Array(PULSE_ZONES.length).fill(0)
+	for (const r of recent) r.zones!.forEach((t, i) => { sums[i] += t })
+	const totalTime = sums.reduce((s, t) => s + t, 0)
 	if (!totalTime) return
 
-	const data = PULSE_ZONES.map(z => {
-		const { lo, hi } = zoneAbsBpm(z, maxHR, restHR)
-		const t = recentRuns.filter((a: any) => a.average_heartrate >= lo && a.average_heartrate < hi)
-			.reduce((s: number, a: any) => s + a.moving_time, 0)
-		return Math.round((t / totalTime) * 100)
-	})
+	const data = sums.map(t => Math.round((t / totalTime) * 100))
 
+	const hrr = maxHR - restHR
 	const labels = PULSE_ZONES.map(z => {
-		const { lo, hi } = zoneAbsBpm(z, maxHR, restHR)
-		return `${z.name} (${Math.round(lo)}–${hi > 300 ? maxHR : Math.round(hi)})`
+		const lo = restHR + hrr * z.min
+		const hi = restHR + hrr * z.max
+		return `${z.name} (${Math.round(lo)}–${z.max > 1 ? maxHR : Math.round(hi)})`
 	})
 
 	charts.push(new Chart(zoneDonutCanvas.value, {
@@ -971,7 +1034,7 @@ function setMonthly() { isHeatmap.value = false; nextTick(buildMonthly) }
 async function buildAll() {
 	destroyCharts()
 	await nextTick()
-	buildDistance(); buildTonnage(); buildWeight(); buildMix(); buildHeatmap(); buildVO2(); buildZones(); buildZoneDonut()
+	buildDistance(); buildTonnage(); buildWeight(); buildMix(); buildHeatmap(); buildVO2(); buildZones(); buildZoneDonut(); buildFitness()
 	if (!isHeatmap.value) buildMonthly()
 }
 
@@ -981,19 +1044,11 @@ async function load() {
 	dailyWeights.value = dw
 	raceGoals.value = rg
 	userName.value = localStorage.getItem('userName') || ''
-	// Fetch Strava activities for VO2 max estimation (non-blocking)
+	// Imported FIT/GPX activities merged with Strava (when still connected)
 	try {
-		stravaConnected.value = await stravaApi.isStravaConnected()
-		if (stravaConnected.value) {
-			const [p1, p2, p3] = await Promise.all([
-				stravaApi.getActivities(1, 30),
-				stravaApi.getActivities(2, 30),
-				stravaApi.getActivities(3, 30),
-			])
-			stravaActivities.value = [...(p1 || []), ...(p2 || []), ...(p3 || [])]
-		}
+		stravaActivities.value = await activityApi.getAllActivities()
 	} catch {
-		// Strava not connected or API error — VO2 section stays hidden
+		// No activity data — HR-based sections stay hidden
 	}
 	await buildAll()
 }
@@ -1158,4 +1213,11 @@ onUnmounted(destroyCharts)
 .vo2-zone-chip { font-size: 0.72rem; font-weight: 600; margin-left: 2px; }
 .vo2-chart-body { height: 220px; position: relative; margin-top: 14px; }
 .vo2-note { margin: 12px 0 0; font-size: 0.72rem; color: var(--text-muted); line-height: 1.5; }
+
+/* Fitness & freshness */
+.fitness-chart-body { height: 240px; position: relative; margin-top: 14px; }
+.fitness-badges { display: flex; gap: 12px; flex-wrap: wrap; }
+.fit-badge { display: inline-flex; align-items: center; gap: 6px; font-size: 0.76rem; color: var(--text-secondary); }
+.fit-badge i { width: 8px; height: 8px; border-radius: 2px; display: inline-block; }
+.fit-badge .mono { font-weight: 700; color: var(--text-color); }
 </style>

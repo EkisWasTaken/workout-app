@@ -232,5 +232,58 @@ export const db = {
       .select('*')
     if (error) throw error
     return data as Exercise[]
+  },
+
+  // IMPORTED ACTIVITIES (FIT/GPX/TCX files)
+  getImportedActivities: async (): Promise<any[]> => {
+    const { data, error } = await supabase
+      .from('imported_activities')
+      .select('id, data')
+      .order('start_date', { ascending: false })
+    if (error) throw error
+    return (data || []).map(row => ({ ...row.data, id: row.id, source: 'import' }))
+  },
+
+  getImportedActivityById: async (id: number): Promise<any | null> => {
+    const { data, error } = await supabase
+      .from('imported_activities')
+      .select('id, data')
+      .eq('id', id)
+      .maybeSingle()
+    if (error) throw error
+    return data ? { ...data.data, id: data.id, source: 'import' } : null
+  },
+
+  addImportedActivity: async (activity: any): Promise<{ id: number; duplicate: boolean }> => {
+    const row = {
+      start_date: activity.start_date,
+      name: activity.name,
+      sport: activity.sport_type,
+      distance: activity.distance,
+      moving_time: activity.moving_time,
+      data: activity,
+    }
+    const { data, error } = await supabase
+      .from('imported_activities')
+      .insert([row])
+      .select('id')
+    if (error) {
+      // 23505 = unique violation on (start_date, distance): already imported
+      if (error.code === '23505') return { id: 0, duplicate: true }
+      if (error.code === '42P01') {
+        throw new Error('MISSING_TABLE: run supabase_imported_activities.sql in the Supabase SQL editor first.')
+      }
+      throw error
+    }
+    return { id: data[0].id, duplicate: false }
+  },
+
+  deleteImportedActivity: async (id: number): Promise<number> => {
+    const { error } = await supabase
+      .from('imported_activities')
+      .delete()
+      .eq('id', id)
+    if (error) throw error
+    return 1
   }
 }
