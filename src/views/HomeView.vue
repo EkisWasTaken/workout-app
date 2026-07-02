@@ -345,7 +345,7 @@ import { db } from '@/db'
 import { activityApi } from '@/activities'
 import type { Workout, DailyWeight, RaceGoal } from '@/types'
 import { getWorkoutType, getSportColor, isDistanceSport, SPORT_TYPES, SPORT_LABELS } from '@/utils/workouts'
-import { PULSE_ZONES, getHRSettings, timeInZones, relativeEffort, fitnessSeries } from '@/utils/analysis'
+import { PULSE_ZONES, getHRSettings, timeInZones, relativeEffort, fitnessSeries, estimateVO2max } from '@/utils/analysis'
 
 const workouts = ref<Workout[]>([])
 const dailyWeights = ref<DailyWeight[]>([])
@@ -520,18 +520,12 @@ const vo2Estimates = computed(() => {
 	return acts
 		.filter((a: any) => {
 			const st = (a.sport_type || a.type || '').toLowerCase()
-			return st === 'run' && a.average_heartrate && a.average_speed && (a.moving_time || 0) >= 600
+			return st === 'run' && a.average_heartrate && a.average_speed
 		})
 		.map((a: any) => {
-			const vMin = a.average_speed * 60 // m/s → m/min
-			// Oxygen cost at this speed (ACSM formula for running)
-			const vo2AtEffort = 3.5 + vMin * 0.2
-			// %HRmax → %VO2max (Swain et al. 1994)
-			const hrFrac = a.average_heartrate / maxHRever
-			const vo2Frac = 1.537 * hrFrac - 0.537
-			if (vo2Frac < 0.25) return null // effort too light to be reliable
-			const val = Math.round((vo2AtEffort / vo2Frac) * 10) / 10
-			if (val < 22 || val > 82) return null // sanity range
+			// ACSM oxygen cost at grade-adjusted pace + Swain %HRmax→%VO2max
+			const val = estimateVO2max(a, maxHRever)
+			if (val === null) return null
 			return {
 				date: (a.start_date_local || a.start_date || '').slice(0, 10),
 				vo2max: val,

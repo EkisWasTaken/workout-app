@@ -23,6 +23,7 @@ export interface ParsedActivity {
 	average_speed?: number       // m/s (moving)
 	average_heartrate?: number
 	max_heartrate?: number
+	average_cadence?: number     // spm for runs, rpm for rides
 	calories?: number
 	total_elevation_gain?: number
 	map?: { polyline?: string }
@@ -39,6 +40,7 @@ interface Sample {
 	speed?: number               // m/s
 	hr?: number
 	alt?: number
+	cad?: number                 // raw device cadence (rpm; per-leg for runs)
 }
 
 const MAX_STREAM_POINTS = 900
@@ -102,6 +104,9 @@ function parseFit(buffer: ArrayBuffer): Promise<ParsedActivity> {
 						hr: typeof r.heart_rate === 'number' ? r.heart_rate : undefined,
 						alt: typeof r.enhanced_altitude === 'number' ? r.enhanced_altitude
 							: typeof r.altitude === 'number' ? r.altitude : undefined,
+						cad: typeof r.cadence === 'number'
+							? r.cadence + (typeof r.fractional_cadence === 'number' ? r.fractional_cadence : 0)
+							: undefined,
 					}))
 
 				const sportRaw = String(session.sport || data.activity?.sport || '').toLowerCase()
@@ -115,6 +120,7 @@ function parseFit(buffer: ArrayBuffer): Promise<ParsedActivity> {
 					calories: numOr(session.total_calories),
 					average_heartrate: numOr(session.avg_heart_rate),
 					max_heartrate: numOr(session.max_heart_rate),
+					average_cadence: numOr(session.avg_cadence),
 					total_elevation_gain: numOr(session.total_ascent),
 					start: session.start_time ? new Date(session.start_time) : undefined,
 				})
@@ -257,10 +263,17 @@ function fillDistanceFromGps(samples: Sample[]) {
 function buildActivity(samples: Sample[], sport: string, known: {
 	distance?: number; moving_time?: number; elapsed_time?: number
 	calories?: number; average_heartrate?: number; max_heartrate?: number
-	total_elevation_gain?: number; start?: Date
+	average_cadence?: number; total_elevation_gain?: number; start?: Date
 }): ParsedActivity {
 	if (!samples.length) throw new Error('File contains no samples')
 	samples.sort((a, b) => a.t - b.t)
+
+	// Foot sports record cadence per leg (~85 rpm); convert to steps/min.
+	const footSport = sport === 'Run' || sport === 'Walk' || sport === 'Hike'
+	if (footSport) {
+		for (const s of samples) if (s.cad !== undefined) s.cad *= 2
+		if (known.average_cadence !== undefined) known.average_cadence *= 2
+	}
 
 	const start = known.start || new Date(samples[0].t)
 	const t0 = samples[0].t
@@ -306,6 +319,7 @@ function buildActivity(samples: Sample[], sport: string, known: {
 		average_speed: distance > 0 && moving_time > 0 ? distance / moving_time : undefined,
 		average_heartrate: known.average_heartrate ?? (hrs.length ? Math.round(hrs.reduce((a, b) => a + b, 0) / hrs.length) : undefined),
 		max_heartrate: known.max_heartrate ?? (hrs.length ? Math.max(...hrs) : undefined),
+		average_cadence: known.average_cadence ?? avgCadence(samples),
 		calories: known.calories,
 		total_elevation_gain: known.total_elevation_gain ?? (elevGain > 0 ? Math.round(elevGain) : undefined),
 		map: coords.length >= 2 ? { polyline: encode(simplifyCoords(coords, 1200)) } : undefined,
@@ -313,6 +327,12 @@ function buildActivity(samples: Sample[], sport: string, known: {
 		streams: buildStreams(samples, t0),
 		best_efforts: sport === 'Run' ? buildBestEfforts(samples) : undefined,
 	}
+}
+
+/** Mean of non-zero cadence samples (zeros are coasting/standing). */
+function avgCadence(samples: Sample[]): number | undefined {
+	const vals = samples.filter(s => s.cad !== undefined && s.cad > 0).map(s => s.cad!)
+	return vals.length >= 10 ? Math.round(vals.reduce((a, b) => a + b, 0) / vals.length) : undefined
 }
 
 function sportLabel(sport: string): string {
@@ -374,6 +394,7 @@ function buildStreams(samples: Sample[], t0: number): ActivityStreams {
 	const hasVel = picked.some(s => s.speed !== undefined)
 	const hasAlt = picked.some(s => s.alt !== undefined)
 	const hasDist = picked.some(s => s.dist !== undefined)
+	const hasCad = picked.some(s => s.cad !== undefined)
 	const round = (v: number | undefined, f: number) => v === undefined ? null : Math.round(v * f) / f
 	return {
 		time: picked.map(s => Math.round((s.t - t0) / 1000)),
@@ -381,6 +402,7 @@ function buildStreams(samples: Sample[], t0: number): ActivityStreams {
 		...(hasVel ? { velocity: picked.map(s => round(s.speed, 100)) } : {}),
 		...(hasAlt ? { altitude: picked.map(s => round(s.alt, 10)) } : {}),
 		...(hasDist ? { distance: picked.map(s => round(s.dist, 1)) } : {}),
+		...(hasCad ? { cadence: picked.map(s => round(s.cad, 1)) } : {}),
 	}
 }
 

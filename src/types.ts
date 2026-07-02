@@ -53,6 +53,7 @@ export interface ActivityStreams {
 	velocity?: (number | null)[]; // m/s
 	altitude?: (number | null)[]; // m
 	distance?: (number | null)[]; // cumulative metres
+	cadence?: (number | null)[];  // spm (runs) or rpm (rides)
 }
 
 export interface BestEffort {
@@ -70,6 +71,7 @@ export interface ImportedActivity extends StravaActivity {
 	source: 'import';
 	average_speed?: number;      // m/s
 	max_heartrate?: number;
+	average_cadence?: number;    // spm (runs) or rpm (rides)
 	elapsed_time?: number;
 	streams?: ActivityStreams;
 	best_efforts?: BestEffort[];
