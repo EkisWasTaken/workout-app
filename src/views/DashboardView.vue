@@ -213,6 +213,16 @@
               </select>
             </div>
 
+            <div class="fit-import-row">
+              <button class="action-button" :disabled="isFitImporting" @click="fitInput?.click()">
+                <span v-if="!isFitImporting">Import FIT file…</span>
+                <span v-else class="ascii-spinner">Importing</span>
+              </button>
+              <span class="fit-import-hint">import a .fit/.gpx/.tcx file and link it to this workout</span>
+              <input ref="fitInput" type="file" accept=".fit,.gpx,.tcx,.gz,application/gzip" style="display: none"
+                @change="onCompletionFitPicked" />
+            </div>
+
             <div v-if="stravaPreview" class="strava-preview">
               <span class="sp-item"><span class="sp-num">{{ stravaPreview.distance }}</span> km</span>
               <span class="sp-item"><span class="sp-num">{{ stravaPreview.duration }}</span> min</span>
@@ -298,6 +308,7 @@ import CustomModal from '../components/CustomModal.vue';
 import ImportEditor from '../components/ImportEditor.vue';
 import ImportActivitiesModal from '../components/ImportActivitiesModal.vue';
 import { activityApi } from '../activities';
+import { parseActivityFile } from '@/import/parseActivityFile';
 
 const isActionLoading = ref(false);
 const message = useMessage();
@@ -488,6 +499,52 @@ async function loadStravaActivities() {
     } finally {
         isStravaLoading.value = false;
     }
+}
+
+// Import a FIT/GPX/TCX file from inside the completion dialog and link it
+// straight to the workout being completed.
+const fitInput = ref<HTMLInputElement | null>(null);
+const isFitImporting = ref(false);
+
+async function onCompletionFitPicked(e: Event) {
+  const file = (e.target as HTMLInputElement).files?.[0];
+  if (fitInput.value) fitInput.value.value = '';
+  if (!file) return;
+  isFitImporting.value = true;
+  try {
+    const activity = await parseActivityFile(file);
+    const res = await db.addImportedActivity(activity);
+    await loadStravaActivities();
+
+    let linkId: number | undefined = res.duplicate ? undefined : res.id;
+    if (res.duplicate) {
+      // Already imported earlier: find the existing copy and link that one.
+      const t = new Date(activity.start_date).getTime();
+      const match = stravaActivities.value.find((a: any) => {
+        const ta = new Date(a.start_date || a.start_date_local).getTime();
+        return Math.abs(ta - t) < 120000 && Math.abs((a.distance || 0) - activity.distance) < 200;
+      });
+      linkId = match?.id;
+    }
+
+    if (linkId !== undefined) {
+      completionData.value.stravaActivityId = linkId as any;
+      message.success(res.duplicate
+        ? 'Activity was already imported — linked the existing one.'
+        : 'Activity imported and linked to this workout.');
+    } else {
+      message.warning('File imported, but it could not be matched automatically — pick it from the list.');
+    }
+  } catch (err: any) {
+    const msg = String(err?.message || err);
+    if (msg.startsWith('MISSING_TABLE')) {
+      message.error('Database table missing — run supabase_imported_activities.sql in the Supabase SQL editor once.', { duration: 10000 });
+    } else {
+      message.error('Import failed: ' + msg);
+    }
+  } finally {
+    isFitImporting.value = false;
+  }
 }
 
 function goToDetails() {
@@ -854,6 +911,9 @@ textarea { min-height: 70px; resize: vertical; }
 .sp-item { font-size: 0.9rem; color: var(--text-color); }
 .sp-num { font-family: var(--font-mono); font-weight: 700; font-size: 1.05rem; }
 .sp-note { margin-left: auto; font-size: 0.72rem; color: #fc5100; font-weight: 600; }
+
+.fit-import-row { display: flex; align-items: center; gap: 10px; margin-top: -4px; }
+.fit-import-hint { font-size: 0.74rem; color: var(--text-muted); }
 
 .save-button { margin-top: 6px; align-self: flex-end; }
 @media (max-width: 600px) { .save-button { width: 100%; justify-content: center; } }
