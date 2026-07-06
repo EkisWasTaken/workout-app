@@ -173,23 +173,6 @@
 			</div>
 		</section>
 
-		<!-- Fitness & freshness -->
-		<template v-if="fitnessHasData">
-			<div class="section-head"><h2>Fitness &amp; freshness</h2><span class="section-note">training load model · last 3 months</span></div>
-			<section class="panel chart-card fitness-card">
-				<div class="chart-head">
-					<h3>Form = fitness − fatigue</h3>
-					<div class="fitness-badges">
-						<span class="fit-badge"><i style="background: #4f8cff"></i>Fitness <span class="mono">{{ currentFitness?.fitness ?? '—' }}</span></span>
-						<span class="fit-badge"><i style="background: #fb8c00"></i>Fatigue <span class="mono">{{ currentFitness?.fatigue ?? '—' }}</span></span>
-						<span class="fit-badge"><i style="background: #56d364"></i>Form <span class="mono">{{ currentFitness?.form ?? '—' }}</span></span>
-					</div>
-				</div>
-				<div class="chart-body fitness-chart-body"><canvas ref="fitnessCanvas"></canvas></div>
-				<p class="vo2-note">Relative Effort (TRIMP) per session from heart-rate data, fed into 42-day fitness / 7-day fatigue exponential averages — the same model as Strava's premium Fitness &amp; Freshness. Gym sessions without HR count via RPE × duration.</p>
-			</section>
-		</template>
-
 		<!-- Projections -->
 		<template v-if="weightPrediction || runningPrediction">
 			<div class="section-head"><h2>Projections</h2><span class="section-note">based on recent trends</span></div>
@@ -414,7 +397,7 @@ import { db } from '@/db'
 import { activityApi } from '@/activities'
 import type { Workout, DailyWeight, RaceGoal } from '@/types'
 import { getWorkoutType, getSportColor, isDistanceSport, SPORT_TYPES, SPORT_LABELS } from '@/utils/workouts'
-import { PULSE_ZONES, getHRSettings, timeInZones, relativeEffort, fitnessSeries, estimateVO2max } from '@/utils/analysis'
+import { PULSE_ZONES, getHRSettings, timeInZones, estimateVO2max } from '@/utils/analysis'
 
 const workouts = ref<Workout[]>([])
 const dailyWeights = ref<DailyWeight[]>([])
@@ -636,61 +619,6 @@ function vo2Zone(v: number | null) {
 	return { label: 'Poor', color: '#e53935' }
 }
 
-// ===== Fitness & Freshness (CTL/ATL/TSB) =====
-const dailyEfforts = computed<Record<string, number>>(() => {
-	const { maxHR, restHR } = getHRSettings(stravaActivities.value)
-	const efforts: Record<string, number> = {}
-	const add = (date: string, v: number) => { efforts[date] = (efforts[date] || 0) + v }
-
-	if (maxHR >= 120) {
-		for (const a of stravaActivities.value) {
-			if (!(a.streams?.heartrate || a.average_heartrate)) continue
-			const re = relativeEffort(a, maxHR, restHR)
-			const date = (a.start_date_local || a.start_date || '').slice(0, 10)
-			if (re && date) add(date, re)
-		}
-	}
-	// Sessions without HR (gym etc.): session-RPE load as a stand-in
-	for (const w of completed.value) {
-		if (getWorkoutType(w) !== 'gym') continue
-		if (w.rpe && w.actualDuration) add(w.date, Math.round(w.rpe * w.actualDuration / 10))
-	}
-	return efforts
-})
-
-const fitnessData = computed(() => fitnessSeries(dailyEfforts.value, 90))
-const fitnessHasData = computed(() => Object.keys(dailyEfforts.value).length >= 3 && fitnessData.value.length > 0)
-const currentFitness = computed(() => fitnessData.value[fitnessData.value.length - 1] || null)
-
-function buildFitness() {
-	if (!fitnessCanvas.value || !fitnessHasData.value) return
-	const series = fitnessData.value
-	const labels = series.map(p => format(parseISO(p.date), 'd MMM'))
-	charts.push(new Chart(fitnessCanvas.value, {
-		type: 'line',
-		data: {
-			labels,
-			datasets: [
-				{ label: 'Fitness', data: series.map(p => p.fitness), borderColor: '#4f8cff', backgroundColor: 'rgba(79,140,255,0.10)', borderWidth: 2, pointRadius: 0, tension: 0.35, fill: true },
-				{ label: 'Fatigue', data: series.map(p => p.fatigue), borderColor: '#fb8c00', backgroundColor: 'transparent', borderWidth: 1.5, borderDash: [4, 3], pointRadius: 0, tension: 0.35 },
-				{ label: 'Form', data: series.map(p => p.form), borderColor: '#56d364', backgroundColor: 'transparent', borderWidth: 1.5, pointRadius: 0, tension: 0.35 },
-			],
-		},
-		options: {
-			...baseOpts(),
-			interaction: { mode: 'index', intersect: false },
-			plugins: {
-				...baseOpts().plugins,
-				legend: { display: true, position: 'bottom', labels: { color: css('--text-secondary'), boxWidth: 10, font: { size: 10 }, usePointStyle: true } },
-			},
-			scales: {
-				...(baseOpts() as any).scales,
-				x: { ...(baseOpts() as any).scales.x, ticks: { color: css('--text-muted'), font: { size: 10 }, maxTicksLimit: 10, maxRotation: 0 } },
-			},
-		} as any,
-	}))
-}
-
 // ===== Running PRs & Race Predictor =====
 function fmtTime(secs: number) {
 	const h = Math.floor(secs / 3600)
@@ -887,7 +815,6 @@ const weightCanvas = ref<HTMLCanvasElement | null>(null)
 const mixCanvas = ref<HTMLCanvasElement | null>(null)
 const monthlyCanvas = ref<HTMLCanvasElement | null>(null)
 const vo2Canvas = ref<HTMLCanvasElement | null>(null)
-const fitnessCanvas = ref<HTMLCanvasElement | null>(null)
 const zoneCanvas = ref<HTMLCanvasElement | null>(null)
 const zoneDonutCanvas = ref<HTMLCanvasElement | null>(null)
 const predictedCanvas = ref<HTMLCanvasElement | null>(null)
@@ -1214,7 +1141,7 @@ function setMonthly() { isHeatmap.value = false; nextTick(buildMonthly) }
 async function buildAll() {
 	destroyCharts()
 	await nextTick()
-	buildDistance(); buildTonnage(); buildWeight(); buildMix(); buildHeatmap(); buildVO2(); buildZones(); buildZoneDonut(); buildFitness(); buildPredicted()
+	buildDistance(); buildTonnage(); buildWeight(); buildMix(); buildHeatmap(); buildVO2(); buildZones(); buildZoneDonut(); buildPredicted()
 	if (!isHeatmap.value) buildMonthly()
 }
 
@@ -1427,11 +1354,4 @@ onUnmounted(destroyCharts)
 .vo2-zone-chip { font-size: 0.72rem; font-weight: 600; margin-left: 2px; }
 .vo2-chart-body { height: 220px; position: relative; margin-top: 14px; }
 .vo2-note { margin: 12px 0 0; font-size: 0.72rem; color: var(--text-muted); line-height: 1.5; }
-
-/* Fitness & freshness */
-.fitness-chart-body { height: 240px; position: relative; margin-top: 14px; }
-.fitness-badges { display: flex; gap: 12px; flex-wrap: wrap; }
-.fit-badge { display: inline-flex; align-items: center; gap: 6px; font-size: 0.76rem; color: var(--text-secondary); }
-.fit-badge i { width: 8px; height: 8px; border-radius: 2px; display: inline-block; }
-.fit-badge .mono { font-weight: 700; color: var(--text-color); }
 </style>
