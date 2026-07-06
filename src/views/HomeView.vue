@@ -87,6 +87,53 @@
 			</div>
 		</section>
 
+		<!-- Plan progress -->
+		<template v-if="planHasData">
+			<div class="section-head"><h2>Plan progress</h2><span class="section-note">planned vs completed</span></div>
+			<section class="plan-grid">
+				<div class="panel plan-ring-card">
+					<div class="ring-wrap">
+						<svg viewBox="0 0 120 120" class="ring">
+							<circle class="ring-bg" cx="60" cy="60" r="52" fill="none" stroke-width="12" />
+							<circle class="ring-fg" cx="60" cy="60" r="52" fill="none" stroke-width="12"
+								:stroke-dasharray="planRingDash" stroke-linecap="round" transform="rotate(-90 60 60)" />
+						</svg>
+						<div class="ring-center">
+							<span class="ring-pct mono">{{ planRingPct }}%</span>
+							<span class="ring-lbl">on plan</span>
+						</div>
+					</div>
+					<div class="plan-ring-foot">This week · {{ thisWeekPlan.done }} of {{ thisWeekPlan.planned }} sessions</div>
+				</div>
+
+				<div class="panel plan-stats-card">
+					<div class="plan-stat-row">
+						<div class="plan-stat">
+							<span class="ps-label">Sessions done</span>
+							<span class="ps-val mono">{{ thisWeekPlan.done }}<span class="ps-of">/ {{ thisWeekPlan.planned }}</span></span>
+							<div class="progress-track"><div class="progress-fill" :style="{ width: (thisWeekPlan.planned ? Math.min(100, thisWeekPlan.done / thisWeekPlan.planned * 100) : 0) + '%' }"></div></div>
+						</div>
+						<div class="plan-stat">
+							<span class="ps-label">Distance done</span>
+							<span class="ps-val mono">{{ thisWeekPlan.doneKm }}<span class="ps-of">/ {{ thisWeekPlan.plannedKm }} km</span></span>
+							<div class="progress-track"><div class="progress-fill run" :style="{ width: (thisWeekPlan.plannedKm ? Math.min(100, thisWeekPlan.doneKm / thisWeekPlan.plannedKm * 100) : 0) + '%' }"></div></div>
+						</div>
+					</div>
+					<div class="plan-history">
+						<span class="ph-title">Weekly consistency · last 8 weeks</span>
+						<div class="ph-bars">
+							<div v-for="(w, i) in planWeeks" :key="i" class="ph-col" :title="`${w.label}: ${w.done}/${w.planned} sessions`">
+								<div class="ph-bar-track">
+									<div class="ph-bar-fill" :class="{ full: (w.pct ?? 0) >= 100 }" :style="{ height: (w.pct ?? 0) + '%' }"></div>
+								</div>
+								<span class="ph-x">{{ w.label }}</span>
+							</div>
+						</div>
+					</div>
+				</div>
+			</section>
+		</template>
+
 		<!-- Trends -->
 		<div class="section-head"><h2>Trends</h2><span class="section-note">last 12 weeks</span></div>
 		<section class="chart-grid">
@@ -219,6 +266,28 @@
 					<span class="pr-label"><n-icon :component="TrophyOutline" /> Marathon</span>
 					<span class="pr-value mono">{{ racePredictor.full }}</span>
 				</div>
+			</section>
+		</template>
+
+		<!-- Race time projection -->
+		<template v-if="predictedHasData">
+			<div class="section-head">
+				<h2>Race time projection</h2>
+				<span class="section-note">Riegel · from your recent runs</span>
+			</div>
+			<section class="panel chart-card predicted-card">
+				<div class="chart-head">
+					<h3>Projected {{ fmt(goalRaceKm) }} km time</h3>
+					<div class="pred-badges">
+						<span class="pt-badge"><span class="pt-lbl">Now</span><span class="mono">{{ predictedCurrent !== null ? fmtTime(predictedCurrent) : '—' }}</span></span>
+						<span v-if="goalRaceSecs !== null" class="pt-badge"><span class="pt-lbl">Goal</span><span class="mono">{{ fmtTime(goalRaceSecs) }}</span></span>
+						<span v-if="predictedDelta !== null" class="pt-badge" :class="predictedDelta <= 0 ? 'good' : 'off'">
+							{{ predictedDelta <= 0 ? fmtTime(Math.abs(predictedDelta)) + ' ahead of goal' : fmtTime(predictedDelta) + ' to go' }}
+						</span>
+					</div>
+				</div>
+				<div class="chart-body"><canvas ref="predictedCanvas"></canvas></div>
+				<p class="vo2-note">Projected finish for {{ fmt(goalRaceKm) }} km from the fastest run in each trailing 4-week window (Riegel model). Set your goal race distance &amp; time in Profile to show the goal line.</p>
 			</section>
 		</template>
 
@@ -681,6 +750,122 @@ const racePredictor = computed(() => {
 	}
 })
 
+// ===== Predicted race time vs goal (Runna-style progress) =====
+function parseGoalTime(str: string | null): number | null {
+	if (!str) return null
+	const parts = str.split(':').map(s => Number(s.trim()))
+	if (parts.some(isNaN)) return null
+	let s = 0
+	if (parts.length === 3) s = parts[0] * 3600 + parts[1] * 60 + parts[2]
+	else if (parts.length === 2) s = parts[0] * 60 + parts[1]
+	else if (parts.length === 1) s = parts[0] * 60 // bare number = minutes
+	return s > 0 ? s : null
+}
+
+function parseRaceKm(name: string): number | null {
+	const n = (name || '').toLowerCase()
+	if (/marathon/.test(n) && !/half|halv/.test(n)) return 42.195
+	if (/half|halv/.test(n)) return 21.0975
+	const m = n.match(/(\d{1,3})\s*k/)
+	return m ? parseFloat(m[1]) : null
+}
+
+const goalRaceKm = computed(() => {
+	const s = parseFloat(localStorage.getItem('goalRaceKm') || '')
+	if (s > 0) return s
+	const inferred = nextRace.value ? parseRaceKm(nextRace.value.name) : null
+	return inferred || (nextRace.value ? 30 : 10)
+})
+const goalRaceSecs = computed(() => parseGoalTime(localStorage.getItem('goalRaceTime')))
+
+// Recorded runs (imported activities + manually-completed runs) as {date, distM, timeSec}.
+const runSamples = computed(() => {
+	const out: { date: Date; distM: number; timeSec: number }[] = []
+	for (const a of stravaActivities.value) {
+		const st = (a.sport_type || a.type || '').toLowerCase()
+		if (st === 'run' && a.distance && a.moving_time)
+			out.push({ date: new Date(a.start_date_local || a.start_date), distM: a.distance, timeSec: a.moving_time })
+	}
+	for (const w of completed.value) {
+		if (getWorkoutType(w) === 'running' && w.distance && w.actualDuration)
+			out.push({ date: parseISO(w.date), distM: w.distance * 1000, timeSec: w.actualDuration * 60 })
+	}
+	return out
+})
+
+const predictedTimeSeries = computed(() => {
+	const targetM = goalRaceKm.value * 1000
+	return weekBuckets(12).map(wk => {
+		const winStart = subWeeks(wk.end, 4)
+		const win = runSamples.value.filter(s => s.date > winStart && s.date <= wk.end && s.distM >= 3000)
+		if (!win.length) return { label: wk.label, secs: null as number | null }
+		const ref = win.reduce((b, a) => (a.timeSec / a.distM) < (b.timeSec / b.distM) ? a : b)
+		return { label: wk.label, secs: Math.round(ref.timeSec * Math.pow(targetM / ref.distM, 1.06)) }
+	})
+})
+const predictedHasData = computed(() => predictedTimeSeries.value.filter(p => p.secs !== null).length >= 2)
+const predictedCurrent = computed(() => {
+	const v = [...predictedTimeSeries.value].reverse().find(p => p.secs !== null)
+	return v ? v.secs : null
+})
+const predictedDelta = computed(() =>
+	predictedCurrent.value !== null && goalRaceSecs.value !== null ? predictedCurrent.value - goalRaceSecs.value : null)
+
+function buildPredicted() {
+	if (!predictedCanvas.value || !predictedHasData.value) return
+	const series = predictedTimeSeries.value
+	const labels = series.map(p => p.label)
+	const runColor = getSportColor('running')
+	const datasets: any[] = [{
+		label: `Predicted ${fmt(goalRaceKm.value)} km`,
+		data: series.map(p => p.secs),
+		borderColor: runColor, backgroundColor: 'transparent', borderWidth: 2, tension: 0.3,
+		pointRadius: 3, pointHoverRadius: 5, spanGaps: true,
+	}]
+	if (goalRaceSecs.value !== null) {
+		datasets.push({
+			label: 'Goal', data: labels.map(() => goalRaceSecs.value),
+			borderColor: css('--success-color'), borderWidth: 1.5, borderDash: [5, 5], pointRadius: 0,
+		})
+	}
+	charts.push(new Chart(predictedCanvas.value, {
+		type: 'line',
+		data: { labels, datasets },
+		options: {
+			...baseOpts(),
+			plugins: {
+				...baseOpts().plugins,
+				legend: { display: true, position: 'bottom', labels: { color: css('--text-secondary'), boxWidth: 10, font: { size: 10 }, usePointStyle: true } },
+				tooltip: { ...baseOpts().plugins.tooltip, callbacks: { label: (ctx: any) => ` ${ctx.dataset.label}: ${fmtTime(ctx.raw)}` } },
+			},
+			scales: {
+				...(baseOpts() as any).scales,
+				y: { ...(baseOpts() as any).scales.y, ticks: { color: css('--text-muted'), font: { size: 10 }, callback: (v: any) => fmtTime(v) } },
+				x: { ...(baseOpts() as any).scales.x, ticks: { color: css('--text-muted'), font: { size: 10 }, maxTicksLimit: 10, maxRotation: 0 } },
+			},
+		} as any,
+	}))
+}
+
+// ===== Weekly plan adherence (planned vs completed) =====
+const planWeeks = computed(() => weekBuckets(8).map(wk => {
+	const inWk = (w: Workout) => isWithinInterval(parseISO(w.date), { start: wk.start, end: wk.end })
+	const planned = workouts.value.filter(w => inWk(w) && getWorkoutType(w) !== 'rest')
+	const done = planned.filter(w => w.isCompleted === 1)
+	const plannedKm = planned.filter(w => isDistanceSport(getWorkoutType(w))).reduce((s, w) => s + (w.distance || 0), 0)
+	const doneKm = done.filter(w => isDistanceSport(getWorkoutType(w))).reduce((s, w) => s + (w.distance || 0), 0)
+	return {
+		label: wk.label, planned: planned.length, done: done.length,
+		plannedKm: Math.round(plannedKm), doneKm: Math.round(doneKm),
+		pct: planned.length ? Math.round((done.length / planned.length) * 100) : null,
+	}
+}))
+const planHasData = computed(() => planWeeks.value.some(w => w.planned > 0))
+const thisWeekPlan = computed(() => planWeeks.value[planWeeks.value.length - 1])
+const planRingPct = computed(() => thisWeekPlan.value?.pct ?? 0)
+const RING_CIRC = 2 * Math.PI * 52
+const planRingDash = computed(() => `${(Math.min(planRingPct.value, 100) / 100) * RING_CIRC} ${RING_CIRC}`)
+
 // ===== Zone distribution =====
 const maxHRDisplay = computed(() => getHRSettings(stravaActivities.value).maxHR)
 const restingHR = computed(() => parseInt(localStorage.getItem('restingHR') || '60', 10))
@@ -705,6 +890,7 @@ const vo2Canvas = ref<HTMLCanvasElement | null>(null)
 const fitnessCanvas = ref<HTMLCanvasElement | null>(null)
 const zoneCanvas = ref<HTMLCanvasElement | null>(null)
 const zoneDonutCanvas = ref<HTMLCanvasElement | null>(null)
+const predictedCanvas = ref<HTMLCanvasElement | null>(null)
 let charts: Chart[] = []
 
 const stravaActivities = ref<any[]>([])
@@ -1028,7 +1214,7 @@ function setMonthly() { isHeatmap.value = false; nextTick(buildMonthly) }
 async function buildAll() {
 	destroyCharts()
 	await nextTick()
-	buildDistance(); buildTonnage(); buildWeight(); buildMix(); buildHeatmap(); buildVO2(); buildZones(); buildZoneDonut(); buildFitness()
+	buildDistance(); buildTonnage(); buildWeight(); buildMix(); buildHeatmap(); buildVO2(); buildZones(); buildZoneDonut(); buildFitness(); buildPredicted()
 	if (!isHeatmap.value) buildMonthly()
 }
 
@@ -1091,6 +1277,40 @@ onUnmounted(destroyCharts)
 .metric-split i.sw.bike { background: var(--color-bike-primary); }
 .progress-track { margin-top: 12px; height: 6px; border-radius: 999px; background: var(--surface-2); overflow: hidden; }
 .progress-fill { height: 100%; background: var(--primary-color); border-radius: 999px; transition: width 0.3s ease; }
+
+/* Plan progress */
+.plan-grid { display: grid; grid-template-columns: 230px 1fr; gap: 14px; }
+@media (max-width: 768px) { .plan-grid { grid-template-columns: 1fr; } }
+.plan-ring-card { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; }
+.ring-wrap { position: relative; width: 132px; height: 132px; }
+.ring { width: 132px; height: 132px; transform: none; }
+.ring-bg { stroke: var(--surface-2); }
+.ring-fg { stroke: var(--primary-color); transition: stroke-dasharray 0.5s ease; }
+.ring-center { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+.ring-pct { font-size: 1.65rem; font-weight: 700; color: var(--text-color); line-height: 1; }
+.ring-lbl { font-size: 0.7rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; margin-top: 3px; }
+.plan-ring-foot { font-size: 0.82rem; color: var(--text-secondary); text-align: center; }
+.plan-stats-card { display: flex; flex-direction: column; gap: 18px; justify-content: center; }
+.plan-stat-row { display: flex; gap: 22px; }
+.plan-stat { flex: 1; }
+.ps-label { font-size: 0.76rem; color: var(--text-secondary); }
+.ps-val { display: block; font-size: 1.35rem; font-weight: 700; margin: 3px 0 9px; }
+.ps-of { font-size: 0.85rem; color: var(--text-muted); font-weight: 500; margin-left: 5px; }
+.progress-fill.run { background: var(--color-running-primary); }
+.ph-title { font-size: 0.72rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.04em; }
+.ph-bars { display: flex; gap: 6px; margin-top: 12px; align-items: flex-end; }
+.ph-col { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 6px; }
+.ph-bar-track { width: 100%; height: 56px; background: var(--surface-2); border-radius: 4px; display: flex; align-items: flex-end; overflow: hidden; }
+.ph-bar-fill { width: 100%; background: var(--primary-color); border-radius: 4px 4px 0 0; min-height: 2px; transition: height 0.3s ease; }
+.ph-bar-fill.full { background: var(--success-color); }
+.ph-x { font-size: 0.62rem; color: var(--text-muted); }
+
+/* Race time projection */
+.pred-badges { display: flex; gap: 8px; flex-wrap: wrap; }
+.pt-badge { display: inline-flex; align-items: center; gap: 6px; background: var(--surface-2); border: 1px solid var(--border-color); border-radius: 999px; padding: 4px 11px; font-size: 0.82rem; color: var(--text-color); }
+.pt-badge .pt-lbl { color: var(--text-muted); font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.03em; }
+.pt-badge.good { background: var(--success-soft); color: var(--success-color); border-color: transparent; }
+.pt-badge.off { background: var(--warning-soft); color: var(--warning-color); border-color: transparent; }
 
 /* Row two */
 .row-two { display: grid; grid-template-columns: 1.7fr 1fr; gap: 14px; }

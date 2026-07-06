@@ -14,6 +14,12 @@
 						<n-form-item label="Goal body weight (kg)">
 							<n-input v-model:value="goalWeight" type="text" placeholder="e.g. 75.5" />
 						</n-form-item>
+						<n-form-item label="Goal race distance (km)">
+							<n-input v-model:value="goalRaceKm" type="text" placeholder="e.g. 30" />
+						</n-form-item>
+						<n-form-item label="Goal race time (h:mm:ss)">
+							<n-input v-model:value="goalRaceTime" type="text" placeholder="e.g. 2:30:00" />
+						</n-form-item>
 						<n-form-item label="Resting heart rate (bpm)">
 							<n-input v-model:value="restingHR" type="text" placeholder="e.g. 55" />
 						</n-form-item>
@@ -118,6 +124,8 @@ import type { RaceGoal, AddRaceGoalPayload } from "@/types";
 const message = useMessage();
 const userName = ref("");
 const goalWeight = ref<string>("");
+const goalRaceKm = ref<string>("");
+const goalRaceTime = ref<string>("");
 const restingHR = ref<string>("");
 const maxHR = ref<string>("");
 const isStravaConnected = ref(false);
@@ -167,6 +175,10 @@ const loadProfile = async () => {
 		if (storedName) userName.value = storedName;
 		const storedGoal = localStorage.getItem("goalWeight");
 		if (storedGoal) goalWeight.value = storedGoal;
+		const storedRaceKm = localStorage.getItem("goalRaceKm");
+		if (storedRaceKm) goalRaceKm.value = storedRaceKm;
+		const storedRaceTime = localStorage.getItem("goalRaceTime");
+		if (storedRaceTime) goalRaceTime.value = storedRaceTime;
 		const storedRHR = localStorage.getItem("restingHR");
 		if (storedRHR) restingHR.value = storedRHR;
 		const storedMaxHR = localStorage.getItem("maxHR");
@@ -179,6 +191,16 @@ const saveProfile = () => {
 		localStorage.setItem("userName", userName.value);
 		if (goalWeight.value !== "") {
 			localStorage.setItem("goalWeight", goalWeight.value);
+		}
+		if (goalRaceKm.value !== "") {
+			localStorage.setItem("goalRaceKm", goalRaceKm.value);
+		} else {
+			localStorage.removeItem("goalRaceKm");
+		}
+		if (goalRaceTime.value !== "") {
+			localStorage.setItem("goalRaceTime", goalRaceTime.value);
+		} else {
+			localStorage.removeItem("goalRaceTime");
 		}
 		if (restingHR.value !== "") {
 			localStorage.setItem("restingHR", restingHR.value);
