@@ -16,3 +16,12 @@ create table if not exists imported_activities (
 -- Dedupe guard: the same recording can't be imported twice.
 create unique index if not exists imported_activities_dedupe
   on imported_activities (start_date, distance);
+
+-- Supabase enables RLS by default on new tables; without a policy the anon
+-- key can't insert. Single-user app: allow everything, like the other tables.
+alter table imported_activities enable row level security;
+create policy "allow all access"
+  on imported_activities
+  for all
+  using (true)
+  with check (true);

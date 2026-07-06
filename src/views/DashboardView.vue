@@ -24,14 +24,52 @@
 
       <div class="calendar-container">
         <div class="calendar-header">
-          <button @click="previousMonth" class="nav-button" aria-label="Previous month"><n-icon :component="ChevronBackOutline" /></button>
-          <span class="month-display">{{ formattedCurrentMonth }}</span>
-          <button @click="nextMonth" class="nav-button" aria-label="Next month"><n-icon :component="ChevronForwardOutline" /></button>
+          <button @click="goPrev" class="nav-button" :aria-label="viewMode === 'week' ? 'Previous week' : 'Previous month'"><n-icon :component="ChevronBackOutline" /></button>
+          <span class="month-display">{{ viewMode === 'week' ? weekRangeLabel : formattedCurrentMonth }}</span>
+          <button @click="goNext" class="nav-button" :aria-label="viewMode === 'week' ? 'Next week' : 'Next month'"><n-icon :component="ChevronForwardOutline" /></button>
+          <div class="view-toggle">
+            <button :class="{ active: viewMode === 'month' }" @click="viewMode = 'month'">Month</button>
+            <button :class="{ active: viewMode === 'week' }" @click="setWeekView">Week</button>
+          </div>
         </div>
-        <div class="calendar-grid days-header">
+
+        <!-- WEEK VIEW: full session details for the week at a glance -->
+        <div v-if="viewMode === 'week'" class="week-view">
+          <div v-for="day in weekDetailed" :key="day.key" class="wv-day" :class="{ 'wv-today': day.isToday }">
+            <div class="wv-dayhead">
+              <span class="wv-dow">{{ day.dow }}</span>
+              <span class="wv-datenum">{{ day.dayNum }}</span>
+              <span v-for="goal in day.raceGoals" :key="goal.id" class="wv-race"><n-icon :component="FlagOutline" /> {{ goal.name }}</span>
+              <button class="wv-add" @click="openAddWorkoutModal(day.date)" aria-label="Add workout"><n-icon :component="AddOutline" /></button>
+            </div>
+            <p v-if="day.workouts.length === 0" class="wv-restday">Rest day</p>
+            <div v-else class="wv-sessions">
+              <div v-for="w in day.workouts" :key="w.id" class="wv-card" :class="getWorkoutClass(w)" @click="openDetailsModal(w)">
+                <span class="wv-badge"><n-icon :component="workoutIcon(w)" /></span>
+                <div class="wv-body">
+                  <div class="wv-cardtop">
+                    <span class="wv-name">{{ w.name }}</span>
+                    <n-icon v-if="w.isCompleted === 1" class="wv-done" :component="CheckmarkCircle" />
+                  </div>
+                  <div v-if="hasStats(w)" class="wv-pills">
+                    <span v-if="w.distance" class="wv-pill">{{ w.distance }} km</span>
+                    <span v-if="w.duration" class="wv-pill">{{ w.duration }} min</span>
+                    <span v-if="paceParts(w)" class="wv-pill wv-pill-pace">{{ paceParts(w)?.zone }} · {{ paceParts(w)?.value }}/km</span>
+                    <span v-if="w.gymType" class="wv-pill">{{ w.gymType }}</span>
+                  </div>
+                  <ul v-if="noteSteps(w).length" class="wv-steps">
+                    <li v-for="(step, i) in noteSteps(w)" :key="i">{{ step }}</li>
+                  </ul>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div v-if="viewMode === 'month'" class="calendar-grid days-header">
           <div v-for="day in weekDays" :key="day" class="day-cell header">{{ day }}</div>
         </div>
-        <div class="calendar-grid">
+        <div v-if="viewMode === 'month'" class="calendar-grid">
           <div v-for="day in days" :key="day.date.toISOString()" 
                class="day-cell" 
                :class="{ 
@@ -57,8 +95,14 @@
                    @dragend="onDragEnd"
                    @click.stop="openDetailsModal(workout)">
                 <div class="workout-banner"></div>
-                <n-icon v-if="workout.isCompleted === 1" class="done-check" :component="CheckmarkCircle" />
-                <span class="event-name">{{ workout.name }}</span>
+                <div class="wt-body">
+                  <span class="wt-title">
+                    <n-icon v-if="workout.isCompleted === 1" class="done-check" :component="CheckmarkCircle" />
+                    <n-icon v-else class="wt-ico" :component="workoutIcon(workout)" />
+                    <span class="event-name">{{ workout.name }}</span>
+                  </span>
+                  <span v-if="workoutMeta(workout)" class="wt-meta">{{ workoutMeta(workout) }}</span>
+                </div>
               </div>
               <div v-for="weight in day.dailyWeights" :key="weight.id" class="event-tag weight-tag">
                 <n-icon :component="BodyOutline" /> {{ weight.weight }} kg
@@ -118,13 +162,42 @@
       <CustomModal v-if="selectedWorkout" v-model:show="showDetailsModal" :title="modalTitle">
         <!-- View Mode -->
         <div v-if="modalMode === 'view'" class="details-view">
-          <h2 class="detail-title">{{ selectedWorkout.name }}</h2>
-          <dl class="detail-list">
-            <div><dt>Date</dt><dd>{{ selectedWorkout.date }}</dd></div>
-            <div><dt>Type</dt><dd>{{ selectedWorkout.type || 'N/A' }}</dd></div>
-            <div v-if="selectedWorkout.duration"><dt>Planned duration</dt><dd>{{ selectedWorkout.duration }} min</dd></div>
-            <div v-if="selectedWorkout.distance"><dt>Planned distance</dt><dd>{{ selectedWorkout.distance }} km</dd></div>
-          </dl>
+          <div class="rn-card" :class="getWorkoutClass(selectedWorkout)">
+            <div class="rn-head">
+              <span class="rn-badge"><n-icon :component="workoutIcon(selectedWorkout)" /></span>
+              <div class="rn-headtext">
+                <h2 class="rn-title">{{ selectedWorkout.name }}</h2>
+                <span class="rn-sub">{{ workoutTypeLabel(selectedWorkout) }} · {{ formatLongDate(selectedWorkout.date) }}</span>
+              </div>
+              <span v-if="selectedWorkout.isCompleted" class="rn-done"><n-icon :component="CheckmarkCircle" /></span>
+            </div>
+
+            <div v-if="hasStats(selectedWorkout)" class="rn-stats">
+              <div v-if="selectedWorkout.distance" class="rn-stat">
+                <span class="rn-val"><span class="rn-num">{{ selectedWorkout.distance }}</span><span class="rn-unit">km</span></span>
+                <span class="rn-lbl">Distance</span>
+              </div>
+              <div v-if="selectedWorkout.duration" class="rn-stat">
+                <span class="rn-val"><span class="rn-num">{{ selectedWorkout.duration }}</span><span class="rn-unit">min</span></span>
+                <span class="rn-lbl">Duration</span>
+              </div>
+              <div v-if="paceParts(selectedWorkout)" class="rn-stat rn-stat-pace">
+                <span class="rn-val"><span class="rn-num">{{ paceParts(selectedWorkout)?.value }}</span><span class="rn-unit">/km</span></span>
+                <span class="rn-lbl">{{ paceParts(selectedWorkout)?.zone }}</span>
+              </div>
+              <div v-if="selectedWorkout.gymType" class="rn-stat">
+                <span class="rn-val"><span class="rn-num rn-num-sm">{{ selectedWorkout.gymType }}</span></span>
+                <span class="rn-lbl">Focus</span>
+              </div>
+            </div>
+
+            <div v-if="noteSteps(selectedWorkout).length" class="rn-plan">
+              <span class="rn-plan-h">Session plan</span>
+              <ul class="rn-steps">
+                <li v-for="(step, i) in noteSteps(selectedWorkout)" :key="i">{{ step }}</li>
+              </ul>
+            </div>
+          </div>
 
           <div v-if="selectedWorkout.isCompleted" class="detail-completed">
             <span class="status-pill"><n-icon :component="CheckmarkCircle" /> Completed</span>
@@ -134,8 +207,6 @@
               <div v-if="selectedWorkout.rpe"><dt>RPE</dt><dd>{{ selectedWorkout.rpe }}/10</dd></div>
             </dl>
           </div>
-
-          <p v-if="selectedWorkout.notes" class="detail-notes">{{ selectedWorkout.notes }}</p>
 
           <div class="modal-actions">
             <button @click="handleDeleteWorkout" class="action-button delete-button" :disabled="isActionLoading">
@@ -285,7 +356,7 @@ import { useMessage, NIcon } from 'naive-ui';
 import {
   AddOutline, BodyOutline, CloudUploadOutline, ChevronBackOutline, ChevronForwardOutline,
   FlagOutline, CheckmarkCircle, TrashOutline, CreateOutline, CheckmarkOutline, MapOutline,
-  WatchOutline,
+  WatchOutline, WalkOutline, BarbellOutline, BicycleOutline, BedOutline, FitnessOutline,
 } from '@vicons/ionicons5';
 import { db } from '@/db';
 
@@ -295,11 +366,13 @@ import {
   startOfMonth, 
   endOfMonth, 
   eachDayOfInterval, 
-  startOfWeek, 
-  endOfWeek, 
+  startOfWeek,
+  endOfWeek,
   getDate,
   addMonths,
   subMonths,
+  addWeeks,
+  subWeeks,
   parseISO
 } from 'date-fns';
 import { enUS } from 'date-fns/locale';
@@ -717,6 +790,55 @@ const days = computed(() => {
 
 function previousMonth() { currentMonth.value = subMonths(currentMonth.value, 1); }
 function nextMonth() { currentMonth.value = addMonths(currentMonth.value, 1); }
+
+// -- Week view: full session detail for a single week --
+const viewMode = ref<'month' | 'week'>('month');
+const currentWeek = ref(new Date());
+
+function setWeekView() {
+  // Jump to the week around whatever month is being viewed (or today if it's that month).
+  const today = new Date();
+  const inViewedMonth = today.getMonth() === currentMonth.value.getMonth()
+    && today.getFullYear() === currentMonth.value.getFullYear();
+  currentWeek.value = inViewedMonth ? today : startOfMonth(currentMonth.value);
+  viewMode.value = 'week';
+}
+
+function goPrev() {
+  if (viewMode.value === 'week') currentWeek.value = subWeeks(currentWeek.value, 1);
+  else previousMonth();
+}
+function goNext() {
+  if (viewMode.value === 'week') currentWeek.value = addWeeks(currentWeek.value, 1);
+  else nextMonth();
+}
+
+const weekRangeLabel = computed(() => {
+  const start = startOfWeek(currentWeek.value, { weekStartsOn: 1 });
+  const end = endOfWeek(currentWeek.value, { weekStartsOn: 1 });
+  const sameMonth = start.getMonth() === end.getMonth();
+  return sameMonth
+    ? `${format(start, 'd')}–${format(end, 'd MMM yyyy')}`
+    : `${format(start, 'd MMM')} – ${format(end, 'd MMM yyyy')}`;
+});
+
+const weekDetailed = computed(() => {
+  const start = startOfWeek(currentWeek.value, { weekStartsOn: 1 });
+  const end = endOfWeek(currentWeek.value, { weekStartsOn: 1 });
+  const today = format(new Date(), 'yyyy-MM-dd');
+  return eachDayOfInterval({ start, end }).map(date => {
+    const key = format(date, 'yyyy-MM-dd');
+    return {
+      key,
+      date,
+      dow: format(date, 'EEEE'),
+      dayNum: format(date, 'd MMM'),
+      isToday: key === today,
+      workouts: workoutsByDate.value[key] || [],
+      raceGoals: raceGoalsByDate.value[key] || [],
+    };
+  });
+});
 // == CALENDAR LOGIC END ==
 
 
@@ -744,6 +866,53 @@ const getWorkoutClass = (workout: Workout) => {
   const type = getWorkoutType(workout).toLowerCase();
   const completed = workout.isCompleted === 1 ? 'completed' : 'pending';
   return `workout-${type} status-${completed}`;
+};
+
+// -- Runna-style card helpers --
+const TYPE_ICONS: Record<string, any> = {
+  running: WalkOutline, gym: BarbellOutline, bike: BicycleOutline, rest: BedOutline, other: FitnessOutline,
+};
+const TYPE_LABELS: Record<string, string> = {
+  running: 'Run', gym: 'Strength', bike: 'Bike', rest: 'Rest day', other: 'Workout',
+};
+const workoutIcon = (w: Workout) => TYPE_ICONS[getWorkoutType(w)] || FitnessOutline;
+const workoutTypeLabel = (w: Workout) => TYPE_LABELS[getWorkoutType(w)] || 'Workout';
+
+const formatLongDate = (date: string) => {
+  try { return format(parseISO(date), 'EEE d MMM'); } catch { return date; }
+};
+
+// Compact subtitle for calendar chips (like Runna's plan cards).
+const workoutMeta = (w: Workout): string => {
+  const t = getWorkoutType(w);
+  const parts: string[] = [];
+  if (t === 'gym') { if (w.gymType) parts.push(w.gymType); }
+  else if (t === 'rest') { /* no meta */ }
+  else { // running / bike
+    if (w.distance) parts.push(`${w.distance} km`);
+    else if (w.duration) parts.push(`${w.duration} min`);
+    const p = paceParts(w);
+    if (p) parts.push(p.zone);
+  }
+  return parts.join(' · ');
+};
+
+const hasStats = (w: Workout) => !!(w.distance || w.duration || w.targetPace || w.gymType);
+
+// Split a target-pace string ("Threshold 4:45–4:55/km") into a zone label and value.
+const paceParts = (w: Workout): { zone: string; value: string } | null => {
+  const raw = (w.targetPace || '').trim();
+  if (!raw) return null;
+  const m = raw.match(/^(.+?)\s+([\d:]+(?:[–-][\d:]+)?)\s*\/?\s*km$/);
+  if (m) return { zone: m[1].trim(), value: m[2] };
+  return { zone: 'Target', value: raw };
+};
+
+// Break the notes into readable steps for the "Session plan" list.
+const noteSteps = (w: Workout): string[] => {
+  const raw = (w.notes || '').trim();
+  if (!raw) return [];
+  return raw.split(/(?<=[.!?])\s+(?=[A-Z0-9🎯🏁])/).map(s => s.trim()).filter(Boolean);
 };
 
 const workoutsByDate = computed(() => {
@@ -827,6 +996,41 @@ onActivated(() => { loadWorkouts(); loadDailyWeights(); loadRaceGoals(); });
 .nav-button { background: var(--surface-2); border: 1px solid var(--border-color); color: var(--text-secondary); width: 34px; height: 34px; border-radius: var(--radius-sm); cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 1.1rem; transition: background 0.15s, color 0.15s; }
 .nav-button:hover { background: var(--surface-hover); color: var(--text-color); }
 .month-display { font-weight: 600; font-size: 1.1rem; color: var(--text-color); }
+
+.view-toggle { margin-left: auto; display: inline-flex; background: var(--surface-2); border: 1px solid var(--border-color); border-radius: var(--radius-sm); padding: 2px; gap: 2px; }
+.view-toggle button { background: none; border: none; color: var(--text-secondary); font-family: var(--font-family); font-size: 0.8rem; font-weight: 500; padding: 5px 12px; border-radius: calc(var(--radius-sm) - 2px); cursor: pointer; transition: background 0.15s, color 0.15s; }
+.view-toggle button:hover { color: var(--text-color); }
+.view-toggle button.active { background: var(--primary-color); color: #fff; }
+
+/* Week view — full session detail */
+.week-view { display: flex; flex-direction: column; }
+.wv-day { padding: 14px 16px; border-top: 1px solid var(--border-color); }
+.wv-day:first-child { border-top: none; }
+.wv-today { background: var(--primary-soft); }
+.wv-dayhead { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+.wv-dow { font-weight: 700; font-size: 0.92rem; color: var(--text-color); }
+.wv-today .wv-dow { color: var(--primary-color); }
+.wv-datenum { font-size: 0.8rem; color: var(--text-muted); }
+.wv-race { display: inline-flex; align-items: center; gap: 4px; font-size: 0.74rem; font-weight: 600; color: var(--danger-color); background: var(--danger-soft); padding: 2px 8px; border-radius: 999px; }
+.wv-add { margin-left: auto; width: 26px; height: 26px; border-radius: var(--radius-sm); border: 1px solid var(--border-color); background: var(--surface-2); color: var(--text-muted); cursor: pointer; display: flex; align-items: center; justify-content: center; opacity: 0; transition: opacity 0.15s, color 0.15s; }
+.wv-day:hover .wv-add { opacity: 1; }
+.wv-add:hover { color: var(--primary-color); border-color: var(--primary-color); }
+.wv-restday { margin: 0; font-size: 0.82rem; color: var(--text-muted); font-style: italic; }
+.wv-sessions { display: flex; flex-direction: column; gap: 10px; }
+.wv-card { display: flex; gap: 12px; padding: 12px 14px; border: 1px solid var(--border-color); border-left: 3px solid var(--tag-color); border-radius: var(--radius-sm); background: var(--surface-color); cursor: pointer; transition: background 0.15s, box-shadow 0.15s; }
+.wv-card:hover { background: var(--surface-2); box-shadow: 0 1px 6px rgba(0,0,0,0.08); }
+.wv-card.status-completed { background: color-mix(in srgb, var(--tag-color) 8%, transparent); }
+.wv-badge { width: 34px; height: 34px; border-radius: 9px; background: var(--tag-color); color: #fff; display: flex; align-items: center; justify-content: center; font-size: 1.1rem; flex-shrink: 0; }
+.wv-body { flex: 1; min-width: 0; }
+.wv-cardtop { display: flex; align-items: center; gap: 6px; }
+.wv-name { font-weight: 600; font-size: 0.95rem; color: var(--text-color); }
+.wv-done { color: var(--tag-color); font-size: 1.05rem; display: flex; }
+.wv-pills { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 7px; }
+.wv-pill { font-size: 0.74rem; font-weight: 500; color: var(--text-secondary); background: var(--surface-2); border: 1px solid var(--border-color); padding: 2px 9px; border-radius: 999px; }
+.wv-pill-pace { color: var(--tag-color); border-color: color-mix(in srgb, var(--tag-color) 40%, transparent); background: color-mix(in srgb, var(--tag-color) 10%, transparent); font-family: var(--font-mono); }
+.wv-steps { margin: 9px 0 0; padding-left: 0; list-style: none; display: flex; flex-direction: column; gap: 6px; }
+.wv-steps li { position: relative; padding-left: 16px; font-size: 0.82rem; color: var(--text-secondary); line-height: 1.4; }
+.wv-steps li::before { content: ''; position: absolute; left: 3px; top: 7px; width: 5px; height: 5px; border-radius: 50%; background: var(--tag-color); }
 
 .calendar-grid { display: grid; grid-template-columns: repeat(7, 1fr); }
 .days-header { border-bottom: 1px solid var(--border-color); }
@@ -927,6 +1131,35 @@ textarea { min-height: 70px; resize: vertical; }
 .detail-completed { margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--border-color); display: flex; flex-direction: column; gap: 12px; }
 .status-pill { align-self: flex-start; display: inline-flex; align-items: center; gap: 6px; background: var(--success-soft); color: var(--success-color); padding: 5px 12px; border-radius: 999px; font-size: 0.8rem; font-weight: 600; }
 .detail-notes { margin-top: 14px; color: var(--text-secondary); font-size: 0.88rem; background: var(--surface-2); padding: 10px 12px; border-radius: var(--radius-sm); }
+
+/* Runna-style calendar chip subtitle */
+.workout-tag { align-items: stretch; padding-top: 5px; padding-bottom: 5px; }
+.wt-body { display: flex; flex-direction: column; gap: 1px; min-width: 0; flex: 1; }
+.wt-title { display: flex; align-items: center; gap: 4px; min-width: 0; }
+.wt-title .event-name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; }
+.wt-ico { color: var(--tag-color); font-size: 0.82rem; flex-shrink: 0; }
+.wt-meta { font-size: 0.63rem; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; letter-spacing: 0.01em; }
+
+/* Runna-style workout card (details view) */
+.rn-card { border: 1px solid var(--border-color); border-radius: var(--radius); overflow: hidden; background: var(--surface-color); }
+.rn-head { display: flex; align-items: center; gap: 12px; padding: 15px 16px; background: color-mix(in srgb, var(--tag-color) 12%, transparent); border-bottom: 1px solid var(--border-color); }
+.rn-badge { width: 42px; height: 42px; border-radius: 12px; display: flex; align-items: center; justify-content: center; background: var(--tag-color); color: #fff; font-size: 1.3rem; flex-shrink: 0; }
+.rn-headtext { flex: 1; min-width: 0; }
+.rn-title { font-size: 1.15rem; font-weight: 700; margin: 0; line-height: 1.25; }
+.rn-sub { font-size: 0.78rem; color: var(--text-secondary); }
+.rn-done { color: var(--tag-color); font-size: 1.45rem; display: flex; flex-shrink: 0; }
+.rn-stats { display: flex; flex-wrap: wrap; gap: 10px; padding: 14px 16px; }
+.rn-stat { flex: 1; min-width: 86px; background: var(--surface-2); border: 1px solid var(--border-color); border-radius: var(--radius-sm); padding: 10px 12px; display: flex; flex-direction: column; gap: 3px; }
+.rn-val { display: flex; align-items: baseline; gap: 2px; }
+.rn-num { font-family: var(--font-mono); font-size: 1.3rem; font-weight: 700; line-height: 1.05; color: var(--text-color); }
+.rn-num-sm { font-size: 1.02rem; }
+.rn-unit { font-size: 0.72rem; color: var(--text-muted); font-weight: 500; }
+.rn-lbl { font-size: 0.66rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; }
+.rn-plan { padding: 2px 16px 16px; }
+.rn-plan-h { font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted); font-weight: 600; }
+.rn-steps { margin: 9px 0 0; padding-left: 0; list-style: none; display: flex; flex-direction: column; gap: 8px; }
+.rn-steps li { position: relative; padding-left: 18px; font-size: 0.85rem; color: var(--text-secondary); line-height: 1.45; }
+.rn-steps li::before { content: ''; position: absolute; left: 4px; top: 8px; width: 6px; height: 6px; border-radius: 50%; background: var(--tag-color); }
 
 .modal-actions { margin-top: 22px; display: flex; justify-content: flex-end; gap: 10px; flex-wrap: wrap; }
 @media (max-width: 600px) { .modal-actions { flex-direction: column-reverse; } .modal-actions .action-button { width: 100%; justify-content: center; } }
