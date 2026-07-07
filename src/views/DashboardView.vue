@@ -376,7 +376,7 @@ import {
   parseISO
 } from 'date-fns';
 import { enUS } from 'date-fns/locale';
-import type { Workout, AddWorkoutPayload, DailyWeight, CompleteWorkoutFormValues, RaceGoal, StravaActivity } from '../types';
+import type { Workout, AddWorkoutPayload, DailyWeight, CompleteWorkoutFormValues, RaceGoal, Activity } from '../types';
 import CustomModal from '../components/CustomModal.vue';
 import ImportEditor from '../components/ImportEditor.vue';
 import ImportActivitiesModal from '../components/ImportActivitiesModal.vue';
@@ -510,7 +510,7 @@ const selectedWorkout = ref<Workout | null>(null);
 const modalMode = ref<'view' | 'edit' | 'complete'>('view');
 const completionData = ref<Partial<CompleteWorkoutFormValues>>({});
 const stravaActivityOptions = ref<{ label: string; value: number; }[]>([]);
-const stravaActivities = ref<StravaActivity[]>([]);
+const stravaActivities = ref<Activity[]>([]);
 
 const selectedStravaActivity = computed(() =>
   stravaActivities.value.find(a => String(a.id) === String(completionData.value.stravaActivityId)) || null

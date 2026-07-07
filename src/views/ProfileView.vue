@@ -30,40 +30,6 @@
 					</n-space>
 				</n-card>
 
-				<!-- Integrations Card -->
-				<n-card bordered class="settings-card">
-					<template #header><span class="card-title">Integrations</span></template>
-					<n-spin :show="connectingToStrava">
-						<n-space vertical>
-							<div class="uplink-item">
-								<div class="uplink-header">
-									<div class="uplink-info">
-										<n-icon color="#fc5100" :component="Strava" /> Strava
-									</div>
-									<n-tag :type="isStravaConnected ? 'success' : 'error'" round>
-										{{ isStravaConnected ? "Connected" : "Not connected" }}
-									</n-tag>
-								</div>
-
-								<div class="strava-button-line-tag-group">
-									<n-button
-										@click="handleConnectToStrava"
-										:type="isStravaConnected ? 'default' : 'primary'"
-									>
-										<template #icon>
-											<n-icon color="#fc5100" :component="Strava" />
-										</template>
-										{{ isStravaConnected ? "Reconnect" : "Connect Strava" }}
-									</n-button>
-									<div class="status-text" :class="{ 'text-success': isStravaConnected }">
-										{{ isStravaConnected ? "Sync ready" : "Awaiting authorization" }}
-									</div>
-								</div>
-							</div>
-						</n-space>
-					</n-spin>
-				</n-card>
-
 				<!-- Race Goals Card -->
 				<n-card bordered class="settings-card">
 					<template #header><span class="card-title">Race goals</span></template>
@@ -109,16 +75,12 @@ import {
 	NInput,
 	NButton,
 	NFormItem,
-	NTag,
 	useMessage,
-	NSpin,
 	NIcon,
 	NForm,
 } from "naive-ui";
-import { Strava } from "@vicons/fa";
 import { FlagOutline } from "@vicons/ionicons5";
 import { db } from "@/db";
-import { stravaApi } from "@/stravaBridge";
 import type { RaceGoal, AddRaceGoalPayload } from "@/types";
 
 const message = useMessage();
@@ -128,8 +90,6 @@ const goalRaceKm = ref<string>("");
 const goalRaceTime = ref<string>("");
 const restingHR = ref<string>("");
 const maxHR = ref<string>("");
-const isStravaConnected = ref(false);
-const connectingToStrava = ref(false);
 
 const raceGoals = ref<RaceGoal[]>([]);
 const newRaceGoal = ref<AddRaceGoalPayload>({
@@ -214,45 +174,8 @@ const saveProfile = () => {
 	} catch (e) { message.error("Failed to save"); }
 };
 
-const checkStravaConnection = async () => {
-	try {
-		isStravaConnected.value = await stravaApi.isStravaConnected();
-	} catch (error) { console.error('Error checking Strava connection:', error); }
-};
-
-const handleConnectToStrava = async () => {
-	connectingToStrava.value = true;
-	try {
-		await stravaApi.getAuthUrl();
-	} catch (e) {
-		message.error("Strava unavailable");
-		connectingToStrava.value = false;
-	}
-};
-
-const handleWebStravaCallback = async () => {
-	const urlParams = new URLSearchParams(window.location.search);
-	const code = urlParams.get("code");
-	if (code) {
-		connectingToStrava.value = true;
-		try {
-			await stravaApi.exchangeCodeForToken(code);
-			window.history.replaceState({}, document.title, window.location.pathname);
-			await checkStravaConnection();
-			message.success("Strava connected");
-		} catch (e) {
-			console.error("Web OAuth Error:", e);
-			message.error("Connection failed");
-		} finally {
-			connectingToStrava.value = false;
-		}
-	}
-};
-
 onMounted(() => {
 	loadProfile();
-	handleWebStravaCallback();
-	checkStravaConnection();
 	fetchRaceGoals();
 });
 </script>
@@ -266,12 +189,7 @@ onMounted(() => {
 .card-title { font-size: 1rem; font-weight: 600; color: var(--text-color); }
 .settings-card { border-radius: var(--radius) !important; }
 
-.uplink-item { display: flex; flex-direction: column; gap: 16px; }
-.uplink-header { display: flex; justify-content: space-between; align-items: center; }
-.uplink-info { display: flex; align-items: center; gap: 8px; font-weight: 600; color: var(--text-color); }
-.strava-button-line-tag-group { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
 .status-text { font-size: 0.8rem; color: var(--text-muted); }
-.text-success { color: var(--success-color); }
 
 .race-goals-list { margin-top: 12px; display: flex; flex-direction: column; gap: 8px; }
 .race-goal-item {

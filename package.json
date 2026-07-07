@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "vite",
     "build": "vue-tsc && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test": "vitest run"
   },
   "dependencies": {
     "@mapbox/polyline": "^1.2.1",
@@ -36,6 +37,7 @@
     "@vitejs/plugin-vue": "^5.0.4",
     "typescript": "^5.2.2",
     "vite": "^5.1.6",
+    "vitest": "^3.2.7",
     "vue-tsc": "^2.0.26"
   }
 }

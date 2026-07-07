@@ -8,7 +8,7 @@
 			</div>
 			<div class="header-actions">
 				<span v-if="weekStreak > 0" class="streak-badge">
-					<n-icon :component="FlameOutline" /> {{ weekStreak }}-week streak
+					<n-icon class="flame" :component="FlameOutline" /> {{ weekStreak }}-week streak
 				</span>
 				<router-link to="/schedule" class="primary-btn">
 					<n-icon :component="AddOutline" /> Plan workout
@@ -16,20 +16,69 @@
 			</div>
 		</header>
 
+		<!-- Race hero -->
+		<section v-if="nextRace" class="hero rise" :class="{ urgent: nextRaceDays !== null && nextRaceDays <= 14 }">
+			<div class="hero-main">
+				<div class="hero-left">
+					<span class="hero-kicker"><n-icon :component="FlagOutline" /> Next race</span>
+					<h2 class="hero-race">{{ nextRace.name }}</h2>
+					<p class="hero-sub">{{ formatRaceDate(nextRace.date) }}<span v-if="planProgress"> · week {{ planProgress.current }} of {{ planProgress.total }}</span></p>
+					<div class="hero-chips">
+						<span v-if="predictedCurrent !== null" class="hero-chip"><span class="hc-lbl">Predicted</span><span class="mono">{{ fmtTime(predictedCurrent) }}</span></span>
+						<span v-if="goalRaceSecs !== null" class="hero-chip"><span class="hc-lbl">Goal</span><span class="mono">{{ fmtTime(goalRaceSecs) }}</span></span>
+						<span v-if="predictedDelta !== null" class="hero-chip" :class="predictedDelta <= 0 ? 'good' : 'warn'">
+							{{ predictedDelta <= 0 ? '▲ ' + fmtTime(Math.abs(predictedDelta)) + ' ahead of goal' : '▼ ' + fmtTime(predictedDelta) + ' to shave' }}
+						</span>
+					</div>
+				</div>
+				<div class="hero-count">
+					<span class="hero-days mono">{{ nextRaceDays }}</span>
+					<span class="hero-days-lbl">days to go</span>
+					<span class="hero-weeks">{{ Math.ceil((nextRaceDays || 0) / 7) }} weeks</span>
+				</div>
+			</div>
+			<div v-if="planProgress" class="hero-bar">
+				<div class="hb-track">
+					<div v-for="(w, i) in planProgress.weeks" :key="i" class="hb-seg"
+						:class="{ done: w.done, cur: w.current, taper: w.taper }"></div>
+				</div>
+				<div class="hb-labels"><span>plan start</span><span class="hb-taper">taper</span><span>race day</span></div>
+			</div>
+		</section>
+
+		<!-- Fresh PRs this week -->
+		<div v-if="recentPRs.length" class="pr-banner rise">
+			<span class="pr-banner-ico"><n-icon :component="TrophyOutline" /></span>
+			<span v-for="p in recentPRs" :key="p" class="pr-banner-chip">{{ p }}</span>
+		</div>
+
 		<!-- This-week metric cards -->
 		<section class="metric-grid">
 			<div class="metric-card">
 				<div class="metric-top"><span class="metric-label">Distance this week</span><n-icon class="metric-ico run" :component="WalkOutline" /></div>
 				<div class="metric-value mono">{{ fmt(thisWeekDistance) }}<span class="unit"> km</span></div>
-				<div class="metric-split">
-					<span><i class="sw run"></i>{{ fmt(runWeek) }} run</span>
-					<span><i class="sw bike"></i>{{ fmt(bikeWeek) }} bike</span>
+				<div class="metric-sub" :class="distDelta >= 0 ? 'up' : 'down'">
+					{{ distDelta >= 0 ? '▲' : '▼' }} {{ fmt(Math.abs(distDelta)) }} km vs last week
 				</div>
+				<div class="spark">
+					<div v-for="(h, i) in distSpark" :key="i" class="spark-bar"
+						:class="{ last: i === distSpark.length - 1 }" :style="{ height: Math.max(6, h) + '%' }"></div>
+				</div>
+			</div>
+
+			<div v-if="aerobicPace" class="metric-card">
+				<div class="metric-top"><span class="metric-label">Aerobic pace</span><n-icon class="metric-ico run" :component="WalkOutline" /></div>
+				<div class="metric-value mono good">{{ fmtTime(Math.round(aerobicPace.paceSec)) }}<span class="unit"> /km</span></div>
+				<div v-if="aerobicPace.delta !== null" class="metric-sub" :class="aerobicPace.delta <= 0 ? 'up' : 'down'">
+					{{ aerobicPace.delta <= 0 ? '▲' : '▼' }} {{ Math.abs(Math.round(aerobicPace.delta)) }} s/km vs last month
+				</div>
+				<div class="metric-sub muted">easy runs · {{ aerobicPace.hrLabel }}</div>
 			</div>
 
 			<div class="metric-card">
 				<div class="metric-top"><span class="metric-label">Sessions</span><n-icon class="metric-ico" :component="CheckmarkDoneOutline" /></div>
 				<div class="metric-value mono">{{ sessionsDone }}<span class="unit"> / {{ sessionsPlanned }}</span></div>
+				<div class="metric-sub muted">{{ sessionsPct }}% of the week done</div>
 				<div class="progress-track"><div class="progress-fill" :style="{ width: sessionsPct + '%' }"></div></div>
 			</div>
 
@@ -37,53 +86,45 @@
 				<div class="metric-top"><span class="metric-label">Load lifted</span><n-icon class="metric-ico gym" :component="BarbellOutline" /></div>
 				<div class="metric-value mono">{{ fmt(thisWeekTonnage) }}<span class="unit"> t</span></div>
 				<div class="metric-sub muted">{{ gymSessionsThisWeek }} gym session{{ gymSessionsThisWeek === 1 ? '' : 's' }}</div>
+				<div class="spark">
+					<div v-for="(h, i) in tonSpark" :key="i" class="spark-bar gym"
+						:class="{ last: i === tonSpark.length - 1 }" :style="{ height: Math.max(6, h) + '%' }"></div>
+				</div>
 			</div>
 
 			<div class="metric-card">
 				<div class="metric-top"><span class="metric-label">Body weight</span><n-icon class="metric-ico" :component="BodyOutline" /></div>
 				<div class="metric-value mono">{{ latestWeight ? fmt(latestWeight) : '—' }}<span v-if="latestWeight" class="unit"> kg</span></div>
-				<div v-if="latestWeight && goalWeight" class="metric-sub" :class="weightToGoal <= 0 ? 'up' : 'muted'">
+				<div v-if="weightDelta !== null" class="metric-sub" :class="weightDelta <= 0 ? 'up' : 'muted'">
+					{{ weightDelta <= 0 ? '▼' : '▲' }} {{ fmt(Math.abs(weightDelta)) }} kg vs 4 weeks ago
+				</div>
+				<div v-if="latestWeight && goalWeight" class="metric-sub muted">
 					{{ weightToGoal === 0 ? 'at goal' : fmt(Math.abs(weightToGoal)) + ' kg to goal' }}
 				</div>
 				<div v-else class="metric-sub muted">no goal set</div>
 			</div>
 		</section>
 
-		<!-- This week + next race -->
-		<section class="row-two">
-			<div class="panel week-panel">
-				<div class="panel-head">
-					<h2>This week</h2>
-					<router-link to="/schedule" class="text-link">Open schedule →</router-link>
-				</div>
-				<div class="week-strip">
-					<router-link v-for="day in weekDays" :key="day.key" to="/schedule" class="day-col" :class="{ today: day.isToday }">
-						<span class="day-name">{{ day.name }}</span>
-						<div class="day-box">
-							<template v-if="day.workouts.length">
-								<span v-for="w in day.workouts" :key="w.id" class="day-chip" :class="{ done: w.isCompleted === 1 }"
-									:style="{ '--c': sportColor(w) }" :title="w.name">{{ chipLabel(w) }}</span>
-							</template>
-							<span v-else class="day-empty">·</span>
-						</div>
-					</router-link>
-				</div>
+		<!-- This week -->
+		<section class="panel week-panel">
+			<div class="panel-head">
+				<h2>This week</h2>
+				<router-link to="/schedule" class="text-link">Open schedule →</router-link>
 			</div>
-
-			<div class="panel race-panel" :class="{ urgent: nextRaceDays !== null && nextRaceDays <= 14 }">
-				<div class="panel-head"><h2><n-icon :component="FlagOutline" /> Next race</h2></div>
-				<template v-if="nextRace">
-					<p class="race-name">{{ nextRace.name }}</p>
-					<p class="race-date">{{ formatRaceDate(nextRace.date) }}</p>
-					<div class="race-counts">
-						<div class="race-count"><span class="rc-num mono">{{ nextRaceDays }}</span><span class="rc-lbl">days</span></div>
-						<div class="race-count"><span class="rc-num mono">{{ Math.ceil((nextRaceDays || 0) / 7) }}</span><span class="rc-lbl">weeks</span></div>
+			<div class="week-strip">
+				<router-link v-for="day in weekDays" :key="day.key" to="/schedule" class="day-col" :class="{ today: day.isToday }">
+					<span class="day-name">{{ day.name }}</span>
+					<div class="day-box">
+						<template v-if="day.workouts.length">
+							<span v-for="w in day.workouts" :key="w.id" class="day-chip" :class="{ done: w.isCompleted === 1 }"
+								:style="{ '--c': sportColor(w) }" :title="w.name">{{ chipLabel(w) }}<span v-if="w.isCompleted === 1"> ✓</span></span>
+						</template>
+						<span v-else class="day-empty">·</span>
 					</div>
-				</template>
-				<div v-else class="race-empty">
-					<p>No upcoming races.</p>
-					<router-link to="/profile" class="text-link">Add a race goal →</router-link>
-				</div>
+				</router-link>
+			</div>
+			<div v-if="!nextRace" class="race-empty" style="margin-top: 12px;">
+				<router-link to="/profile" class="text-link">Add a race goal →</router-link>
 			</div>
 		</section>
 
@@ -489,6 +530,104 @@ const nextRace = computed(() => raceGoals.value
 	.sort((a, b) => a.date.localeCompare(b.date))[0] || null)
 const nextRaceDays = computed(() => nextRace.value ? differenceInCalendarDays(parseISO(nextRace.value.date), startOfDay(now)) : null)
 const formatRaceDate = (d: string) => format(parseISO(d), 'd MMM yyyy')
+
+// Week-by-week plan progress toward the next race (last 2 weeks = taper)
+const planProgress = computed(() => {
+	if (!nextRace.value) return null
+	const raceDate = parseISO(nextRace.value.date)
+	const dates = workouts.value.map(w => w.date).sort()
+	if (!dates.length) return null
+	let start = startOfWeek(parseISO(dates[0]), { weekStartsOn: 1 })
+	const maxStart = subWeeks(startOfWeek(raceDate, { weekStartsOn: 1 }), 31)
+	if (start < maxStart) start = maxStart
+	const total = Math.max(1, Math.ceil((differenceInCalendarDays(raceDate, start) + 1) / 7))
+	const current = Math.min(total, Math.max(1, Math.ceil((differenceInCalendarDays(startOfDay(now), start) + 1) / 7)))
+	const weeks = Array.from({ length: total }, (_, i) => ({
+		done: i < current - 1,
+		current: i === current - 1,
+		taper: i >= total - 2,
+	}))
+	return { weeks, current, total }
+})
+
+// ===== Metric card sparklines & deltas =====
+const sparkWeeks = computed(() => weekBuckets(8).map(wk => {
+	const inWk = (w: Workout) => isWithinInterval(parseISO(w.date), { start: wk.start, end: wk.end })
+	return {
+		dist: completed.value.filter(w => inWk(w) && isDistanceSport(getWorkoutType(w))).reduce((s, w) => s + (w.distance || 0), 0),
+		ton: completed.value.filter(w => inWk(w) && getWorkoutType(w) === 'gym').reduce((s, w) => s + (w.totalWeightLifted || 0), 0) / 1000,
+	}
+}))
+const distSpark = computed(() => {
+	const m = Math.max(1, ...sparkWeeks.value.map(w => w.dist))
+	return sparkWeeks.value.map(w => Math.round((w.dist / m) * 100))
+})
+const tonSpark = computed(() => {
+	const m = Math.max(1, ...sparkWeeks.value.map(w => w.ton))
+	return sparkWeeks.value.map(w => Math.round((w.ton / m) * 100))
+})
+const distDelta = computed(() => {
+	const w = sparkWeeks.value
+	return w.length >= 2 ? Math.round((w[w.length - 1].dist - w[w.length - 2].dist) * 10) / 10 : 0
+})
+const weightDelta = computed(() => {
+	if (!latestWeight.value) return null
+	const cutoff = format(addDays(now, -28), 'yyyy-MM-dd')
+	const older = [...dailyWeights.value].filter(w => w.date <= cutoff).sort((a, b) => b.date.localeCompare(a.date))[0]
+	return older ? Math.round((latestWeight.value - older.weight) * 10) / 10 : null
+})
+
+// Median easy-run pace (sec/km) in the aerobic HR band, last 4 weeks vs the 4 before
+const aerobicPace = computed(() => {
+	const { maxHR, restHR } = getHRSettings(stravaActivities.value)
+	if (maxHR < 140) return null
+	const hrr = maxHR - restHR
+	const lo = restHR + hrr * 0.55, hi = restHR + hrr * 0.75
+	const runs = stravaActivities.value
+		.filter((a: any) => {
+			const st = (a.sport_type || a.type || '').toLowerCase()
+			return st === 'run' && a.average_heartrate >= lo && a.average_heartrate <= hi && a.average_speed > 1.5
+		})
+		.map((a: any) => ({ date: new Date(a.start_date_local || a.start_date), pace: 1000 / a.average_speed }))
+	const median = (xs: number[]) => {
+		if (!xs.length) return null
+		const s = [...xs].sort((a, b) => a - b)
+		return s[Math.floor(s.length / 2)]
+	}
+	const fourWk = subWeeks(now, 4), eightWk = subWeeks(now, 8)
+	const cur = median(runs.filter(r => r.date >= fourWk).map(r => r.pace))
+	if (cur === null) return null
+	const prev = median(runs.filter(r => r.date >= eightWk && r.date < fourWk).map(r => r.pace))
+	return {
+		paceSec: cur,
+		delta: prev !== null ? cur - prev : null,
+		hrLabel: `${Math.round(lo)}–${Math.round(hi)} bpm`,
+	}
+})
+
+// PRs set within the last 7 days — worth celebrating on the front page
+const recentPRs = computed(() => {
+	const out: string[] = []
+	const weekAgo = addDays(now, -7)
+	const runs = completed.value.filter(w => getWorkoutType(w) === 'running' && w.distance)
+	if (runs.length >= 2) {
+		const best = runs.reduce((b, w) => (w.distance! > b.distance! ? w : b))
+		if (parseISO(best.date) >= weekAgo) out.push(`Longest run ever — ${fmt(best.distance!)} km`)
+	}
+	for (const name of ['1 km', '5 km', '10 km', 'Half marathon']) {
+		let bestT: number | null = null
+		let bestDate: Date | null = null
+		for (const a of stravaActivities.value) {
+			const be = a.best_efforts?.find((b: any) => b.name === name)
+			if (be && (bestT === null || be.elapsed_time < bestT)) {
+				bestT = be.elapsed_time
+				bestDate = new Date(a.start_date_local || a.start_date)
+			}
+		}
+		if (bestT !== null && bestDate && bestDate >= weekAgo) out.push(`New ${name} best — ${fmtTime(bestT)}`)
+	}
+	return out
+})
 
 // PRs
 const prLongestRun = computed(() => {
@@ -1171,11 +1310,62 @@ onUnmounted(destroyCharts)
 .home-view { padding: 24px 28px 48px; max-width: 1120px; margin: 0 auto; width: 100%; box-sizing: border-box; }
 @media (max-width: 768px) { .home-view { padding: 16px 16px 36px; } }
 
-.home-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; flex-wrap: wrap; margin-bottom: 24px; }
-.greeting { font-size: 1.6rem; font-weight: 400; font-family: var(--font-serif); }
-.subgreeting { margin: 4px 0 0; color: var(--text-secondary); font-size: 0.9rem; }
+.home-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; flex-wrap: wrap; margin-bottom: 18px; }
+.greeting { font-size: 1.35rem; font-weight: 400; font-family: var(--font-serif); }
+.subgreeting { margin: 4px 0 0; color: var(--text-secondary); font-size: 0.85rem; }
 .header-actions { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 .streak-badge { display: inline-flex; align-items: center; gap: 6px; background: var(--warning-soft); color: var(--warning-color); padding: 7px 12px; border-radius: 999px; font-size: 0.8rem; font-weight: 600; }
+.streak-badge .flame { animation: flame-pulse 2.6s ease-in-out infinite; }
+@keyframes flame-pulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.22); } }
+
+/* Race hero */
+.hero {
+	background: linear-gradient(135deg, color-mix(in srgb, var(--primary-color) 9%, var(--surface-color)), var(--surface-color) 60%);
+	border: 1px solid var(--border-strong); border-radius: var(--radius-lg);
+	padding: 24px 28px 20px; margin-bottom: 16px;
+	box-shadow: inset 0 1px 0 rgba(255,255,255,0.05), 0 2px 12px rgba(0,0,0,0.3);
+}
+.hero.urgent { border-color: rgba(239, 68, 68, 0.4); }
+.hero-main { display: flex; justify-content: space-between; align-items: flex-start; gap: 20px; flex-wrap: wrap; }
+.hero-kicker { display: inline-flex; align-items: center; gap: 6px; font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.1em; color: var(--text-muted); font-weight: 600; }
+.hero-race { font-size: 1.9rem; font-weight: 400; font-family: var(--font-serif); margin: 6px 0 0; line-height: 1.15; }
+.hero-sub { margin: 6px 0 0; color: var(--text-secondary); font-size: 0.88rem; }
+.hero-chips { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 14px; }
+.hero-chip { display: inline-flex; align-items: center; gap: 7px; background: var(--surface-2); border: 1px solid var(--border-color); border-radius: 999px; padding: 5px 12px; font-size: 0.85rem; }
+.hero-chip .hc-lbl { color: var(--text-muted); font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.04em; }
+.hero-chip .mono { font-weight: 700; }
+.hero-chip.good { background: var(--success-soft); color: var(--success-color); border-color: transparent; font-weight: 600; }
+.hero-chip.warn { background: var(--warning-soft); color: var(--warning-color); border-color: transparent; font-weight: 600; }
+.hero-count { text-align: right; display: flex; flex-direction: column; align-items: flex-end; }
+.hero-days { font-size: 3.2rem; font-weight: 700; line-height: 1; color: var(--primary-color); }
+.hero.urgent .hero-days { color: var(--danger-color); }
+.hero-days-lbl { font-size: 0.75rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.06em; margin-top: 4px; }
+.hero-weeks { font-size: 0.8rem; color: var(--text-secondary); margin-top: 2px; }
+.hero-bar { margin-top: 20px; }
+.hb-track { display: flex; gap: 3px; height: 8px; }
+.hb-seg { flex: 1; border-radius: 3px; background: var(--surface-2); transition: background 0.3s ease; }
+.hb-seg.done { background: color-mix(in srgb, var(--success-color) 55%, var(--surface-2)); }
+.hb-seg.cur { background: var(--primary-color); box-shadow: 0 0 8px var(--glow-color); }
+.hb-seg.taper:not(.done):not(.cur) { background: color-mix(in srgb, var(--warning-color) 30%, var(--surface-2)); }
+.hb-labels { display: flex; justify-content: space-between; font-size: 0.68rem; color: var(--text-muted); margin-top: 6px; text-transform: uppercase; letter-spacing: 0.04em; }
+.hb-labels .hb-taper { color: var(--warning-color); }
+
+/* PR banner */
+.pr-banner { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; background: color-mix(in srgb, var(--warning-color) 10%, var(--surface-color)); border: 1px solid color-mix(in srgb, var(--warning-color) 35%, transparent); border-radius: var(--radius); padding: 10px 16px; margin-bottom: 16px; }
+.pr-banner-ico { color: var(--warning-color); font-size: 1.2rem; display: inline-flex; animation: flame-pulse 2.6s ease-in-out infinite; }
+.pr-banner-chip { font-size: 0.85rem; font-weight: 600; color: var(--text-color); }
+.pr-banner-chip + .pr-banner-chip { border-left: 1px solid var(--border-strong); padding-left: 10px; }
+
+/* Entrance motion */
+.rise, .metric-card, .panel { animation: fade-up 0.45s ease both; }
+.metric-card:nth-child(2) { animation-delay: 0.05s; }
+.metric-card:nth-child(3) { animation-delay: 0.1s; }
+.metric-card:nth-child(4) { animation-delay: 0.15s; }
+.metric-card:nth-child(5) { animation-delay: 0.2s; }
+@keyframes fade-up { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) {
+	.rise, .metric-card, .panel, .streak-badge .flame, .pr-banner-ico { animation: none; }
+}
 .primary-btn { display: inline-flex; align-items: center; gap: 6px; background: var(--primary-color); color: #fff; padding: 9px 16px; border-radius: var(--radius-sm); font-size: 0.85rem; font-weight: 600; transition: background 0.15s; }
 .primary-btn:hover { background: var(--primary-strong); }
 
@@ -1184,26 +1374,28 @@ onUnmounted(destroyCharts)
 .section-note { color: var(--text-muted); font-size: 0.75rem; margin-left: auto; }
 
 /* Metric cards */
-.metric-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-bottom: 16px; }
-@media (max-width: 900px) { .metric-grid { grid-template-columns: repeat(2, 1fr); } }
+.metric-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 14px; margin-bottom: 16px; }
 @media (max-width: 480px) { .metric-grid { grid-template-columns: 1fr; } }
-.metric-card { background: var(--surface-color); border: 1px solid var(--border-color); border-radius: var(--radius); padding: 16px 18px; box-shadow: inset 0 1px 0 rgba(255,255,255,0.04), 0 1px 3px rgba(0,0,0,0.3); }
+.metric-card { background: var(--surface-color); border: 1px solid var(--border-color); border-radius: var(--radius); padding: 16px 18px; box-shadow: inset 0 1px 0 rgba(255,255,255,0.04), 0 1px 3px rgba(0,0,0,0.3); display: flex; flex-direction: column; }
 .metric-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
-.metric-label { color: var(--text-secondary); font-size: 0.82rem; }
+.metric-label { color: var(--text-secondary); font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.05em; }
 .metric-ico { color: var(--text-muted); font-size: 1.2rem; }
 .metric-ico.run { color: var(--color-running-primary); }
 .metric-ico.gym { color: var(--color-gym-primary); }
-.metric-value { font-size: 1.7rem; font-weight: 700; line-height: 1; }
+.metric-value { font-size: 1.9rem; font-weight: 700; line-height: 1; }
+.metric-value.good { color: var(--color-running-primary); }
 .metric-value .unit { font-size: 0.9rem; font-weight: 500; color: var(--text-secondary); }
 .metric-sub { margin-top: 8px; font-size: 0.78rem; }
-.metric-sub.up { color: var(--success-color); }
+.metric-sub.up { color: var(--success-color); font-weight: 600; }
+.metric-sub.down { color: var(--danger-color); font-weight: 600; }
 .metric-sub.muted, .muted { color: var(--text-muted); }
-.metric-split { margin-top: 10px; display: flex; gap: 14px; font-size: 0.76rem; color: var(--text-secondary); }
-.metric-split i.sw { width: 8px; height: 8px; border-radius: 2px; display: inline-block; margin-right: 5px; }
-.metric-split i.sw.run { background: var(--color-running-primary); }
-.metric-split i.sw.bike { background: var(--color-bike-primary); }
+.spark { display: flex; align-items: flex-end; gap: 3px; height: 26px; margin-top: auto; padding-top: 12px; }
+.spark-bar { flex: 1; border-radius: 2px; background: color-mix(in srgb, var(--color-running-primary) 32%, var(--surface-2)); transition: height 0.5s ease; min-height: 2px; }
+.spark-bar.last { background: var(--color-running-primary); }
+.spark-bar.gym { background: color-mix(in srgb, var(--color-gym-primary) 32%, var(--surface-2)); }
+.spark-bar.gym.last { background: var(--color-gym-primary); }
 .progress-track { margin-top: 12px; height: 6px; border-radius: 999px; background: var(--surface-2); overflow: hidden; }
-.progress-fill { height: 100%; background: var(--primary-color); border-radius: 999px; transition: width 0.3s ease; }
+.progress-fill { height: 100%; background: var(--primary-color); border-radius: 999px; transition: width 0.6s ease; }
 
 /* Plan progress */
 .plan-grid { display: grid; grid-template-columns: 230px 1fr; gap: 14px; }
@@ -1239,9 +1431,6 @@ onUnmounted(destroyCharts)
 .pt-badge.good { background: var(--success-soft); color: var(--success-color); border-color: transparent; }
 .pt-badge.off { background: var(--warning-soft); color: var(--warning-color); border-color: transparent; }
 
-/* Row two */
-.row-two { display: grid; grid-template-columns: 1.7fr 1fr; gap: 14px; }
-@media (max-width: 768px) { .row-two { grid-template-columns: 1fr; } }
 .panel { background: var(--surface-color); border: 1px solid var(--border-color); border-radius: var(--radius); padding: 18px 20px; box-shadow: inset 0 1px 0 rgba(255,255,255,0.04), 0 1px 4px rgba(0,0,0,0.25); }
 .panel-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
 .panel-head h2 { font-size: 1rem; font-weight: 600; display: flex; align-items: center; gap: 7px; }
@@ -1249,28 +1438,15 @@ onUnmounted(destroyCharts)
 
 .week-strip { display: flex; gap: 8px; }
 .day-col { flex: 1; text-align: center; text-decoration: none; }
-.day-name { display: block; font-size: 0.72rem; color: var(--text-muted); margin-bottom: 6px; text-transform: uppercase; }
+.day-name { display: block; font-size: 0.72rem; color: var(--text-muted); margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.05em; }
 .day-col.today .day-name { color: var(--primary-color); font-weight: 700; }
-.day-box { min-height: 64px; border-radius: var(--radius-sm); background: var(--surface-2); border: 1px solid transparent; padding: 6px 4px; display: flex; flex-direction: column; gap: 4px; transition: border-color 0.15s; }
-.day-col.today .day-box { border-color: var(--primary-color); }
-.day-col:hover .day-box { border-color: var(--border-strong); }
-.day-chip { font-size: 0.66rem; font-weight: 600; padding: 3px 4px; border-radius: 4px; color: var(--c); background: color-mix(in srgb, var(--c) 16%, transparent); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.day-box { min-height: 72px; border-radius: var(--radius-sm); background: var(--surface-2); border: 1px solid transparent; padding: 6px 4px; display: flex; flex-direction: column; gap: 4px; transition: border-color 0.15s, transform 0.15s; }
+.day-col.today .day-box { border-color: var(--primary-color); box-shadow: 0 0 10px var(--glow-color); }
+.day-col:hover .day-box { border-color: var(--border-strong); transform: translateY(-2px); }
+.day-chip { font-size: 0.68rem; font-weight: 600; padding: 4px 4px; border-radius: 4px; color: var(--c); background: color-mix(in srgb, var(--c) 16%, transparent); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .day-chip.done { background: var(--c); color: #0b0e14; }
 .day-empty { color: var(--text-muted); margin: auto; }
-
-.race-panel.urgent {
-	border-color: rgba(239, 68, 68, 0.35);
-	box-shadow: 0 0 0 1px rgba(239, 68, 68, 0.08), inset 0 1px 0 rgba(255,255,255,0.04);
-}
-.race-name { font-size: 1.1rem; font-weight: 400; font-family: var(--font-serif); margin: 0; }
-.race-date { color: var(--text-secondary); font-size: 0.85rem; margin: 4px 0 16px; }
-.race-counts { display: flex; gap: 10px; }
-.race-count { flex: 1; text-align: center; background: var(--surface-2); border-radius: var(--radius-sm); padding: 12px 0; }
-.rc-num { display: block; font-size: 1.5rem; font-weight: 700; color: var(--primary-color); }
-.race-panel.urgent .rc-num { color: var(--danger-color); }
-.rc-lbl { font-size: 0.72rem; color: var(--text-muted); }
 .race-empty { color: var(--text-secondary); font-size: 0.88rem; }
-.race-empty p { margin: 0 0 8px; }
 
 /* Recent activities */
 .recent-panel { padding: 6px 8px; }

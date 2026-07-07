@@ -16,7 +16,8 @@ export interface Workout {
 	distance?: number;
 }
 
-export interface StravaActivity {
+/** Normalised activity shape (originally modelled on the Strava API response). */
+export interface Activity {
 	id: number;
 	name: string;
 	distance: number;
@@ -63,11 +64,10 @@ export interface BestEffort {
 }
 
 /**
- * An activity imported from a file, normalised to the same shape the
- * Strava API returns so all existing stats code works unchanged —
- * plus raw streams and best efforts that Strava never exposed.
+ * An activity imported from a FIT/GPX file, plus raw streams and best
+ * efforts extracted during parsing.
  */
-export interface ImportedActivity extends StravaActivity {
+export interface ImportedActivity extends Activity {
 	source: 'import';
 	average_speed?: number;      // m/s
 	max_heartrate?: number;
