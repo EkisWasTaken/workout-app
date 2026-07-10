@@ -1,7 +1,72 @@
 import { supabase } from './supabase'
-import type { Workout, DailyWeight, WorkoutTemplate, WorkoutTemplateExercise, Exercise, RaceGoal, AddRaceGoalPayload } from './types'
+import type { Workout, DailyWeight, WorkoutTemplate, WorkoutTemplateExercise, Exercise, RaceGoal, AddRaceGoalPayload, DistanceGoal, Profile } from './types'
+
+/** Thrown when supabase_goals.sql hasn't been run yet. */
+export const MISSING_GOALS_TABLES = 'MISSING_GOALS_TABLES'
+
+/**
+ * A table that doesn't exist. PostgREST answers PGRST205 ("not found in the
+ * schema cache") rather than passing through Postgres's own 42P01, so match both.
+ */
+const isMissingTable = (error: { code?: string } | null) =>
+  error?.code === 'PGRST205' || error?.code === '42P01'
 
 export const db = {
+  // PROFILE (single row, id = 1)
+  getProfile: async (): Promise<Profile | null> => {
+    const { data, error } = await supabase
+      .from('profile')
+      .select('user_name, goal_weight, resting_hr, max_hr')
+      .eq('id', 1)
+      .maybeSingle()
+    if (error) {
+      if (isMissingTable(error)) throw new Error(MISSING_GOALS_TABLES)
+      throw error
+    }
+    return data as Profile | null
+  },
+
+  saveProfile: async (profile: Partial<Profile>): Promise<void> => {
+    const { error } = await supabase
+      .from('profile')
+      .upsert([{ id: 1, ...profile, updated_at: new Date().toISOString() }])
+    if (error) {
+      if (isMissingTable(error)) throw new Error(MISSING_GOALS_TABLES)
+      throw error
+    }
+  },
+
+  // DISTANCE GOALS (5k / 10k / half / marathon)
+  getDistanceGoals: async (): Promise<DistanceGoal[]> => {
+    const { data, error } = await supabase
+      .from('distance_goals')
+      .select('distance_m, goal_time_secs')
+      .order('distance_m', { ascending: true })
+    if (error) {
+      if (isMissingTable(error)) throw new Error(MISSING_GOALS_TABLES)
+      throw error
+    }
+    return data as DistanceGoal[]
+  },
+
+  setDistanceGoal: async (distance_m: number, goal_time_secs: number): Promise<void> => {
+    const { error } = await supabase
+      .from('distance_goals')
+      .upsert([{ distance_m, goal_time_secs, updated_at: new Date().toISOString() }])
+    if (error) {
+      if (isMissingTable(error)) throw new Error(MISSING_GOALS_TABLES)
+      throw error
+    }
+  },
+
+  deleteDistanceGoal: async (distance_m: number): Promise<void> => {
+    const { error } = await supabase
+      .from('distance_goals')
+      .delete()
+      .eq('distance_m', distance_m)
+    if (error) throw error
+  },
+
   // RACE GOALS
   getRaceGoals: async (): Promise<RaceGoal[]> => {
     const { data, error } = await supabase
@@ -10,6 +75,15 @@ export const db = {
       .order('date', { ascending: true })
     if (error) throw error
     return data as RaceGoal[]
+  },
+
+  updateRaceGoal: async (goal: RaceGoal): Promise<void> => {
+    const { id, ...updates } = goal
+    const { error } = await supabase
+      .from('race_goals')
+      .update(updates)
+      .eq('id', id)
+    if (error) throw error
   },
 
   addRaceGoal: async (raceGoal: AddRaceGoalPayload): Promise<number> => {
@@ -270,7 +344,7 @@ export const db = {
     if (error) {
       // 23505 = unique violation on (start_date, distance): already imported
       if (error.code === '23505') return { id: 0, duplicate: true }
-      if (error.code === '42P01') {
+      if (isMissingTable(error)) {
         throw new Error('MISSING_TABLE: run supabase_imported_activities.sql in the Supabase SQL editor first.')
       }
       throw error

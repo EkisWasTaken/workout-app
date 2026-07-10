@@ -137,10 +137,29 @@ export interface Exercise {
   body_part: string;
 }
 
+export type RacePriority = 'A' | 'B' | 'C';
+
 export interface RaceGoal {
 	id: number;
 	name: string;
 	date: string;
+	distance_km?: number | null;
+	goal_time_secs?: number | null;
+	priority?: RacePriority;
 }
 
 export type AddRaceGoalPayload = Omit<RaceGoal, 'id'>;
+
+/** A standing target time for one canonical distance, keyed by metres. */
+export interface DistanceGoal {
+	distance_m: number;
+	goal_time_secs: number;
+}
+
+/** Single-row settings, previously scattered across localStorage. */
+export interface Profile {
+	user_name: string | null;
+	goal_weight: number | null;
+	resting_hr: number | null;
+	max_hr: number | null;
+}

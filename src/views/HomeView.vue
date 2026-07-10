@@ -16,6 +16,54 @@
 			</div>
 		</header>
 
+		<!-- Tabs: only the active group's canvases mount, so only its charts build -->
+		<nav class="tabbar">
+			<button v-for="t in TABS" :key="t.key" :class="{ active: tab === t.key }" @click="tab = t.key">
+				{{ t.label }}
+			</button>
+		</nav>
+
+		<template v-if="tab === 'today'">
+		<!-- Today's session -->
+		<section class="panel today-card rise">
+			<div class="today-head">
+				<h2>Today</h2>
+				<span v-if="todayAllDone" class="today-status done">All done ✓</span>
+				<span v-else-if="todayIsRest" class="today-status rest">Rest day</span>
+			</div>
+
+			<p v-if="todayIsRest" class="today-rest-note">Nothing scheduled. Recovery is training.</p>
+
+			<div v-else class="today-sessions">
+				<div v-for="w in todaysWorkouts" :key="w.id" class="today-session" :class="{ done: w.isCompleted === 1 }">
+					<span class="ts-dot" :style="{ background: sportColor(w) }"></span>
+					<div class="ts-body">
+						<div class="ts-top">
+							<router-link :to="`/workout/${w.id}`" class="ts-name">{{ w.name }}</router-link>
+							<span v-if="w.isCompleted === 1" class="ts-done">✓</span>
+						</div>
+						<div class="ts-pills">
+							<span v-if="w.distance" class="ts-pill">{{ fmt(w.distance) }} km</span>
+							<span v-if="w.duration" class="ts-pill">{{ w.duration }} min</span>
+							<span v-if="w.targetPace" class="ts-pill pace mono">{{ w.targetPace }}</span>
+							<span v-if="w.gymType" class="ts-pill">{{ w.gymType }}</span>
+							<span v-if="todayDerivedPace(w)" class="ts-pill derived mono"
+								:title="`Your goal implies ${todayDerivedPace(w)!.label}/km here`">
+								goal {{ todayDerivedPace(w)!.label }}/km
+							</span>
+						</div>
+						<ul v-if="sessionSteps(w).length" class="ts-steps">
+							<li v-for="(step, i) in sessionSteps(w)" :key="i">{{ step }}</li>
+						</ul>
+					</div>
+					<button v-if="w.isCompleted !== 1" class="ts-complete" :disabled="completingId !== null"
+						@click="completeToday(w)">
+						{{ completingId === w.id ? 'Saving…' : 'Complete' }}
+					</button>
+				</div>
+			</div>
+		</section>
+
 		<!-- Race hero -->
 		<section v-if="nextRace" class="hero rise" :class="{ urgent: nextRaceDays !== null && nextRaceDays <= 14 }">
 			<div class="hero-main">
@@ -127,6 +175,51 @@
 				<router-link to="/profile" class="text-link">Add a race goal →</router-link>
 			</div>
 		</section>
+		</template>
+
+		<template v-if="tab === 'goals'">
+		<!-- Not enough history for CTL/ATL to mean anything yet -->
+		<template v-if="formCalibrating">
+			<div class="section-head"><h2>Fitness &amp; freshness</h2><span class="section-note">calibrating</span></div>
+			<section class="panel form-calibrating">
+				<p>
+					Form needs about two weeks of heart-rate history before it says anything useful, and
+					fitness keeps filling up for roughly six. You have
+					<strong>{{ effortSpanDays }} day{{ effortSpanDays === 1 ? '' : 's' }}</strong>.
+				</p>
+				<p class="vo2-note">Import older FIT files on the Schedule page to backfill this sooner.</p>
+			</section>
+		</template>
+
+		<!-- Fitness & Freshness -->
+		<template v-if="formHasData">
+			<div class="section-head">
+				<h2>Fitness &amp; freshness</h2>
+				<span class="section-note">last 90 days · from heart-rate effort</span>
+			</div>
+			<section class="panel chart-card form-card">
+				<div class="chart-head">
+					<h3>Form</h3>
+					<div class="form-badges">
+						<span class="fb"><span class="fb-lbl">Fitness</span><span class="mono">{{ currentForm!.fitness }}</span></span>
+						<span class="fb"><span class="fb-lbl">Fatigue</span><span class="mono">{{ currentForm!.fatigue }}</span></span>
+						<span class="fb"><span class="fb-lbl">Form</span><span class="mono">{{ currentForm!.form > 0 ? '+' : '' }}{{ currentForm!.form }}</span></span>
+						<span v-if="formVerdict" class="fb-verdict" :class="formVerdict.tone">{{ formVerdict.label }}</span>
+					</div>
+				</div>
+				<div class="chart-body"><canvas ref="formCanvas"></canvas></div>
+				<div class="form-foot">
+					<p v-if="formVerdict" class="vo2-note">{{ formVerdict.note }}.</p>
+					<p v-if="raceReadiness" class="vo2-note race-ready">
+						<strong>{{ raceReadiness.label }}</strong> — {{ raceReadiness.note }}.
+						<span v-if="nextRaceDays !== null">{{ nextRaceDays }} days to {{ nextRace!.name }}.</span>
+					</p>
+					<p v-if="formImmature" class="vo2-note warn-note">
+						Only {{ effortSpanDays }} days of history — fitness is still ramping from zero and reads low.
+					</p>
+				</div>
+			</section>
+		</template>
 
 		<!-- Plan progress -->
 		<template v-if="planHasData">
@@ -174,45 +267,6 @@
 				</div>
 			</section>
 		</template>
-
-		<!-- Trends -->
-		<div class="section-head"><h2>Trends</h2><span class="section-note">last 12 weeks</span></div>
-		<section class="chart-grid">
-			<div class="panel chart-card">
-				<div class="chart-head"><h3>Weekly distance</h3><span class="note">running vs bike</span></div>
-				<div class="chart-body"><canvas ref="distanceCanvas"></canvas></div>
-			</div>
-			<div class="panel chart-card">
-				<div class="chart-head"><h3><span class="dot gym"></span>Weekly tonnage</h3><span class="note">gym load</span></div>
-				<div class="chart-body"><canvas ref="tonnageCanvas"></canvas></div>
-			</div>
-			<div class="panel chart-card">
-				<div class="chart-head"><h3><span class="dot weight"></span>Body weight</h3><span class="note">vs goal</span></div>
-				<div class="chart-body"><canvas ref="weightCanvas"></canvas></div>
-			</div>
-			<div class="panel chart-card">
-				<div class="chart-head"><h3>Sport mix</h3><span class="note">all completed</span></div>
-				<div class="chart-body"><canvas ref="mixCanvas"></canvas></div>
-			</div>
-		</section>
-
-		<!-- Zone distribution -->
-		<section v-if="zonesHasData" class="zone-section" style="margin-top: 14px">
-			<div class="panel chart-card">
-				<div class="chart-head">
-					<h3>Weekly zones</h3>
-					<span class="note">% of run time · 12 weeks · Karvonen · max {{ maxHRDisplay }} / rest {{ restingHR }} bpm</span>
-				</div>
-				<div class="chart-body"><canvas ref="zoneCanvas"></canvas></div>
-			</div>
-			<div class="panel chart-card">
-				<div class="chart-head">
-					<h3>Zone balance</h3>
-					<span class="note">last 4 weeks</span>
-				</div>
-				<div class="chart-body"><canvas ref="zoneDonutCanvas"></canvas></div>
-			</div>
-		</section>
 
 		<!-- Projections -->
 		<template v-if="weightPrediction || runningPrediction">
@@ -267,39 +321,14 @@
 			</section>
 		</template>
 
-		<!-- Race predictor -->
-		<template v-if="racePredictor">
+		<!-- Race projection: the trend toward the goal race, then every distance goal -->
+		<template v-if="predictedHasData || racePredictor">
 			<div class="section-head">
-				<h2>Race predictor</h2>
-				<span class="section-note">Riegel formula · {{ racePredictor.basedOn }}</span>
+				<h2>Race projection</h2>
+				<span class="section-note">Riegel<span v-if="racePredictor"> · from your {{ racePredictor.basedOn }}</span></span>
 			</div>
-			<section class="pr-grid">
-				<div class="pr-card">
-					<span class="pr-label"><n-icon :component="TrophyOutline" /> 5 km</span>
-					<span class="pr-value mono">{{ racePredictor.fiveK }}</span>
-				</div>
-				<div class="pr-card">
-					<span class="pr-label"><n-icon :component="TrophyOutline" /> 10 km</span>
-					<span class="pr-value mono">{{ racePredictor.tenK }}</span>
-				</div>
-				<div class="pr-card">
-					<span class="pr-label"><n-icon :component="TrophyOutline" /> Half marathon</span>
-					<span class="pr-value mono">{{ racePredictor.half }}</span>
-				</div>
-				<div class="pr-card">
-					<span class="pr-label"><n-icon :component="TrophyOutline" /> Marathon</span>
-					<span class="pr-value mono">{{ racePredictor.full }}</span>
-				</div>
-			</section>
-		</template>
 
-		<!-- Race time projection -->
-		<template v-if="predictedHasData">
-			<div class="section-head">
-				<h2>Race time projection</h2>
-				<span class="section-note">Riegel · from your recent runs</span>
-			</div>
-			<section class="panel chart-card predicted-card">
+			<section v-if="predictedHasData" class="panel chart-card predicted-card">
 				<div class="chart-head">
 					<h3>Projected {{ fmt(goalRaceKm) }} km time</h3>
 					<div class="pred-badges">
@@ -311,7 +340,16 @@
 					</div>
 				</div>
 				<div class="chart-body"><canvas ref="predictedCanvas"></canvas></div>
-				<p class="vo2-note">Projected finish for {{ fmt(goalRaceKm) }} km from the fastest run in each trailing 4-week window (Riegel model). Set your goal race distance &amp; time in Profile to show the goal line.</p>
+				<p class="vo2-note">Projected finish for {{ fmt(goalRaceKm) }} km from the fastest run in each trailing 4-week window. Give the race a distance and goal time in Profile to show the goal line.</p>
+			</section>
+
+			<section v-if="racePredictor" class="pr-grid predicted-grid">
+				<div v-for="d in predictedVsGoal" :key="d.key" class="pr-card">
+					<span class="pr-label"><n-icon :component="TrophyOutline" /> {{ d.label }}</span>
+					<span class="pr-value mono">{{ d.predicted }}</span>
+					<span v-if="d.goal" class="pr-goal">goal <span class="mono">{{ d.goal }}</span></span>
+					<span v-if="d.deltaLabel" class="pr-delta" :class="d.ahead ? 'good' : 'off'">{{ d.deltaLabel }}</span>
+				</div>
 			</section>
 		</template>
 
@@ -334,9 +372,50 @@
 				<p class="vo2-note">8-activity rolling average from running. Estimated via ACSM oxygen cost + Swain %HRmax→%VO₂max formula. Requires a heart rate monitor.</p>
 			</section>
 		</template>
+		</template>
+
+		<template v-if="tab === 'trends'">
+		<!-- Trends -->
+		<div class="section-head"><h2>Trends</h2><span class="section-note">last 12 weeks</span></div>
+		<section class="chart-grid">
+			<div class="panel chart-card">
+				<div class="chart-head"><h3>Weekly distance</h3><span class="note">running vs bike</span></div>
+				<div class="chart-body"><canvas ref="distanceCanvas"></canvas></div>
+			</div>
+			<div class="panel chart-card">
+				<div class="chart-head"><h3><span class="dot gym"></span>Weekly tonnage</h3><span class="note">gym load</span></div>
+				<div class="chart-body"><canvas ref="tonnageCanvas"></canvas></div>
+			</div>
+			<div class="panel chart-card">
+				<div class="chart-head"><h3><span class="dot weight"></span>Body weight</h3><span class="note">vs goal</span></div>
+				<div class="chart-body"><canvas ref="weightCanvas"></canvas></div>
+			</div>
+			<div class="panel chart-card">
+				<div class="chart-head"><h3>Sport mix</h3><span class="note">all completed</span></div>
+				<div class="chart-body"><canvas ref="mixCanvas"></canvas></div>
+			</div>
+		</section>
+
+		<!-- Zone distribution -->
+		<section v-if="zonesHasData" class="zone-section" style="margin-top: 14px">
+			<div class="panel chart-card">
+				<div class="chart-head">
+					<h3>Weekly zones</h3>
+					<span class="note">% of run time · 12 weeks · Karvonen · max {{ maxHRDisplay }} / rest {{ restingHR }} bpm</span>
+				</div>
+				<div class="chart-body"><canvas ref="zoneCanvas"></canvas></div>
+			</div>
+			<div class="panel chart-card">
+				<div class="chart-head">
+					<h3>Zone balance</h3>
+					<span class="note">last 4 weeks</span>
+				</div>
+				<div class="chart-body"><canvas ref="zoneDonutCanvas"></canvas></div>
+			</div>
+		</section>
 
 		<!-- Activity -->
-		<section class="panel chart-card heatmap-card">
+		<section class="panel chart-card heatmap-card" style="margin-top: 14px">
 			<div class="chart-head">
 				<h3>{{ isHeatmap ? 'Activity · last year' : 'Sessions by month' }}</h3>
 				<div class="seg">
@@ -419,6 +498,7 @@
 				</div>
 			</section>
 		</template>
+		</template>
 	</div>
 </template>
 
@@ -437,17 +517,17 @@ import {
 import { db } from '@/db'
 import { activityApi } from '@/activities'
 import type { Workout, DailyWeight, RaceGoal } from '@/types'
-import { getWorkoutType, getSportColor, isDistanceSport, SPORT_TYPES, SPORT_LABELS } from '@/utils/workouts'
-import { PULSE_ZONES, getHRSettings, timeInZones, estimateVO2max } from '@/utils/analysis'
+import { getWorkoutType, getSportColor, isDistanceSport, noteSteps, SPORT_TYPES, SPORT_LABELS } from '@/utils/workouts'
+import { PULSE_ZONES, getHRSettings, timeInZones, estimateVO2max, relativeEffort, fitnessSeries } from '@/utils/analysis'
+import { settings, goalVdot, distanceGoals, hydrateSettings } from '@/settings'
+import { derivedPaceFor } from '@/utils/paceAdvice'
+import { DISTANCES, DISTANCE_LABELS, type DistanceKey } from '@/utils/vdot'
 
 const workouts = ref<Workout[]>([])
 const dailyWeights = ref<DailyWeight[]>([])
 const raceGoals = ref<RaceGoal[]>([])
-const userName = ref(localStorage.getItem('userName') || '')
-const goalWeight = computed(() => {
-	const g = localStorage.getItem('goalWeight')
-	return g ? parseFloat(g) : null
-})
+const userName = computed(() => settings.userName)
+const goalWeight = computed(() => settings.goalWeight)
 
 const fmt = (n: number) => {
 	const r = Math.round(n * 10) / 10
@@ -513,6 +593,92 @@ const chipLabel = (w: Workout) => {
 	if (isDistanceSport(t) && w.distance) return `${fmt(w.distance)}k`
 	return t === 'rest' ? 'rest' : t.slice(0, 3)
 }
+
+// ===== Today =====
+const todayStr = format(now, 'yyyy-MM-dd')
+const todaysWorkouts = computed(() => workouts.value.filter(w => w.date === todayStr))
+const todayIsRest = computed(() =>
+	todaysWorkouts.value.length === 0 || todaysWorkouts.value.every(w => getWorkoutType(w) === 'rest'))
+const todayAllDone = computed(() =>
+	todaysWorkouts.value.length > 0 && todaysWorkouts.value.every(w => w.isCompleted === 1))
+
+const completingId = ref<number | null>(null)
+
+async function completeToday(w: Workout) {
+	if (w.isCompleted === 1 || completingId.value !== null) return
+	completingId.value = w.id
+	try {
+		await db.completeWorkout({ id: w.id, isCompleted: 1 })
+		await load()
+	} catch (e) {
+		console.error('Failed to complete workout', e)
+	} finally {
+		completingId.value = null
+	}
+}
+
+/** Goal-implied pace for a session, when it drifts from the written one. */
+const todayDerivedPace = (w: Workout) =>
+	derivedPaceFor(w, goalVdot.value, nextRace.value?.distance_km ?? null)
+
+const sessionSteps = (w: Workout) => noteSteps(w)
+
+// ===== Fitness & Freshness (CTL / ATL / TSB) =====
+
+/** Total Relative Effort per calendar day, from every HR-carrying activity. */
+const dailyEfforts = computed(() => {
+	const { maxHR, restHR } = getHRSettings(stravaActivities.value)
+	const out: Record<string, number> = {}
+	if (maxHR < 140) return out
+	for (const a of stravaActivities.value) {
+		const effort = relativeEffort(a, maxHR, restHR)
+		if (effort === null) continue
+		const key = (a.start_date_local || a.start_date || '').slice(0, 10)
+		if (!key) continue
+		out[key] = (out[key] || 0) + effort
+	}
+	return out
+})
+
+const formSeries = computed(() => fitnessSeries(dailyEfforts.value, 90))
+const currentForm = computed(() => formSeries.value[formSeries.value.length - 1] ?? null)
+
+/** Days of history feeding the model — CTL is cold-started at zero, so this matters. */
+const effortSpanDays = computed(() => formSeries.value.length)
+
+/** Below two weeks the CTL ramp dominates and the numbers mean nothing. */
+const formHasData = computed(() => effortSpanDays.value >= 14)
+
+/** Some history, but not enough to trust yet — say so rather than render nothing. */
+const formCalibrating = computed(() =>
+	effortSpanDays.value > 0 && effortSpanDays.value < 14)
+
+/** CTL uses a 42-day time constant; before that, "fitness" is still filling up. */
+const formImmature = computed(() => formHasData.value && effortSpanDays.value < 42)
+
+/**
+ * Training Stress Balance read as words. Positive form means rested; deeply
+ * negative means you're absorbing more load than you're recovering from.
+ */
+const formVerdict = computed(() => {
+	const f = currentForm.value?.form
+	if (f === undefined) return null
+	if (f > 20) return { label: 'Very fresh', tone: 'warn', note: 'Detraining risk if this holds' }
+	if (f > 5) return { label: 'Race ready', tone: 'good', note: 'Sharp and recovered' }
+	if (f >= -10) return { label: 'Neutral', tone: 'neutral', note: 'Maintaining' }
+	if (f >= -30) return { label: 'Building', tone: 'neutral', note: 'Productive training load' }
+	return { label: 'Overreaching', tone: 'bad', note: 'Back off before something breaks' }
+})
+
+/** Race-day readiness: form is only meaningful relative to how close the race is. */
+const raceReadiness = computed(() => {
+	const days = nextRaceDays.value
+	const f = currentForm.value?.form
+	if (days === null || f === undefined) return null
+	if (days > 21) return { label: 'Build phase', note: 'Form matters closer to race day' }
+	if (days > 7) return { label: 'Taper window', note: f < -10 ? 'Still carrying fatigue' : 'Freshening on schedule' }
+	return { label: 'Race week', note: f > 5 ? 'Peaked — you are ready' : 'Form is low for race week' }
+})
 
 const recentActivities = computed(() =>
 	[...completed.value].sort((a, b) => b.date.localeCompare(a.date)).slice(0, 6))
@@ -805,30 +971,46 @@ const racePredictor = computed(() => {
 	const ref = runs.reduce((b: any, a: any) =>
 		a.moving_time / a.distance < b.moving_time / b.distance ? a : b
 	)
-	const riegel = (targetM: number) => ref.moving_time * Math.pow(targetM / ref.distance, 1.06)
+	const riegel = (targetM: number) => Math.round(ref.moving_time * Math.pow(targetM / ref.distance, 1.06))
 	const dateStr = (ref.start_date_local || ref.start_date || '').slice(0, 10)
 	const dateLabel = dateStr ? format(parseISO(dateStr), 'd MMM yyyy') : ''
 	return {
-		fiveK: fmtTime(riegel(5000)),
-		tenK: fmtTime(riegel(10000)),
-		half: fmtTime(riegel(21097)),
-		full: fmtTime(riegel(42195)),
+		secs: Object.fromEntries(
+			(Object.keys(DISTANCES) as DistanceKey[]).map(k => [k, riegel(DISTANCES[k])]),
+		) as Record<DistanceKey, number>,
 		basedOn: `${fmt(ref.distance / 1000)} km on ${dateLabel}`,
 	}
 })
 
-// ===== Predicted race time vs goal (Runna-style progress) =====
-function parseGoalTime(str: string | null): number | null {
-	if (!str) return null
-	const parts = str.split(':').map(s => Number(s.trim()))
-	if (parts.some(isNaN)) return null
-	let s = 0
-	if (parts.length === 3) s = parts[0] * 3600 + parts[1] * 60 + parts[2]
-	else if (parts.length === 2) s = parts[0] * 60 + parts[1]
-	else if (parts.length === 1) s = parts[0] * 60 // bare number = minutes
-	return s > 0 ? s : null
-}
+/**
+ * Where each standing distance goal sits against what your current fitness
+ * predicts. This is the "am I on track" answer, per distance.
+ */
+const predictedVsGoal = computed(() => {
+	const rp = racePredictor.value
+	if (!rp) return []
+	return (Object.keys(DISTANCES) as DistanceKey[]).map(key => {
+		const predicted = rp.secs[key]
+		const goal = distanceGoals[DISTANCES[key]] ?? null
+		const delta = goal !== null ? predicted - goal : null
+		return {
+			key,
+			label: DISTANCE_LABELS[key],
+			predicted: fmtTime(predicted),
+			goal: goal !== null ? fmtTime(goal) : null,
+			ahead: delta !== null && delta <= 0,
+			deltaLabel: delta === null
+				? null
+				: delta <= 0
+					? `${fmtTime(Math.abs(delta))} ahead of goal`
+					: `${fmtTime(delta)} to find`,
+		}
+	})
+})
 
+// ===== Predicted race time vs goal (Runna-style progress) =====
+
+/** Last-resort distance when a race record has none: read it out of the name. */
 function parseRaceKm(name: string): number | null {
 	const n = (name || '').toLowerCase()
 	if (/marathon/.test(n) && !/half|halv/.test(n)) return 42.195
@@ -838,12 +1020,12 @@ function parseRaceKm(name: string): number | null {
 }
 
 const goalRaceKm = computed(() => {
-	const s = parseFloat(localStorage.getItem('goalRaceKm') || '')
-	if (s > 0) return s
-	const inferred = nextRace.value ? parseRaceKm(nextRace.value.name) : null
-	return inferred || (nextRace.value ? 30 : 10)
+	const race = nextRace.value
+	if (race?.distance_km) return race.distance_km
+	const inferred = race ? parseRaceKm(race.name) : null
+	return inferred || (race ? 30 : 10)
 })
-const goalRaceSecs = computed(() => parseGoalTime(localStorage.getItem('goalRaceTime')))
+const goalRaceSecs = computed(() => nextRace.value?.goal_time_secs ?? null)
 
 // Recorded runs (imported activities + manually-completed runs) as {date, distM, timeSec}.
 const runSamples = computed(() => {
@@ -935,7 +1117,7 @@ const planRingDash = computed(() => `${(Math.min(planRingPct.value, 100) / 100) 
 
 // ===== Zone distribution =====
 const maxHRDisplay = computed(() => getHRSettings(stravaActivities.value).maxHR)
-const restingHR = computed(() => parseInt(localStorage.getItem('restingHR') || '60', 10))
+const restingHR = computed(() => settings.restingHR)
 
 const zonesHasData = computed(() => {
 	if (maxHRDisplay.value < 140) return false
@@ -957,7 +1139,17 @@ const vo2Canvas = ref<HTMLCanvasElement | null>(null)
 const zoneCanvas = ref<HTMLCanvasElement | null>(null)
 const zoneDonutCanvas = ref<HTMLCanvasElement | null>(null)
 const predictedCanvas = ref<HTMLCanvasElement | null>(null)
+const formCanvas = ref<HTMLCanvasElement | null>(null)
 let charts: Chart[] = []
+
+/** Only the active tab's canvases exist, so only its charts get built. */
+type Tab = 'today' | 'goals' | 'trends'
+const tab = ref<Tab>('today')
+const TABS: { key: Tab; label: string }[] = [
+	{ key: 'today', label: 'Today' },
+	{ key: 'goals', label: 'Goals' },
+	{ key: 'trends', label: 'Trends' },
+]
 
 const stravaActivities = ref<any[]>([])
 
@@ -1015,8 +1207,7 @@ function buildTonnage() {
 function buildWeight() {
 	if (!weightCanvas.value) return
 	const sorted = [...dailyWeights.value].sort((a, b) => a.date.localeCompare(b.date))
-	const goal = localStorage.getItem('goalWeight')
-	const goalVal = goal ? parseFloat(goal) : null
+	const goalVal = goalWeight.value
 
 	// Build 12-week projection from linear regression
 	let projLabels: string[] = []
@@ -1268,6 +1459,53 @@ function buildZoneDonut() {
 	}))
 }
 
+/**
+ * Fitness (CTL), Fatigue (ATL) and Form (TSB) over the last 90 days. Form is
+ * plotted as a filled band because its sign is what you read: above zero is
+ * fresh, below is fatigued.
+ */
+function buildForm() {
+	if (!formCanvas.value || !formHasData.value) return
+	const series = formSeries.value
+	const labels = series.map(p => format(parseISO(p.date), 'd MMM'))
+
+	charts.push(new Chart(formCanvas.value, {
+		type: 'line',
+		data: {
+			labels,
+			datasets: [
+				{
+					label: 'Fitness (CTL)', data: series.map(p => p.fitness),
+					borderColor: css('--primary-color'), backgroundColor: 'transparent',
+					borderWidth: 2, tension: 0.3, pointRadius: 0, pointHoverRadius: 4,
+				},
+				{
+					label: 'Fatigue (ATL)', data: series.map(p => p.fatigue),
+					borderColor: css('--warning-color'), backgroundColor: 'transparent',
+					borderWidth: 1.5, borderDash: [4, 3], tension: 0.3, pointRadius: 0, pointHoverRadius: 4,
+				},
+				{
+					label: 'Form (TSB)', data: series.map(p => p.form),
+					borderColor: css('--success-color'),
+					backgroundColor: 'color-mix(in srgb, ' + css('--success-color') + ' 12%, transparent)',
+					borderWidth: 1.5, tension: 0.3, pointRadius: 0, pointHoverRadius: 4, fill: 'origin',
+				},
+			],
+		},
+		options: {
+			...baseOpts(),
+			plugins: {
+				...baseOpts().plugins,
+				legend: { display: true, position: 'bottom', labels: { color: css('--text-secondary'), boxWidth: 10, font: { size: 10 }, usePointStyle: true } },
+			},
+			scales: {
+				...(baseOpts() as any).scales,
+				x: { ...(baseOpts() as any).scales.x, ticks: { color: css('--text-muted'), font: { size: 10 }, maxTicksLimit: 8, maxRotation: 0 } },
+			},
+		} as any,
+	}))
+}
+
 function heatColor(day: any) {
 	if (!day.value) return css('--surface-2')
 	const intensity = Math.min(day.value / 3, 1)
@@ -1277,19 +1515,29 @@ function heatColor(day: any) {
 function destroyCharts() { charts.forEach(c => c.destroy()); charts = [] }
 function setMonthly() { isHeatmap.value = false; nextTick(buildMonthly) }
 
+/**
+ * Each builder no-ops when its canvas isn't mounted, so this only pays for the
+ * charts the active tab actually renders.
+ */
 async function buildAll() {
 	destroyCharts()
 	await nextTick()
-	buildDistance(); buildTonnage(); buildWeight(); buildMix(); buildHeatmap(); buildVO2(); buildZones(); buildZoneDonut(); buildPredicted()
-	if (!isHeatmap.value) buildMonthly()
+
+	if (tab.value === 'goals') {
+		buildForm(); buildPredicted(); buildVO2()
+	} else if (tab.value === 'trends') {
+		buildDistance(); buildTonnage(); buildWeight(); buildMix()
+		buildZones(); buildZoneDonut(); buildHeatmap()
+		if (!isHeatmap.value) buildMonthly()
+	}
 }
 
 async function load() {
+	await hydrateSettings()
 	const [w, dw, rg] = await Promise.all([db.getWorkouts(), db.getDailyWeights(), db.getRaceGoals()])
 	workouts.value = w
 	dailyWeights.value = dw
 	raceGoals.value = rg
-	userName.value = localStorage.getItem('userName') || ''
 	// Imported FIT/GPX activities merged with Strava (when still connected)
 	try {
 		stravaActivities.value = await activityApi.getAllActivities()
@@ -1300,6 +1548,7 @@ async function load() {
 }
 
 watch(isHeatmap, v => { if (!v) nextTick(buildMonthly) })
+watch(tab, () => { buildAll() })
 
 onMounted(load)
 onActivated(load)
@@ -1317,6 +1566,79 @@ onUnmounted(destroyCharts)
 .streak-badge { display: inline-flex; align-items: center; gap: 6px; background: var(--warning-soft); color: var(--warning-color); padding: 7px 12px; border-radius: 999px; font-size: 0.8rem; font-weight: 600; }
 .streak-badge .flame { animation: flame-pulse 2.6s ease-in-out infinite; }
 @keyframes flame-pulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.22); } }
+
+/* Tabs */
+.tabbar { display: flex; gap: 2px; margin-bottom: 16px; border-bottom: 1px solid var(--border-color); }
+.tabbar button {
+	background: transparent; border: none; border-bottom: 2px solid transparent;
+	color: var(--text-muted); font-family: inherit; font-size: 0.88rem; font-weight: 500;
+	padding: 9px 16px; cursor: pointer; transition: color 0.15s, border-color 0.15s;
+}
+.tabbar button:hover { color: var(--text-secondary); }
+.tabbar button.active { color: var(--primary-color); border-bottom-color: var(--primary-color); }
+
+/* Today card */
+.today-card { padding: 16px 18px; margin-bottom: 14px; }
+.today-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+.today-head h2 { font-size: 1rem; font-weight: 600; margin: 0; }
+.today-status { font-size: 0.74rem; font-weight: 600; padding: 3px 10px; border-radius: 999px; }
+.today-status.done { color: var(--success-color); background: var(--success-soft); }
+.today-status.rest { color: var(--text-muted); background: var(--surface-2); }
+.today-rest-note { margin: 0; font-size: 0.85rem; color: var(--text-muted); }
+
+.today-sessions { display: flex; flex-direction: column; gap: 10px; }
+.today-session {
+	display: flex; align-items: flex-start; gap: 11px;
+	padding: 12px; background: var(--surface-2);
+	border: 1px solid var(--border-color); border-radius: var(--radius-sm);
+}
+.today-session.done { opacity: 0.62; }
+.ts-dot { width: 8px; height: 8px; border-radius: 50%; margin-top: 6px; flex-shrink: 0; }
+.ts-body { flex: 1; min-width: 0; }
+.ts-top { display: flex; align-items: center; gap: 7px; }
+.ts-name { font-weight: 600; font-size: 0.95rem; color: var(--text-color); text-decoration: none; }
+.ts-name:hover { color: var(--primary-color); }
+.ts-done { color: var(--success-color); font-weight: 700; }
+.ts-pills { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 7px; }
+.ts-pill {
+	font-size: 0.74rem; color: var(--text-secondary); background: var(--surface-color);
+	border: 1px solid var(--border-color); padding: 2px 9px; border-radius: 999px;
+}
+.ts-pill.pace { color: var(--primary-color); border-color: var(--primary-soft); }
+.ts-pill.derived { color: var(--text-muted); background: transparent; border-style: dashed; cursor: help; }
+.ts-steps { margin: 9px 0 0; padding-left: 0; list-style: none; display: flex; flex-direction: column; gap: 5px; }
+.ts-steps li { position: relative; padding-left: 15px; font-size: 0.8rem; color: var(--text-secondary); line-height: 1.4; }
+.ts-steps li::before { content: ''; position: absolute; left: 3px; top: 7px; width: 4px; height: 4px; border-radius: 50%; background: var(--text-muted); }
+.ts-complete {
+	background: var(--primary-color); color: #fff; border: none; border-radius: var(--radius-sm);
+	padding: 7px 14px; font-family: inherit; font-size: 0.78rem; font-weight: 600;
+	cursor: pointer; flex-shrink: 0; transition: opacity 0.15s;
+}
+.ts-complete:hover:not(:disabled) { opacity: 0.88; }
+.ts-complete:disabled { opacity: 0.5; cursor: default; }
+
+/* Fitness & freshness */
+.form-badges { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.fb { display: flex; align-items: baseline; gap: 5px; font-size: 0.82rem; }
+.fb-lbl { font-size: 0.68rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.04em; }
+.fb-verdict { font-size: 0.72rem; font-weight: 600; padding: 3px 10px; border-radius: 999px; }
+.fb-verdict.good { color: var(--success-color); background: var(--success-soft); }
+.fb-verdict.warn { color: var(--warning-color); background: var(--warning-soft); }
+.fb-verdict.bad { color: var(--danger-color); background: var(--danger-soft); }
+.fb-verdict.neutral { color: var(--text-secondary); background: var(--surface-2); }
+.form-foot { display: flex; flex-direction: column; gap: 2px; }
+.race-ready strong { color: var(--text-color); }
+.warn-note { color: var(--warning-color) !important; }
+.form-calibrating { padding: 16px 18px; }
+.form-calibrating p { margin: 0 0 6px; font-size: 0.86rem; color: var(--text-secondary); line-height: 1.55; }
+.form-calibrating strong { color: var(--text-color); }
+
+/* Predicted-vs-goal cards */
+.predicted-grid { margin-top: 14px; }
+.pr-goal { font-size: 0.7rem; color: var(--text-muted); margin-top: 2px; }
+.pr-delta { font-size: 0.7rem; font-weight: 600; margin-top: 3px; }
+.pr-delta.good { color: var(--success-color); }
+.pr-delta.off { color: var(--warning-color); }
 
 /* Race hero */
 .hero {

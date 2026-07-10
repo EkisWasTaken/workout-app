@@ -5,7 +5,7 @@
       <span class="race-label">Next race</span>
       <span class="race-name">{{ nextRace.name }}</span>
       <span class="race-count" :class="{ urgent: isUrgent }">
-        in {{ countdown.days }} day{{ countdown.days === '01' ? '' : 's' }}
+        in {{ daysRemaining }} day{{ daysRemaining === 1 ? '' : 's' }}
       </span>
     </div>
 
@@ -50,25 +50,11 @@ const upcomingRaces = computed(() => {
 const nextRace = computed(() => upcomingRaces.value[0]);
 const followingRaces = computed(() => upcomingRaces.value.slice(1, 4));
 
-const countdown = computed(() => {
-  if (!nextRace.value) return { days: '00', hours: '00', minutes: '00', seconds: '00' };
-  
+const daysRemaining = computed(() => {
+  if (!nextRace.value) return 0;
   const targetDate = addHours(startOfDay(parseISO(nextRace.value.date)), 12);
   const totalSeconds = differenceInSeconds(targetDate, currentTime.value);
-  
-  if (totalSeconds <= 0) return { days: '00', hours: '00', minutes: '00', seconds: '00' };
-
-  const days = Math.floor(totalSeconds / (3600 * 24));
-  const hours = Math.floor((totalSeconds % (3600 * 24)) / 3600);
-  const minutes = Math.floor((totalSeconds % 3600) / 60);
-  const seconds = totalSeconds % 60;
-
-  return {
-    days: String(days).padStart(2, '0'),
-    hours: String(hours).padStart(2, '0'),
-    minutes: String(minutes).padStart(2, '0'),
-    seconds: String(seconds).padStart(2, '0')
-  };
+  return totalSeconds <= 0 ? 0 : Math.floor(totalSeconds / (3600 * 24));
 });
 
 const isUrgent = computed(() => {
@@ -85,9 +71,10 @@ const formatDateShort = (dateStr: string) => {
 onMounted(() => {
   fetchRaceGoals();
   window.addEventListener('race-goals-updated', fetchRaceGoals);
+  // The bar only renders whole days; a minute is fine to catch midnight rollover.
   timer = setInterval(() => {
     currentTime.value = new Date();
-  }, 1000);
+  }, 60_000);
 });
 
 onUnmounted(() => {

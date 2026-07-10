@@ -30,12 +30,35 @@ export function getWorkoutType(workout: Workout): SportType {
 	return 'other'
 }
 
-/** Read the live CSS variable for a sport color (set from the DB at runtime). */
+/**
+ * Read the live CSS variable for a sport color (set from the DB at runtime).
+ *
+ * getComputedStyle forces a style recalc, and this is called once per workout
+ * chip inside render loops — so results are memoised. Call `clearSportColorCache`
+ * after writing new colors to the document.
+ */
+const sportColorCache = new Map<SportType, string>()
+
 export function getSportColor(type: SportType): string {
+	const hit = sportColorCache.get(type)
+	if (hit !== undefined) return hit
+
 	const v = getComputedStyle(document.documentElement)
 		.getPropertyValue(`--color-${type}-primary`)
-		.trim()
-	return v || '#9aa7b8'
+		.trim() || '#9aa7b8'
+	sportColorCache.set(type, v)
+	return v
+}
+
+export function clearSportColorCache(): void {
+	sportColorCache.clear()
 }
 
 export const isDistanceSport = (type: SportType) => type === 'running' || type === 'bike'
+
+/** Break a workout's notes into readable steps for a "session plan" list. */
+export function noteSteps(workout: Workout): string[] {
+	const raw = (workout.notes || '').trim()
+	if (!raw) return []
+	return raw.split(/(?<=[.!?])\s+(?=[A-Z0-9🎯🏁])/).map(s => s.trim()).filter(Boolean)
+}

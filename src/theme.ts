@@ -1,6 +1,7 @@
 // src/theme.ts
 import { ref, computed, watchEffect } from 'vue'
 import { darkTheme, GlobalThemeOverrides } from 'naive-ui'
+import { clearSportColorCache } from './utils/workouts'
 
 export const themes = ['dark', 'light', 'dark-blue', 'light-solarized', 'dark-solarized']
 export const theme = ref('dark')
@@ -36,6 +37,7 @@ export const themeOverrides = computed<GlobalThemeOverrides>(() => {
 export const setTheme = (newTheme: string) => {
   theme.value = newTheme
   document.documentElement.setAttribute('data-theme', newTheme)
+  clearSportColorCache()
   // a little delay to allow the css variables to be updated
   setTimeout(() => {
     const style = getComputedStyle(document.documentElement)

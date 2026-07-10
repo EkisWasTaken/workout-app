@@ -12,6 +12,10 @@
   --surface-hover: #1e2c3e;
   --surface-elevated: #1a2535;
 
+  /* Sidebar — its own surface so a light theme can override it independently */
+  --sidebar-bg-top: #141e2e;
+  --sidebar-bg-bottom: #101620;
+
   /* Borders */
   --border-color: #1f2d3f;
   --border-strong: #2c3f56;
@@ -59,9 +63,20 @@
   --font-mono: 'JetBrains Mono', 'Fira Code', ui-monospace, monospace;
 
   /* Layout */
-  --sidebar-width: 240px;
-  --sidebar-collapsed-width: 76px;
-  --mobile-nav-height: 64px;
+  --sidebar-width: 212px;
+  --sidebar-collapsed-width: 64px;
+  --nav-icon-size: 22px;
+
+  /* Bottom nav: the bar is nav-height tall plus the phone's home-indicator inset.
+     Anything that must clear it should offset by --mobile-nav-total. */
+  --mobile-nav-height: 60px;
+  --mobile-nav-total: calc(var(--mobile-nav-height) + env(safe-area-inset-bottom, 0px));
+
+  /* Stacking order. Keep every z-index in the app on this scale — chrome must
+     stay below overlays, and nothing may sit in a stacking context that traps them. */
+  --z-chrome: 200;   /* sidebar, bottom nav */
+  --z-modal: 900;    /* CustomModal overlay */
+  --z-pin-gate: 1200;
 
   color-scheme: dark;
   color: var(--text-color);

@@ -114,7 +114,7 @@ onMounted(() => {
 .pin-gate {
 	position: fixed;
 	inset: 0;
-	z-index: 9999;
+	z-index: var(--z-pin-gate);
 	background: var(--background-color);
 	display: flex;
 	align-items: center;

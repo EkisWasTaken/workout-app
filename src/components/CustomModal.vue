@@ -45,8 +45,10 @@ function close() {
   display: flex;
   justify-content: center;
   align-items: center;
-  z-index: 1000;
+  z-index: var(--z-modal);
   padding: 16px;
+  /* Clear the bottom nav's home-indicator inset on phones. */
+  padding-bottom: max(16px, env(safe-area-inset-bottom, 0px));
   box-sizing: border-box;
 }
 

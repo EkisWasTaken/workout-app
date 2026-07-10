@@ -55,6 +55,9 @@
                     <span v-if="w.distance" class="wv-pill">{{ w.distance }} km</span>
                     <span v-if="w.duration" class="wv-pill">{{ w.duration }} min</span>
                     <span v-if="paceParts(w)" class="wv-pill wv-pill-pace">{{ paceParts(w)?.zone }} · {{ paceParts(w)?.value }}/km</span>
+                    <span v-if="derivedPace(w)" class="wv-pill wv-pill-derived" :title="derivedTitle(w)">
+                      goal {{ derivedPace(w)!.label }}/km
+                    </span>
                     <span v-if="w.gymType" class="wv-pill">{{ w.gymType }}</span>
                   </div>
                   <ul v-if="noteSteps(w).length" class="wv-steps">
@@ -184,6 +187,15 @@
               <div v-if="paceParts(selectedWorkout)" class="rn-stat rn-stat-pace">
                 <span class="rn-val"><span class="rn-num">{{ paceParts(selectedWorkout)?.value }}</span><span class="rn-unit">/km</span></span>
                 <span class="rn-lbl">{{ paceParts(selectedWorkout)?.zone }}</span>
+              </div>
+              <div v-if="derivedPace(selectedWorkout)" class="rn-stat rn-stat-derived" :title="derivedTitle(selectedWorkout)">
+                <span class="rn-val"><span class="rn-num">{{ derivedPace(selectedWorkout)!.label }}</span><span class="rn-unit">/km</span></span>
+                <span class="rn-lbl">
+                  Goal pace
+                  <span class="rn-delta" :class="derivedPace(selectedWorkout)!.delta < 0 ? 'faster' : 'slower'">
+                    {{ derivedPace(selectedWorkout)!.delta > 0 ? '+' : '' }}{{ derivedPace(selectedWorkout)!.delta }}s
+                  </span>
+                </span>
               </div>
               <div v-if="selectedWorkout.gymType" class="rn-stat">
                 <span class="rn-val"><span class="rn-num rn-num-sm">{{ selectedWorkout.gymType }}</span></span>
@@ -382,6 +394,9 @@ import ImportEditor from '../components/ImportEditor.vue';
 import ImportActivitiesModal from '../components/ImportActivitiesModal.vue';
 import { activityApi } from '../activities';
 import { parseActivityFile } from '@/import/parseActivityFile';
+import { goalVdot, nextRace as goalNextRace } from '@/settings';
+import { paceParts, derivedPaceFor, type DerivedPace } from '@/utils/paceAdvice';
+import { noteSteps } from '@/utils/workouts';
 
 const isActionLoading = ref(false);
 const message = useMessage();
@@ -899,20 +914,27 @@ const workoutMeta = (w: Workout): string => {
 
 const hasStats = (w: Workout) => !!(w.distance || w.duration || w.targetPace || w.gymType);
 
-// Split a target-pace string ("Threshold 4:45–4:55/km") into a zone label and value.
-const paceParts = (w: Workout): { zone: string; value: string } | null => {
-  const raw = (w.targetPace || '').trim();
-  if (!raw) return null;
-  const m = raw.match(/^(.+?)\s+([\d:]+(?:[–-][\d:]+)?)\s*\/?\s*km$/);
-  if (m) return { zone: m[1].trim(), value: m[2] };
-  return { zone: 'Target', value: raw };
-};
+/**
+ * Memoised so the template can call derivedPace() per session without
+ * recomputing a pace table for every chip on every render.
+ */
+const derivedPaces = computed(() => {
+  const out = new Map<number, DerivedPace>();
+  const raceKm = goalNextRace.value?.distance_km ?? null;
+  for (const w of workouts.value) {
+    const d = derivedPaceFor(w, goalVdot.value, raceKm);
+    if (d) out.set(w.id, d);
+  }
+  return out;
+});
 
-// Break the notes into readable steps for the "Session plan" list.
-const noteSteps = (w: Workout): string[] => {
-  const raw = (w.notes || '').trim();
-  if (!raw) return [];
-  return raw.split(/(?<=[.!?])\s+(?=[A-Z0-9🎯🏁])/).map(s => s.trim()).filter(Boolean);
+const derivedPace = (w: Workout) => derivedPaces.value.get(w.id) ?? null;
+
+const derivedTitle = (w: Workout) => {
+  const d = derivedPace(w);
+  if (!d) return '';
+  const dir = d.delta > 0 ? 'slower' : 'faster';
+  return `Your goal (VDOT ${goalVdot.value}) implies ${d.label}/km — ${Math.abs(d.delta)} s/km ${dir} than the pace on this session.`;
 };
 
 const workoutsByDate = computed(() => {
@@ -960,7 +982,9 @@ onActivated(() => { loadWorkouts(); loadDailyWeights(); loadRaceGoals(); });
 
 
 <style scoped>
-.dashboard-view-wrapper { height: 100%; }
+/* min-height, not height: a fixed 100% clamps to the scroll container's padded
+   content box, so the calendar overflowed past the padding that clears the nav. */
+.dashboard-view-wrapper { min-height: 100%; }
 .dashboard-view { padding: 24px 28px 40px; max-width: 1100px; margin: 0 auto; width: 100%; box-sizing: border-box; color: var(--text-color); }
 @media (max-width: 768px) { .dashboard-view { padding: 16px 16px 32px; } }
 
@@ -1028,6 +1052,8 @@ onActivated(() => { loadWorkouts(); loadDailyWeights(); loadRaceGoals(); });
 .wv-pills { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 7px; }
 .wv-pill { font-size: 0.74rem; font-weight: 500; color: var(--text-secondary); background: var(--surface-2); border: 1px solid var(--border-color); padding: 2px 9px; border-radius: 999px; }
 .wv-pill-pace { color: var(--tag-color); border-color: color-mix(in srgb, var(--tag-color) 40%, transparent); background: color-mix(in srgb, var(--tag-color) 10%, transparent); font-family: var(--font-mono); }
+/* Advisory: what the goal implies, shown only when it disagrees with the written pace. */
+.wv-pill-derived { color: var(--text-muted); background: transparent; border-style: dashed; font-family: var(--font-mono); cursor: help; }
 .wv-steps { margin: 9px 0 0; padding-left: 0; list-style: none; display: flex; flex-direction: column; gap: 6px; }
 .wv-steps li { position: relative; padding-left: 16px; font-size: 0.82rem; color: var(--text-secondary); line-height: 1.4; }
 .wv-steps li::before { content: ''; position: absolute; left: 3px; top: 7px; width: 5px; height: 5px; border-radius: 50%; background: var(--tag-color); }
@@ -1155,6 +1181,11 @@ textarea { min-height: 70px; resize: vertical; }
 .rn-num-sm { font-size: 1.02rem; }
 .rn-unit { font-size: 0.72rem; color: var(--text-muted); font-weight: 500; }
 .rn-lbl { font-size: 0.66rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; }
+.rn-stat-derived { border-style: dashed; cursor: help; }
+.rn-stat-derived .rn-num { color: var(--text-secondary); }
+.rn-delta { margin-left: 4px; font-weight: 700; letter-spacing: 0; }
+.rn-delta.faster { color: var(--danger-color); }
+.rn-delta.slower { color: var(--success-color); }
 .rn-plan { padding: 2px 16px 16px; }
 .rn-plan-h { font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted); font-weight: 600; }
 .rn-steps { margin: 9px 0 0; padding-left: 0; list-style: none; display: flex; flex-direction: column; gap: 8px; }
