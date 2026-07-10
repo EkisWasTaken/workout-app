@@ -42,6 +42,8 @@ export interface GoalAtDate {
 	vdot: number
 	distanceM: number
 	name: string
+	/** 1.0 = flat road. A hilly course is rehearsed at its flat-road-equivalent pace. */
+	terrain?: number
 }
 
 export interface PaceSources {
@@ -86,12 +88,17 @@ export function sessionPace(workout: Workout, sources: PaceSources): SessionPace
 	if (isRacePaceZone(parts.zone, key)) {
 		const goal = sources.goalFor(workout.date)
 		if (!goal) return planned()
+		// Flat-road equivalent: you rehearse race effort on flat ground, and the
+		// course's hills are already baked into the VDOT the goal demands.
 		const pace = racePaceSecPerKm(goal.vdot, goal.distanceM)
+		const hilly = typeof goal.terrain === 'number' && goal.terrain !== 1
 		return {
 			zone: `${goal.name} pace`,
 			value: fmtPace(pace),
 			basis: 'goal',
-			explain: `From your ${goal.name} goal (VDOT ${goal.vdot}). Change the goal and this changes with it.`,
+			explain: `From your ${goal.name} goal (VDOT ${goal.vdot}).`
+				+ (hilly ? ' Flat-road equivalent — the course is hillier, so race day will be slower.' : '')
+				+ ' Change the goal and this changes with it.',
 		}
 	}
 

@@ -136,21 +136,23 @@
 					</p>
 					<div class="gp-table">
 						<div class="gp-row gp-head">
-							<span>Goal</span><span>Time</span><span>Pace</span><span>Needs</span><span>Today</span>
+							<span>Goal</span><span>Time</span><span>Pace</span><span>Needs</span><span>You'd run</span>
 						</div>
 						<div v-for="g in goalPaceRows" :key="g.key" class="gp-row" :class="{ reached: g.reached }">
-							<span class="gp-name">{{ g.name }}</span>
+							<span class="gp-name">
+								{{ g.name }}
+								<span v-if="g.hilly" class="gp-hilly" title="Terrain-adjusted">⛰</span>
+							</span>
 							<span class="mono">{{ g.goalTime }}</span>
 							<span class="mono gp-pace">{{ g.goalPace }}<span class="pace-unit">/km</span></span>
 							<span class="gp-vdot">{{ g.neededVdot }}</span>
-							<span class="mono gp-today" :class="g.reached ? 'good' : 'off'">
-								{{ g.todayPace }}<span class="pace-unit">/km</span>
-							</span>
+							<span class="mono gp-today" :class="g.reached ? 'good' : 'off'">{{ g.todayTime }}</span>
 						</div>
 					</div>
 					<p class="card-hint tight" style="margin-top: 12px">
 						<strong>Needs</strong> is the VDOT the goal requires; you're at
-						<strong>{{ currentVdot }}</strong>.
+						<strong>{{ currentVdot }}</strong>. <strong>You'd run</strong> is your predicted
+						finish on that course today. ⛰ marks a course adjusted for terrain.
 					</p>
 				</n-card>
 
@@ -197,6 +199,13 @@
 								<span v-if="resultVdot(goal)" class="goal-meta vdot-tag">VDOT {{ resultVdot(goal) }}</span>
 							</div>
 							<div class="rg-actions">
+								<n-select
+									v-if="goal.distance_km"
+									:value="goal.terrain_factor ?? 1"
+									:options="TERRAIN_OPTIONS"
+									size="small" class="rg-terrain"
+									@update:value="f => commitTerrain(goal, f)"
+								/>
 								<n-input
 									v-if="goal.distance_km && isPast(goal)"
 									:value="resultInputs[goal.id] ?? ''"
@@ -227,8 +236,9 @@ import {
 } from '@/settings'
 import { currentVdot, derivedFitness, hydrateFitness } from '@/fitness'
 import {
-	DISTANCES, DISTANCE_LABELS, paceTable, racePaceSecPerKm, equivalentTimes,
-	vdotFromRace, parseTime, fmtTime, fmtPace, fmtPaceRange, type DistanceKey,
+	DISTANCES, DISTANCE_LABELS, paceTable, equivalentTimes, vdotFromRace,
+	raceTimeOnCourse, coursePaceSecPerKm, TERRAIN_PRESETS,
+	parseTime, fmtTime, fmtPace, fmtPaceRange, type DistanceKey,
 } from '@/utils/vdot'
 import type { RaceGoal, RacePriority } from '@/types'
 
@@ -385,12 +395,28 @@ const goalPaceRows = computed(() => {
 			key: t.key,
 			name: t.name,
 			goalTime: fmtTime(t.goalTimeSecs),
-			goalPace: fmtPace(racePaceSecPerKm(t.neededVdot, t.distanceM)),
+			// The pace you actually hold on the day, hills included.
+			goalPace: fmtPace(Math.round((t.goalTimeSecs / t.distanceM) * 1000)),
 			neededVdot: t.neededVdot,
-			todayPace: cur === null ? '—' : fmtPace(racePaceSecPerKm(cur, t.distanceM)),
+			hilly: t.terrainFactor !== 1,
+			todayTime: cur === null ? '—' : fmtTime(raceTimeOnCourse(cur, t.distanceM, t.terrainFactor)),
+			todayPace: cur === null ? '—' : fmtPace(coursePaceSecPerKm(cur, t.distanceM, t.terrainFactor)),
 			reached: cur !== null && cur >= t.neededVdot,
 		}))
 })
+
+const TERRAIN_OPTIONS = TERRAIN_PRESETS.map(t => ({ label: `${t.label} (${t.factor.toFixed(2)}×)`, value: t.factor }))
+
+async function commitTerrain(goal: RaceGoal, factor: number) {
+	if ((goal.terrain_factor ?? 1) === factor) return
+	try {
+		await db.updateRaceGoal({ ...goal, terrain_factor: factor })
+		await refreshRaceGoals()
+		message.success('Course updated')
+	} catch (e) {
+		failed(e, 'Failed to save course')
+	}
+}
 
 // ─── race results ─────────────────────────────────────────────────────────────
 const resultInputs = reactive<Record<number, string>>({})
@@ -581,6 +607,8 @@ onMounted(async () => {
 .result-tag { color: var(--success-color); font-weight: 600; }
 .rg-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
 .rg-result { width: 96px; }
+.rg-terrain { width: 168px; }
+.gp-hilly { margin-left: 4px; opacity: 0.7; cursor: help; }
 
 /* Goal race paces */
 .gp-table { display: flex; flex-direction: column; gap: 2px; }

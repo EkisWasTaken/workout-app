@@ -3,6 +3,7 @@ import {
 	MIN_EFFORT_M,
 	raceVdotSamples,
 	effortVdotSamples,
+	loggedRunVdotSamples,
 	currentVdot,
 	vdotTrendPerMonth,
 	rollingBestSeries,
@@ -71,6 +72,46 @@ describe('effortVdotSamples', () => {
 
 	it('skips non-running activities', () => {
 		expect(effortVdotSamples([run({ sport_type: 'Ride', distance: 40000, moving_time: 3600 })])).toHaveLength(0)
+	})
+})
+
+describe('loggedRunVdotSamples', () => {
+	const run = (over: Partial<any> = {}) =>
+		({ date: daysAgo(3), name: 'Fast', distanceKm: 14.14, minutes: 65, ...over })
+
+	it('scores a hand-logged run', () => {
+		const s = loggedRunVdotSamples([run()])
+		expect(s).toHaveLength(1)
+		expect(s[0].vdot).toBeCloseTo(45.3, 1)
+		expect(s[0].label).toBe('Fast (logged)')
+		expect(s[0].source).toBe('effort')
+	})
+
+	it(`ignores runs under ${MIN_EFFORT_M} m`, () => {
+		expect(loggedRunVdotSamples([run({ distanceKm: 2, minutes: 8 })])).toHaveLength(0)
+	})
+
+	it('rejects the mistyped rows: 31 km in a 20-minute session', () => {
+		// 31.164 km in 60 min is 31 km/h — the model refuses it rather than
+		// reporting a superhuman VDOT.
+		expect(loggedRunVdotSamples([run({ distanceKm: 31.164, minutes: 60 })])).toHaveLength(0)
+		expect(loggedRunVdotSamples([run({ distanceKm: 28.38, minutes: 65 })])).toHaveLength(0)
+	})
+
+	it('ignores runs missing a distance or a duration', () => {
+		expect(loggedRunVdotSamples([run({ minutes: 0 })])).toHaveLength(0)
+		expect(loggedRunVdotSamples([run({ distanceKm: undefined })])).toHaveLength(0)
+	})
+
+	it('reads lower than a recording of the same run, so it cannot inflate the max', () => {
+		// The recording surfaces a hard 5k inside the run; the logged row only
+		// knows the overall average.
+		const logged = loggedRunVdotSamples([run({ distanceKm: 12, minutes: 66 })])[0]
+		const recorded = effortVdotSamples([{
+			sport_type: 'Run', start_date_local: daysAgo(3), distance: 12000, moving_time: 66 * 60,
+			best_efforts: [{ name: '5 km', distance: 5000, elapsed_time: 22 * 60 + 41 }],
+		}])[0]
+		expect(logged.vdot).toBeLessThan(recorded.vdot)
 	})
 })
 

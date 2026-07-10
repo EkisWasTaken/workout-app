@@ -342,7 +342,7 @@
       </CustomModal>
 
       <!-- Activity file import (FIT/GPX/TCX) -->
-      <ImportActivitiesModal v-model:show="showActivityImport" @imported="loadWorkouts" />
+      <ImportActivitiesModal v-model:show="showActivityImport" @imported="onActivitiesImported" />
 
       <!-- Import Editor Modal -->
       <ImportEditor
@@ -392,7 +392,7 @@ import ImportActivitiesModal from '../components/ImportActivitiesModal.vue';
 import { activityApi } from '../activities';
 import { parseActivityFile } from '@/import/parseActivityFile';
 import { targetForDate, hydrateSettings } from '@/settings';
-import { currentVdot, hydrateFitness } from '@/fitness';
+import { currentVdot, hydrateFitness, refreshFitness, setActivities, setWorkouts } from '@/fitness';
 import { paceParts, sessionPace, type SessionPace } from '@/utils/paceAdvice';
 import { noteSteps, type SportType } from '@/utils/workouts';
 import { buildActivityIndex, effectiveWorkoutType } from '@/utils/workoutSport';
@@ -555,6 +555,7 @@ async function loadStravaActivities() {
 
         if (activities && Array.isArray(activities)) {
             stravaActivities.value = activities;
+            setActivities(activities); // a newly imported file can change VDOT
             const workoutType = selectedWorkout.value ? getWorkoutType(selectedWorkout.value) : null;
             const filtered = activities.filter((act: any) => {
                 const st = (act.sport_type || act.type || '').toLowerCase();
@@ -919,7 +920,7 @@ const paceSources = computed(() => ({
   currentVdot: currentVdot.value,
   goalFor: (date: string) => {
     const t = targetForDate(date);
-    return t ? { vdot: t.neededVdot, distanceM: t.distanceM, name: t.name } : null;
+    return t ? { vdot: t.neededVdot, distanceM: t.distanceM, name: t.name, terrain: t.terrainFactor } : null;
   },
 }));
 
@@ -969,8 +970,18 @@ async function loadRaceGoals() {
   }
 }
 
-async function loadWorkouts() { workouts.value = await db.getWorkouts(); }
+async function loadWorkouts() {
+  workouts.value = await db.getWorkouts();
+  // A completed run is a VDOT sample. Keep the fitness store in step so paces,
+  // projections and goal verdicts re-derive the moment a session is logged.
+  setWorkouts(workouts.value);
+}
 async function loadDailyWeights() { dailyWeights.value = await db.getDailyWeights(); }
+
+/** Bulk import adds activities (and optionally workouts): re-read both. */
+async function onActivitiesImported() {
+  await Promise.all([loadWorkouts(), refreshFitness()]);
+}
 
 // Pace advice needs the active goal (settings) and current fitness. The activity
 // list is needed up front too: it's what corrects each workout's sport.

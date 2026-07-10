@@ -4,9 +4,12 @@ import {
 	vdotFromRace,
 	raceTimeFromVdot,
 	paceTable,
-	racePaceSecPerKm,
 	equivalentTimes,
 	matchZone,
+	vdotForCourse,
+	raceTimeOnCourse,
+	coursePaceSecPerKm,
+	racePaceSecPerKm,
 	parsePaceValue,
 	parseTime,
 	fmtTime,
@@ -120,6 +123,49 @@ describe('racePaceSecPerKm', () => {
 
 	it('is slower over longer distances', () => {
 		expect(racePaceSecPerKm(50, 42195)).toBeGreaterThan(racePaceSecPerKm(50, 5000))
+	})
+})
+
+describe('terrain', () => {
+	const THIRTY_K = 30000
+	const GOAL_2_30 = 2 * 3600 + 30 * 60
+
+	it('a flat course leaves VDOT unchanged', () => {
+		expect(vdotForCourse(THIRTY_K, GOAL_2_30, 1.0))
+			.toBe(vdotFromRace(THIRTY_K, GOAL_2_30))
+		expect(vdotForCourse(THIRTY_K, GOAL_2_30, null))
+			.toBe(vdotFromRace(THIRTY_K, GOAL_2_30))
+	})
+
+	it('the same time on a hilly course demands more fitness', () => {
+		const flat = vdotForCourse(THIRTY_K, GOAL_2_30, 1.0)!
+		const hilly = vdotForCourse(THIRTY_K, GOAL_2_30, 1.1)!
+		expect(hilly).toBeGreaterThan(flat)
+	})
+
+	it('the same fitness finishes a hilly course slower', () => {
+		const flat = raceTimeOnCourse(44.9, THIRTY_K, 1.0)
+		const hilly = raceTimeOnCourse(44.9, THIRTY_K, 1.1)
+		expect(hilly).toBeGreaterThan(flat)
+		expect(hilly / flat).toBeCloseTo(1.1, 2)
+	})
+
+	it('round-trips: the VDOT a goal demands finishes on that goal', () => {
+		const needed = vdotForCourse(THIRTY_K, GOAL_2_30, 1.1)!
+		// VDOT is reported to one decimal, and ±0.05 VDOT is worth ~7s over 30k.
+		expect(Math.abs(raceTimeOnCourse(needed, THIRTY_K, 1.1) - GOAL_2_30)).toBeLessThanOrEqual(10)
+	})
+
+	it('course pace is slower than flat pace for the same fitness', () => {
+		expect(coursePaceSecPerKm(44.9, THIRTY_K, 1.1))
+			.toBeGreaterThan(racePaceSecPerKm(44.9, THIRTY_K))
+	})
+
+	it('ignores nonsense terrain values rather than distorting the model', () => {
+		const flat = raceTimeOnCourse(44.9, THIRTY_K, 1.0)
+		expect(raceTimeOnCourse(44.9, THIRTY_K, 0)).toBe(flat)
+		expect(raceTimeOnCourse(44.9, THIRTY_K, 99)).toBe(flat)
+		expect(raceTimeOnCourse(44.9, THIRTY_K, undefined)).toBe(flat)
 	})
 })
 

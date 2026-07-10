@@ -147,6 +147,8 @@ export interface RaceGoal {
 	goal_time_secs?: number | null;
 	/** What you actually ran. The most trustworthy input to current VDOT. */
 	result_time_secs?: number | null;
+	/** Expected time multiplier vs flat road: 1.10 = a hilly course runs 10% slower. */
+	terrain_factor?: number | null;
 	priority?: RacePriority;
 }
 
@@ -182,6 +184,9 @@ export interface Target {
 	distanceM: number;
 	goalTimeSecs: number;
 	date: string | null;
+	/** VDOT this goal demands, already adjusted for the course's terrain. */
 	neededVdot: number;
+	/** 1.0 for a flat road; distance goals are always flat by definition. */
+	terrainFactor: number;
 	kind: 'race' | 'distance';
 }

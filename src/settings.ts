@@ -11,7 +11,7 @@
  */
 import { reactive, computed } from 'vue'
 import { db, schema, MISSING_GOALS_TABLES } from './db'
-import { DISTANCES, DISTANCE_LABELS, vdotFromRace, type DistanceKey } from './utils/vdot'
+import { DISTANCES, DISTANCE_LABELS, vdotFromRace, vdotForCourse, FLAT, type DistanceKey } from './utils/vdot'
 import type { RaceGoal, Target } from './types'
 
 export interface Settings {
@@ -107,10 +107,13 @@ export async function hydrateSettings(): Promise<void> {
 		for (const k of Object.keys(distanceGoals)) delete distanceGoals[Number(k)]
 		for (const g of goals) distanceGoals[g.distance_m] = { secs: g.goal_time_secs, date: g.target_date ?? null }
 
-		// getProfile/getDistanceGoals flip this when a v2 column is absent.
+		// The db layer flips these when a column is absent. Name the earliest one.
 		if (!schema.v2) {
 			pendingMigration.script = 'supabase_goals_v2.sql'
 			console.warn('[settings] goal dates, race results and VDOT override need supabase_goals_v2.sql')
+		} else if (!schema.v3) {
+			pendingMigration.script = 'supabase_goals_v3.sql'
+			console.warn('[settings] course terrain needs supabase_goals_v3.sql')
 		}
 
 		await migrateLegacyRaceGoal()
@@ -194,20 +197,23 @@ const todayISO = () => new Date().toISOString().slice(0, 10)
 export const targets = computed<Target[]>(() => {
 	const out: Target[] = []
 
+	// Standing distance goals are flat-road times by definition.
 	for (const [key, m] of Object.entries(DISTANCES) as [DistanceKey, number][]) {
 		const g = distanceGoals[m]
 		if (!g) continue
 		const v = vdotFromRace(m, g.secs)
 		if (v === null) continue
-		out.push({ key: `d:${key}`, name: DISTANCE_LABELS[key], distanceM: m, goalTimeSecs: g.secs, date: g.date, neededVdot: v, kind: 'distance' })
+		out.push({ key: `d:${key}`, name: DISTANCE_LABELS[key], distanceM: m, goalTimeSecs: g.secs, date: g.date, neededVdot: v, terrainFactor: FLAT, kind: 'distance' })
 	}
 
+	// A race has a course. 2:30 over a hilly 30k demands more than 2:30 on tarmac.
 	for (const r of raceGoals.list) {
 		if (!r.distance_km || !r.goal_time_secs) continue
 		const m = r.distance_km * 1000
-		const v = vdotFromRace(m, r.goal_time_secs)
+		const terrain = r.terrain_factor ?? FLAT
+		const v = vdotForCourse(m, r.goal_time_secs, terrain)
 		if (v === null) continue
-		out.push({ key: `r:${r.id}`, name: r.name, distanceM: m, goalTimeSecs: r.goal_time_secs, date: r.date, neededVdot: v, kind: 'race' })
+		out.push({ key: `r:${r.id}`, name: r.name, distanceM: m, goalTimeSecs: r.goal_time_secs, date: r.date, neededVdot: v, terrainFactor: terrain, kind: 'race' })
 	}
 
 	return out

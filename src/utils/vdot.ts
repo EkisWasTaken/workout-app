@@ -116,6 +116,45 @@ export function racePaceSecPerKm(vdot: number, distanceM: number): number {
 	return Math.round((raceTimeFromVdot(vdot, distanceM) / distanceM) * 1000)
 }
 
+// ─── terrain ──────────────────────────────────────────────────────────────────
+
+/**
+ * VDOT assumes flat road. A course multiplier expresses how much slower a course
+ * runs than tarmac: 1.10 means a 10% slower finish for the same fitness.
+ */
+export const FLAT = 1.0
+
+export const TERRAIN_PRESETS = [
+	{ factor: 1.00, label: 'Flat road' },
+	{ factor: 1.05, label: 'Rolling' },
+	{ factor: 1.10, label: 'Hilly trail' },
+	{ factor: 1.20, label: 'Mountain / technical' },
+] as const
+
+const sane = (terrain: number | null | undefined) =>
+	typeof terrain === 'number' && terrain >= 0.8 && terrain <= 1.5 ? terrain : FLAT
+
+/**
+ * The VDOT a goal time demands on a given course.
+ *
+ * Running 2:30 over a hilly 30k is harder than 2:30 on the road, so we convert
+ * the goal into its flat-road equivalent (a faster time) before asking what
+ * fitness it needs.
+ */
+export function vdotForCourse(distanceM: number, goalTimeSecs: number, terrain?: number | null): number | null {
+	return vdotFromRace(distanceM, goalTimeSecs / sane(terrain))
+}
+
+/** What you'd actually finish that course in, at this fitness. */
+export function raceTimeOnCourse(vdot: number, distanceM: number, terrain?: number | null): number {
+	return Math.round(raceTimeFromVdot(vdot, distanceM) * sane(terrain))
+}
+
+/** Average pace on the course itself, seconds per km. */
+export function coursePaceSecPerKm(vdot: number, distanceM: number, terrain?: number | null): number {
+	return Math.round((raceTimeOnCourse(vdot, distanceM, terrain) / distanceM) * 1000)
+}
+
 /** Equivalent times at every canonical distance for a given VDOT. */
 export function equivalentTimes(vdot: number): Record<DistanceKey, number> {
 	return Object.fromEntries(

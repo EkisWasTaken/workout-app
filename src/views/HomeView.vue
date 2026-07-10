@@ -384,10 +384,12 @@
 		</template>
 
 		<!-- Race projection: the trend toward the goal race, then every distance goal -->
-		<template v-if="predictedHasData || racePredictor">
+		<template v-if="predictedHasData || predictedVsGoal.length">
 			<div class="section-head">
 				<h2>Race projection</h2>
-				<span class="section-note">Riegel<span v-if="racePredictor"> · from your {{ racePredictor.basedOn }}</span></span>
+				<span class="section-note">
+					from your current fitness<span v-if="currentFitness"> · VDOT {{ currentFitness.vdot }}</span>
+				</span>
 			</div>
 
 			<section v-if="predictedHasData" class="panel chart-card predicted-card">
@@ -402,10 +404,19 @@
 					</div>
 				</div>
 				<div class="chart-body"><canvas ref="predictedCanvas"></canvas></div>
-				<p class="vo2-note">Projected finish for {{ fmt(goalRaceKm) }} km from the fastest run in each trailing 4-week window. Give the race a distance and goal time in Profile to show the goal line.</p>
+				<p class="vo2-note">
+					Your best effort in the trailing 90 days, converted to a {{ fmt(goalRaceKm) }} km finish.
+					<template v-if="goalRaceTerrain !== 1">
+						Adjusted for {{ nextRace!.name }}'s course, which is set to run
+						<strong>{{ Math.round((goalRaceTerrain - 1) * 100) }}% slower</strong> than flat road.
+					</template>
+					<template v-else>
+						The course is treated as flat road — set a terrain factor in Profile if it isn't.
+					</template>
+				</p>
 			</section>
 
-			<section v-if="racePredictor" class="pr-grid predicted-grid">
+			<section v-if="predictedVsGoal.length" class="pr-grid predicted-grid">
 				<div v-for="d in predictedVsGoal" :key="d.key" class="pr-card">
 					<span class="pr-label"><n-icon :component="TrophyOutline" /> {{ d.label }}</span>
 					<span class="pr-value mono">{{ d.predicted }}</span>
@@ -563,9 +574,9 @@ import { getSportColor, isDistanceSport, noteSteps, SPORT_TYPES, SPORT_LABELS } 
 import { buildActivityIndex, effectiveWorkoutType, effectiveDistanceKm } from '@/utils/workoutSport'
 import { PULSE_ZONES, getHRSettings, timeInZones, estimateVO2max } from '@/utils/analysis'
 import { settings, targetForDate, distanceGoals, hydrateSettings } from '@/settings'
-import { currentVdot, currentFitness, vdotTrend, vdotSamples, fitnessLine, trackedTargets, setActivities } from '@/fitness'
+import { currentVdot, currentFitness, vdotTrend, vdotSamples, fitnessLine, trackedTargets, setActivities, setWorkouts } from '@/fitness'
 import { sessionPace } from '@/utils/paceAdvice'
-import { DISTANCES, DISTANCE_LABELS, type DistanceKey } from '@/utils/vdot'
+import { DISTANCES, DISTANCE_LABELS, equivalentTimes, raceTimeOnCourse, FLAT, type DistanceKey } from '@/utils/vdot'
 
 const workouts = ref<Workout[]>([])
 const dailyWeights = ref<DailyWeight[]>([])
@@ -676,7 +687,7 @@ const todayPace = (w: Workout) => sessionPace(w, {
 	currentVdot: currentVdot.value,
 	goalFor: (date: string) => {
 		const t = targetForDate(date)
-		return t ? { vdot: t.neededVdot, distanceM: t.distanceM, name: t.name } : null
+		return t ? { vdot: t.neededVdot, distanceM: t.distanceM, name: t.name, terrain: t.terrainFactor } : null
 	},
 })
 
@@ -968,54 +979,16 @@ const stravaRunPRs = computed(() => {
 	return Object.values(r).some(v => v !== null) ? r : null
 })
 
-const racePredictor = computed(() => {
-	const runs = stravaActivities.value.filter((a: any) => {
-		const st = (a.sport_type || a.type || '').toLowerCase()
-		return st === 'run' && a.distance >= 5000 && a.moving_time
-	})
-	if (runs.length < 2) return null
-	// Best-pace run as reference (faster = more fit → more reliable predictor)
-	const ref = runs.reduce((b: any, a: any) =>
-		a.moving_time / a.distance < b.moving_time / b.distance ? a : b
-	)
-	const riegel = (targetM: number) => Math.round(ref.moving_time * Math.pow(targetM / ref.distance, 1.06))
-	const dateStr = (ref.start_date_local || ref.start_date || '').slice(0, 10)
-	const dateLabel = dateStr ? format(parseISO(dateStr), 'd MMM yyyy') : ''
-	return {
-		secs: Object.fromEntries(
-			(Object.keys(DISTANCES) as DistanceKey[]).map(k => [k, riegel(DISTANCES[k])]),
-		) as Record<DistanceKey, number>,
-		basedOn: `${fmt(ref.distance / 1000)} km on ${dateLabel}`,
-	}
-})
-
 /**
- * Where each standing distance goal sits against what your current fitness
- * predicts. This is the "am I on track" answer, per distance.
+ * Race projection, from the VDOT model — the same number that drives your paces
+ * and the goal tracker.
+ *
+ * This used to Riegel-extrapolate the fastest run in a trailing 4-week window.
+ * After a block of base training that reference run is an *easy* run, so the
+ * projection read ~23 minutes slower than the fitness model for the same athlete.
+ * Riegel also uses a fixed 1.06 exponent, where VDOT models the duration you can
+ * actually hold a given %VO₂max for. One estimator now, not three.
  */
-const predictedVsGoal = computed(() => {
-	const rp = racePredictor.value
-	if (!rp) return []
-	return (Object.keys(DISTANCES) as DistanceKey[]).map(key => {
-		const predicted = rp.secs[key]
-		const goal = distanceGoals[DISTANCES[key]]?.secs ?? null
-		const delta = goal !== null ? predicted - goal : null
-		return {
-			key,
-			label: DISTANCE_LABELS[key],
-			predicted: fmtTime(predicted),
-			goal: goal !== null ? fmtTime(goal) : null,
-			ahead: delta !== null && delta <= 0,
-			deltaLabel: delta === null
-				? null
-				: delta <= 0
-					? `${fmtTime(Math.abs(delta))} ahead of goal`
-					: `${fmtTime(delta)} to find`,
-		}
-	})
-})
-
-// ===== Predicted race time vs goal (Runna-style progress) =====
 
 /** Last-resort distance when a race record has none: read it out of the name. */
 function parseRaceKm(name: string): number | null {
@@ -1033,40 +1006,51 @@ const goalRaceKm = computed(() => {
 	return inferred || (race ? 30 : 10)
 })
 const goalRaceSecs = computed(() => nextRace.value?.goal_time_secs ?? null)
+/** Courses are flat unless the race says otherwise. */
+const goalRaceTerrain = computed(() => nextRace.value?.terrain_factor ?? FLAT)
 
-// Recorded runs (imported activities + manually-completed runs) as {date, distM, timeSec}.
-const runSamples = computed(() => {
-	const out: { date: Date; distM: number; timeSec: number }[] = []
-	for (const a of stravaActivities.value) {
-		const st = (a.sport_type || a.type || '').toLowerCase()
-		if (st === 'run' && a.distance && a.moving_time)
-			out.push({ date: new Date(a.start_date_local || a.start_date), distM: a.distance, timeSec: a.moving_time })
-	}
-	for (const w of completed.value) {
-		const km = workoutKm(w)
-		if (getWorkoutType(w) === 'running' && km && w.actualDuration)
-			out.push({ date: parseISO(w.date), distM: km * 1000, timeSec: w.actualDuration * 60 })
-	}
-	return out
+/** What you'd finish the next race in today, on its actual course. */
+const predictedCurrent = computed(() => {
+	if (currentVdot.value === null) return null
+	return raceTimeOnCourse(currentVdot.value, goalRaceKm.value * 1000, goalRaceTerrain.value)
 })
 
-const predictedTimeSeries = computed(() => {
-	const targetM = goalRaceKm.value * 1000
-	return weekBuckets(12).map(wk => {
-		const winStart = subWeeks(wk.end, 4)
-		const win = runSamples.value.filter(s => s.date > winStart && s.date <= wk.end && s.distM >= 3000)
-		if (!win.length) return { label: wk.label, secs: null as number | null }
-		const ref = win.reduce((b, a) => (a.timeSec / a.distM) < (b.timeSec / b.distM) ? a : b)
-		return { label: wk.label, secs: Math.round(ref.timeSec * Math.pow(targetM / ref.distM, 1.06)) }
+const predictedDelta = computed(() =>
+	predictedCurrent.value !== null && goalRaceSecs.value !== null
+		? predictedCurrent.value - goalRaceSecs.value
+		: null)
+
+/** The same projection back through time, following the fitness line. */
+const predictedTimeSeries = computed(() =>
+	fitnessLine.value.map(p => ({
+		label: format(parseISO(p.date), 'd/M'),
+		secs: raceTimeOnCourse(p.vdot, goalRaceKm.value * 1000, goalRaceTerrain.value),
+	})))
+
+const predictedHasData = computed(() => predictedTimeSeries.value.length >= 2)
+
+/** Equivalent race times at current fitness, against each standing distance goal. */
+const predictedVsGoal = computed(() => {
+	if (currentVdot.value === null) return []
+	const equiv = equivalentTimes(currentVdot.value)
+	return (Object.keys(DISTANCES) as DistanceKey[]).map(key => {
+		const predicted = equiv[key]
+		const goal = distanceGoals[DISTANCES[key]]?.secs ?? null
+		const delta = goal !== null ? predicted - goal : null
+		return {
+			key,
+			label: DISTANCE_LABELS[key],
+			predicted: fmtTime(predicted),
+			goal: goal !== null ? fmtTime(goal) : null,
+			ahead: delta !== null && delta <= 0,
+			deltaLabel: delta === null
+				? null
+				: delta <= 0
+					? `${fmtTime(Math.abs(delta))} ahead of goal`
+					: `${fmtTime(delta)} to find`,
+		}
 	})
 })
-const predictedHasData = computed(() => predictedTimeSeries.value.filter(p => p.secs !== null).length >= 2)
-const predictedCurrent = computed(() => {
-	const v = [...predictedTimeSeries.value].reverse().find(p => p.secs !== null)
-	return v ? v.secs : null
-})
-const predictedDelta = computed(() =>
-	predictedCurrent.value !== null && goalRaceSecs.value !== null ? predictedCurrent.value - goalRaceSecs.value : null)
 
 function buildPredicted() {
 	if (!predictedCanvas.value || !predictedHasData.value) return
@@ -1590,6 +1574,7 @@ async function load() {
 	await hydrateSettings()
 	const [w, dw, rg] = await Promise.all([db.getWorkouts(), db.getDailyWeights(), db.getRaceGoals()])
 	workouts.value = w
+	setWorkouts(w) // completing a session here must move VDOT too
 	dailyWeights.value = dw
 	raceGoals.value = rg
 	// Imported FIT/GPX activities merged with Strava (when still connected)

@@ -96,6 +96,39 @@ export function effortVdotSamples(activities: any[]): VdotSample[] {
 	return out.sort((a, b) => a.date.localeCompare(b.date))
 }
 
+/** A run you typed in by hand: distance and duration, no recording behind it. */
+export interface LoggedRun {
+	date: string
+	name: string
+	distanceKm: number
+	minutes: number
+}
+
+/**
+ * VDOT samples from hand-logged runs — the ones with no FIT file behind them.
+ *
+ * These read lower than a recording of the same run: a recording surfaces the
+ * best hard stretch *inside* the run, while a logged run only knows its overall
+ * average. Since `currentVdot` takes a maximum, that asymmetry is safe — a
+ * logged run only moves the number when it was genuinely fast.
+ *
+ * The caller must exclude runs that have a recording, or the same run counts twice.
+ */
+export function loggedRunVdotSamples(runs: LoggedRun[]): VdotSample[] {
+	const out: VdotSample[] = []
+	for (const r of runs) {
+		if (!(r.distanceKm > 0) || !(r.minutes > 0)) continue
+		const metres = r.distanceKm * 1000
+		if (metres < MIN_EFFORT_M) continue
+		// vdotFromRace rejects impossible speeds, which is what catches the
+		// mistyped rows (a "20 min threshold" carrying 31 km).
+		const v = vdotFromRace(metres, r.minutes * 60)
+		if (v === null) continue
+		out.push({ date: iso(r.date), vdot: v, source: 'effort', label: `${r.name} (logged)` })
+	}
+	return out.sort((a, b) => a.date.localeCompare(b.date))
+}
+
 /**
  * Your current VDOT. `override` wins outright; otherwise the best recent race,
  * then the best recent training effort. Null when there's nothing to go on.

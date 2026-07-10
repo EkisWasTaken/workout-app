@@ -2,35 +2,52 @@
  * Reactive current-fitness store.
  *
  * Both the schedule (for pace advice) and Home (for goal tracking) need to know
- * what VDOT you can actually race today. Fetch the activities once, here.
+ * what VDOT you can actually race today. Everything downstream is computed, so
+ * the moment a workout is completed or a file imported, call `refreshFitness()`
+ * and every pace, projection and goal verdict re-derives.
  */
 import { ref, computed } from 'vue'
 import { activityApi } from './activities'
+import { db } from './db'
 import { settings, raceGoals, targets } from './settings'
 import {
-	raceVdotSamples, effortVdotSamples, currentVdot as computeCurrentVdot,
+	raceVdotSamples, effortVdotSamples, loggedRunVdotSamples,
+	currentVdot as computeCurrentVdot,
 	vdotTrendPerMonth, rollingBestSeries, goalProgress, type GoalProgress,
 } from './utils/fitness'
-import type { Target } from './types'
+import { buildActivityIndex, resolveActivity } from './utils/workoutSport'
+import { getWorkoutType } from './utils/workouts'
+import type { Target, Workout } from './types'
 
 const activities = ref<any[]>([])
+const workouts = ref<Workout[]>([])
 export const fitnessLoaded = ref(false)
 
-let hydrating: Promise<void> | null = null
+let inflight: Promise<void> | null = null
 
-/** Idempotent, and concurrent callers share one fetch. */
+async function fetchAll(): Promise<void> {
+	const [acts, ws] = await Promise.all([
+		activityApi.getAllActivities().catch(e => { console.warn('[fitness] no activity data', e); return [] }),
+		db.getWorkouts().catch(e => { console.warn('[fitness] no workout data', e); return [] as Workout[] }),
+	])
+	activities.value = acts
+	workouts.value = ws
+	fitnessLoaded.value = true
+}
+
+/** Idempotent: concurrent callers share one fetch, repeat callers get the cache. */
 export function hydrateFitness(): Promise<void> {
-	if (hydrating) return hydrating
-	hydrating = (async () => {
-		try {
-			activities.value = await activityApi.getAllActivities()
-		} catch (e) {
-			console.warn('[fitness] no activity data', e)
-		} finally {
-			fitnessLoaded.value = true
-		}
-	})()
-	return hydrating
+	return (inflight ??= fetchAll())
+}
+
+/**
+ * Re-read everything. Call after completing a workout, importing a FIT file, or
+ * editing a session — otherwise VDOT keeps reporting the fitness you had at page
+ * load, which is exactly what it used to do.
+ */
+export function refreshFitness(): Promise<void> {
+	inflight = fetchAll()
+	return inflight
 }
 
 /** Let a view that already fetched activities share them rather than refetch. */
@@ -39,8 +56,31 @@ export function setActivities(acts: any[]) {
 	fitnessLoaded.value = true
 }
 
+/** Same, for the workout list. */
+export function setWorkouts(ws: Workout[]) {
+	workouts.value = ws
+}
+
 const raceSamples = computed(() => raceVdotSamples(raceGoals.list))
-const effortSamples = computed(() => effortVdotSamples(activities.value))
+
+const activitySamples = computed(() => effortVdotSamples(activities.value))
+
+/**
+ * Hand-logged runs, excluding any that have a recording — the recording already
+ * contributed a (better) sample for that run, and counting both would double it.
+ */
+const loggedSamples = computed(() => {
+	const index = buildActivityIndex(activities.value)
+	const runs = workouts.value
+		.filter(w => w.isCompleted === 1 && getWorkoutType(w) === 'running')
+		.filter(w => !resolveActivity(w, index))
+		.filter(w => w.distance && w.actualDuration)
+		.map(w => ({ date: w.date, name: w.name, distanceKm: w.distance!, minutes: w.actualDuration! }))
+	return loggedRunVdotSamples(runs)
+})
+
+const effortSamples = computed(() =>
+	[...activitySamples.value, ...loggedSamples.value].sort((a, b) => a.date.localeCompare(b.date)))
 
 /** Every VDOT reading we have, oldest first — races and training efforts. */
 export const vdotSamples = computed(() =>

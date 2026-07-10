@@ -20,7 +20,7 @@ const isMissingColumn = (error: { code?: string } | null) => error?.code === '42
  * Flipped to false the first time a v2 column comes back missing, so reads fall
  * back and v2-only writes fail loudly instead of silently dropping data.
  */
-export const schema = { v2: true }
+export const schema = { v2: true, v3: true }
 
 export const db = {
   // PROFILE (single row, id = 1)
@@ -112,6 +112,8 @@ export const db = {
       .select('*')
       .order('date', { ascending: true })
     if (error) throw error
+    // select('*') hides a missing column, so probe for it rather than guess.
+    if (data?.length && !('terrain_factor' in data[0])) schema.v3 = false
     return data as RaceGoal[]
   },
 
@@ -120,6 +122,8 @@ export const db = {
     // Dropping the result silently would look like it saved.
     if (!schema.v2 && updates.result_time_secs != null) throw new Error(MISSING_GOALS_COLUMNS)
     if (!schema.v2) delete (updates as Record<string, unknown>).result_time_secs
+    if (!schema.v3 && updates.terrain_factor != null) throw new Error(MISSING_GOALS_COLUMNS)
+    if (!schema.v3) delete (updates as Record<string, unknown>).terrain_factor
 
     const { error } = await supabase
       .from('race_goals')
