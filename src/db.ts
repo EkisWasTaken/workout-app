@@ -3,6 +3,8 @@ import type { Workout, DailyWeight, WorkoutTemplate, WorkoutTemplateExercise, Ex
 
 /** Thrown when supabase_goals.sql hasn't been run yet. */
 export const MISSING_GOALS_TABLES = 'MISSING_GOALS_TABLES'
+/** Thrown when supabase_goals_v2.sql hasn't been run yet. */
+export const MISSING_GOALS_COLUMNS = 'MISSING_GOALS_COLUMNS'
 
 /**
  * A table that doesn't exist. PostgREST answers PGRST205 ("not found in the
@@ -11,50 +13,86 @@ export const MISSING_GOALS_TABLES = 'MISSING_GOALS_TABLES'
 const isMissingTable = (error: { code?: string } | null) =>
   error?.code === 'PGRST205' || error?.code === '42P01'
 
+/** 42703 = undefined_column: the v1 tables exist but v2 hasn't been applied. */
+const isMissingColumn = (error: { code?: string } | null) => error?.code === '42703'
+
+/**
+ * Flipped to false the first time a v2 column comes back missing, so reads fall
+ * back and v2-only writes fail loudly instead of silently dropping data.
+ */
+export const schema = { v2: true }
+
 export const db = {
   // PROFILE (single row, id = 1)
   getProfile: async (): Promise<Profile | null> => {
-    const { data, error } = await supabase
+    const full = await supabase
+      .from('profile')
+      .select('user_name, goal_weight, resting_hr, max_hr, vdot_override')
+      .eq('id', 1)
+      .maybeSingle()
+
+    if (!full.error) return full.data as Profile | null
+    if (isMissingTable(full.error)) throw new Error(MISSING_GOALS_TABLES)
+    if (!isMissingColumn(full.error)) throw full.error
+
+    // v2 not applied yet: read what exists so the rest of Profile still works.
+    schema.v2 = false
+    const base = await supabase
       .from('profile')
       .select('user_name, goal_weight, resting_hr, max_hr')
       .eq('id', 1)
       .maybeSingle()
-    if (error) {
-      if (isMissingTable(error)) throw new Error(MISSING_GOALS_TABLES)
-      throw error
-    }
-    return data as Profile | null
+    if (base.error) throw base.error
+    return base.data ? ({ ...base.data, vdot_override: null } as Profile) : null
   },
 
   saveProfile: async (profile: Partial<Profile>): Promise<void> => {
-    const { error } = await supabase
-      .from('profile')
-      .upsert([{ id: 1, ...profile, updated_at: new Date().toISOString() }])
+    const row: Record<string, unknown> = { id: 1, ...profile, updated_at: new Date().toISOString() }
+    if (!schema.v2) delete row.vdot_override
+
+    const { error } = await supabase.from('profile').upsert([row])
     if (error) {
       if (isMissingTable(error)) throw new Error(MISSING_GOALS_TABLES)
+      if (isMissingColumn(error)) throw new Error(MISSING_GOALS_COLUMNS)
       throw error
     }
   },
 
   // DISTANCE GOALS (5k / 10k / half / marathon)
   getDistanceGoals: async (): Promise<DistanceGoal[]> => {
-    const { data, error } = await supabase
+    const full = await supabase
+      .from('distance_goals')
+      .select('distance_m, goal_time_secs, target_date')
+      .order('distance_m', { ascending: true })
+
+    if (!full.error) return full.data as DistanceGoal[]
+    if (isMissingTable(full.error)) throw new Error(MISSING_GOALS_TABLES)
+    if (!isMissingColumn(full.error)) throw full.error
+
+    schema.v2 = false
+    const base = await supabase
       .from('distance_goals')
       .select('distance_m, goal_time_secs')
       .order('distance_m', { ascending: true })
-    if (error) {
-      if (isMissingTable(error)) throw new Error(MISSING_GOALS_TABLES)
-      throw error
-    }
-    return data as DistanceGoal[]
+    if (base.error) throw base.error
+    return (base.data ?? []).map(g => ({ ...g, target_date: null })) as DistanceGoal[]
   },
 
-  setDistanceGoal: async (distance_m: number, goal_time_secs: number): Promise<void> => {
-    const { error } = await supabase
-      .from('distance_goals')
-      .upsert([{ distance_m, goal_time_secs, updated_at: new Date().toISOString() }])
+  setDistanceGoal: async (goal: DistanceGoal): Promise<void> => {
+    // Silently dropping the date would look like a successful save.
+    if (!schema.v2 && goal.target_date) throw new Error(MISSING_GOALS_COLUMNS)
+
+    const row: Record<string, unknown> = {
+      distance_m: goal.distance_m,
+      goal_time_secs: goal.goal_time_secs,
+      updated_at: new Date().toISOString(),
+    }
+    if (schema.v2) row.target_date = goal.target_date ?? null
+
+    const { error } = await supabase.from('distance_goals').upsert([row])
     if (error) {
       if (isMissingTable(error)) throw new Error(MISSING_GOALS_TABLES)
+      if (isMissingColumn(error)) throw new Error(MISSING_GOALS_COLUMNS)
       throw error
     }
   },
@@ -79,11 +117,18 @@ export const db = {
 
   updateRaceGoal: async (goal: RaceGoal): Promise<void> => {
     const { id, ...updates } = goal
+    // Dropping the result silently would look like it saved.
+    if (!schema.v2 && updates.result_time_secs != null) throw new Error(MISSING_GOALS_COLUMNS)
+    if (!schema.v2) delete (updates as Record<string, unknown>).result_time_secs
+
     const { error } = await supabase
       .from('race_goals')
       .update(updates)
       .eq('id', id)
-    if (error) throw error
+    if (error) {
+      if (isMissingColumn(error)) throw new Error(MISSING_GOALS_COLUMNS)
+      throw error
+    }
   },
 
   addRaceGoal: async (raceGoal: AddRaceGoalPayload): Promise<number> => {

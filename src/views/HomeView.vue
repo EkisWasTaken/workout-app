@@ -178,6 +178,73 @@
 		</template>
 
 		<template v-if="tab === 'goals'">
+		<!-- Goal tracker: needed VDOT vs current, and whether the trend gets there in time -->
+		<template v-if="currentFitness">
+			<div class="section-head">
+				<h2>Goal tracker</h2>
+				<span class="section-note">
+					current VDOT {{ currentFitness.vdot }} · {{ fitnessSourceLabel }}
+				</span>
+			</div>
+
+			<section v-if="trackedTargets.length" class="goal-grid">
+				<div v-for="t in trackedTargets" :key="t.key" class="panel goal-card"
+					:class="{ aspirational: t.date === null, reached: t.progress.gap <= 0 }">
+					<div class="gc-head">
+						<span class="gc-name">{{ t.name }}</span>
+						<span v-if="t.date === null" class="gc-when muted">someday</span>
+						<span v-else-if="t.progress.daysOut !== null && t.progress.daysOut >= 0" class="gc-when">
+							{{ t.progress.daysOut }} days
+						</span>
+						<span v-else class="gc-when muted">past</span>
+					</div>
+
+					<div class="gc-target mono">{{ fmtTime(t.goalTimeSecs) }}</div>
+
+					<div class="gc-bar">
+						<div class="gc-bar-fill" :style="{ width: goalBarPct(t) + '%' }"></div>
+						<div class="gc-bar-goal"></div>
+					</div>
+					<div class="gc-vdots">
+						<span>you {{ t.progress.currentVdot }}</span>
+						<span>needs {{ t.neededVdot }}</span>
+					</div>
+
+					<p v-if="t.progress.gap <= 0" class="gc-verdict good">
+						Already there — {{ Math.abs(t.progress.gap) }} VDOT to spare.
+					</p>
+					<p v-else-if="t.progress.onTrack === true" class="gc-verdict good">
+						On track. Trend projects VDOT {{ t.progress.projectedVdot }} by then.
+					</p>
+					<p v-else-if="t.progress.onTrack === false" class="gc-verdict off">
+						Behind. Trend arrives at {{ t.progress.projectedVdot }} —
+						{{ t.progress.projectedShortfall }} VDOT short.
+					</p>
+					<p v-else class="gc-verdict muted">
+						Needs {{ t.progress.gap }} more VDOT.
+						<template v-if="t.progress.noProjectionReason === 'undated'">Give it a date to track a trend.</template>
+						<template v-else-if="t.progress.noProjectionReason === 'too-far'">Too far out to project — check back within six months.</template>
+						<template v-else-if="t.progress.noProjectionReason === 'past'">That date has passed.</template>
+						<template v-else>Not enough VDOT history to project a trend yet.</template>
+					</p>
+				</div>
+			</section>
+
+			<section v-else class="panel form-calibrating">
+				<p>No goals set yet. <router-link to="/profile" class="text-link">Add a goal time →</router-link></p>
+			</section>
+
+			<p class="vo2-note goal-foot">
+				<span v-if="vdotTrend !== null">
+					Trend: {{ vdotTrend > 0 ? '+' : '' }}{{ vdotTrend }} VDOT per month over the last 12 weeks.
+				</span>
+				<span v-else>Not enough VDOT history to measure a trend yet.</span>
+				<span v-if="currentFitness.stale" class="warn-note">
+					Your newest reading is from {{ currentFitness.date }} — it may be out of date.
+				</span>
+			</p>
+		</template>
+
 		<!-- Not enough history for CTL/ATL to mean anything yet -->
 		<template v-if="formCalibrating">
 			<div class="section-head"><h2>Fitness &amp; freshness</h2><span class="section-note">calibrating</span></div>
@@ -519,7 +586,8 @@ import { activityApi } from '@/activities'
 import type { Workout, DailyWeight, RaceGoal } from '@/types'
 import { getWorkoutType, getSportColor, isDistanceSport, noteSteps, SPORT_TYPES, SPORT_LABELS } from '@/utils/workouts'
 import { PULSE_ZONES, getHRSettings, timeInZones, estimateVO2max, relativeEffort, fitnessSeries } from '@/utils/analysis'
-import { settings, goalVdot, distanceGoals, hydrateSettings } from '@/settings'
+import { settings, activeGoalVdot, activeTarget, distanceGoals, hydrateSettings } from '@/settings'
+import { currentVdot, currentFitness, vdotTrend, trackedTargets, setActivities } from '@/fitness'
 import { derivedPaceFor } from '@/utils/paceAdvice'
 import { DISTANCES, DISTANCE_LABELS, type DistanceKey } from '@/utils/vdot'
 
@@ -617,11 +685,34 @@ async function completeToday(w: Workout) {
 	}
 }
 
-/** Goal-implied pace for a session, when it drifts from the written one. */
-const todayDerivedPace = (w: Workout) =>
-	derivedPaceFor(w, goalVdot.value, nextRace.value?.distance_km ?? null)
+/** Implied pace for a session, when it drifts from the written one. */
+const todayDerivedPace = (w: Workout) => derivedPaceFor(w, {
+	currentVdot: currentVdot.value,
+	goalVdot: activeGoalVdot.value,
+	goalDistanceM: activeTarget.value?.distanceM ?? null,
+})
 
 const sessionSteps = (w: Workout) => noteSteps(w)
+
+// ===== Goal tracker =====
+const fitnessSourceLabel = computed(() => {
+	const f = currentFitness.value
+	if (!f) return ''
+	if (f.source === 'override') return 'set manually'
+	if (f.source === 'race') return `from ${f.label}`
+	return `from ${f.label}${f.stale ? ' (stale)' : ''}`
+})
+
+/**
+ * How far along the gap you are, as a bar. Anchored 6 VDOT below the target so
+ * a goal you're miles off still shows movement rather than a flat zero.
+ */
+const GOAL_BAR_SPAN = 6
+function goalBarPct(t: { neededVdot: number; progress: { currentVdot: number } }) {
+	const floor = t.neededVdot - GOAL_BAR_SPAN
+	const pct = ((t.progress.currentVdot - floor) / GOAL_BAR_SPAN) * 100
+	return Math.max(2, Math.min(100, Math.round(pct)))
+}
 
 // ===== Fitness & Freshness (CTL / ATL / TSB) =====
 
@@ -991,7 +1082,7 @@ const predictedVsGoal = computed(() => {
 	if (!rp) return []
 	return (Object.keys(DISTANCES) as DistanceKey[]).map(key => {
 		const predicted = rp.secs[key]
-		const goal = distanceGoals[DISTANCES[key]] ?? null
+		const goal = distanceGoals[DISTANCES[key]]?.secs ?? null
 		const delta = goal !== null ? predicted - goal : null
 		return {
 			key,
@@ -1541,6 +1632,7 @@ async function load() {
 	// Imported FIT/GPX activities merged with Strava (when still connected)
 	try {
 		stravaActivities.value = await activityApi.getAllActivities()
+		setActivities(stravaActivities.value) // share the fetch with the fitness store
 	} catch {
 		// No activity data — HR-based sections stay hidden
 	}
@@ -1629,6 +1721,27 @@ onUnmounted(destroyCharts)
 .form-foot { display: flex; flex-direction: column; gap: 2px; }
 .race-ready strong { color: var(--text-color); }
 .warn-note { color: var(--warning-color) !important; }
+
+/* Goal tracker */
+.goal-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px; }
+.goal-card { padding: 14px 16px; display: flex; flex-direction: column; gap: 8px; }
+.goal-card.aspirational { border-style: dashed; }
+.goal-card.reached { border-color: color-mix(in srgb, var(--success-color) 45%, transparent); }
+.gc-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.gc-name { font-weight: 600; font-size: 0.92rem; color: var(--text-color); }
+.gc-when { font-size: 0.72rem; color: var(--text-secondary); white-space: nowrap; }
+.gc-when.muted { color: var(--text-muted); }
+.gc-target { font-size: 1.35rem; font-weight: 700; color: var(--text-color); line-height: 1; }
+.gc-bar { position: relative; height: 6px; background: var(--surface-2); border-radius: 999px; overflow: hidden; }
+.gc-bar-fill { height: 100%; background: var(--primary-color); border-radius: 999px; transition: width 0.3s ease; }
+.goal-card.reached .gc-bar-fill { background: var(--success-color); }
+.gc-vdots { display: flex; justify-content: space-between; font-size: 0.68rem; color: var(--text-muted); }
+.gc-verdict { margin: 2px 0 0; font-size: 0.78rem; line-height: 1.45; }
+.gc-verdict.good { color: var(--success-color); }
+.gc-verdict.off { color: var(--warning-color); }
+.gc-verdict.muted { color: var(--text-muted); }
+.goal-foot { display: flex; flex-direction: column; gap: 2px; margin-top: 10px; }
+
 .form-calibrating { padding: 16px 18px; }
 .form-calibrating p { margin: 0 0 6px; font-size: 0.86rem; color: var(--text-secondary); line-height: 1.55; }
 .form-calibrating strong { color: var(--text-color); }

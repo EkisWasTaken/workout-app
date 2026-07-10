@@ -1,11 +1,21 @@
 /**
- * Comparing the pace written on a planned session against the pace your goal
- * implies. The written pace is always authoritative — this only surfaces drift.
+ * Pace advice for a planned session.
+ *
+ * Two different VDOTs feed this, and conflating them is the whole trap:
+ *
+ *   Easy, recovery, threshold, VO₂, reps  →  your CURRENT fitness.
+ *     These are the paces your body can absorb today. Prescribing them from an
+ *     ambitious goal turns easy days into tempos.
+ *
+ *   Race-pace sessions                    →  the ACTIVE GOAL's VDOT.
+ *     Rehearsing goal pace is the entire point of a race-pace workout.
+ *
+ * The pace written on the session always wins. This only surfaces drift.
  */
 import type { Workout } from '@/types'
 import {
 	paceTable, paceMid, matchZone, parsePaceValue, racePaceSecPerKm,
-	fmtPace, fmtPaceRange,
+	fmtPace, fmtPaceRange, type ZoneKey,
 } from './vdot'
 
 /** Below this, the two paces agree closely enough to be worth staying quiet about. */
@@ -20,28 +30,35 @@ export function paceParts(workout: Workout): { zone: string; value: string } | n
 	return { zone: 'Target', value: raw }
 }
 
+/** A race-pace session rehearses the goal; every other zone trains current fitness. */
+export function isRacePaceZone(zoneLabel: string, key: ZoneKey): boolean {
+	return key === 'marathon' && /race pace/i.test(zoneLabel)
+}
+
 export interface DerivedPace {
-	/** The goal-implied pace, formatted — a range, or a single value for race pace. */
+	/** The implied pace, formatted — a range, or a single value for race pace. */
 	label: string
 	/** Seconds per km the derived pace is slower (+) or faster (−) than the written one. */
 	delta: number
+	/** Which VDOT this came from, so the tooltip can say why. */
+	basis: 'current' | 'goal'
+}
+
+export interface PaceSources {
+	/** VDOT you can race today. Drives every training zone. */
+	currentVdot: number | null
+	/** VDOT of the target you're training for. Drives race-pace sessions only. */
+	goalVdot: number | null
+	/** Distance of that target, metres — so "30k race pace" resolves properly. */
+	goalDistanceM: number | null
 }
 
 /**
- * The pace `goalVdot` implies for this session's zone, when it differs from the
- * written pace by at least PACE_DRIFT_THRESHOLD_S. Null when there's no goal, no
- * recognisable zone, no parseable written pace, or the two already agree.
- *
- * `raceKm` lets "30k race pace" resolve against the actual goal race rather than
- * falling back to the generic marathon zone.
+ * The pace this session's zone implies, when it differs from the written pace by
+ * at least PACE_DRIFT_THRESHOLD_S. Null when there's no basis, no recognisable
+ * zone, no parseable written pace, or the two already agree.
  */
-export function derivedPaceFor(
-	workout: Workout,
-	goalVdot: number | null,
-	raceKm: number | null,
-): DerivedPace | null {
-	if (goalVdot === null) return null
-
+export function derivedPaceFor(workout: Workout, sources: PaceSources): DerivedPace | null {
 	const parts = paceParts(workout)
 	if (!parts) return null
 
@@ -51,19 +68,23 @@ export function derivedPaceFor(
 	const written = parsePaceValue(parts.value)
 	if (written === null) return null
 
-	const isRacePace = key === 'marathon' && /race pace/i.test(parts.zone) && raceKm !== null
+	const racePace = isRacePaceZone(parts.zone, key)
+	const basis: 'current' | 'goal' = racePace ? 'goal' : 'current'
+	const vdot = racePace ? sources.goalVdot : sources.currentVdot
+	if (vdot === null) return null
+
 	let derivedMid: number
 	let label: string
 
-	if (isRacePace) {
-		derivedMid = racePaceSecPerKm(goalVdot, raceKm! * 1000)
+	if (racePace && sources.goalDistanceM) {
+		derivedMid = racePaceSecPerKm(vdot, sources.goalDistanceM)
 		label = fmtPace(derivedMid)
 	} else {
-		const zone = paceTable(goalVdot).find(z => z.key === key)!
+		const zone = paceTable(vdot).find(z => z.key === key)!
 		derivedMid = paceMid(zone)
 		label = fmtPaceRange(zone)
 	}
 
 	const delta = derivedMid - written
-	return Math.abs(delta) >= PACE_DRIFT_THRESHOLD_S ? { label, delta } : null
+	return Math.abs(delta) >= PACE_DRIFT_THRESHOLD_S ? { label, delta, basis } : null
 }

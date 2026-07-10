@@ -55,8 +55,9 @@
                     <span v-if="w.distance" class="wv-pill">{{ w.distance }} km</span>
                     <span v-if="w.duration" class="wv-pill">{{ w.duration }} min</span>
                     <span v-if="paceParts(w)" class="wv-pill wv-pill-pace">{{ paceParts(w)?.zone }} · {{ paceParts(w)?.value }}/km</span>
-                    <span v-if="derivedPace(w)" class="wv-pill wv-pill-derived" :title="derivedTitle(w)">
-                      goal {{ derivedPace(w)!.label }}/km
+                    <span v-if="derivedPace(w)" class="wv-pill wv-pill-derived"
+                      :class="'basis-' + derivedPace(w)!.basis" :title="derivedTitle(w)">
+                      {{ derivedPace(w)!.basis === 'goal' ? 'goal' : 'fitness' }} {{ derivedPace(w)!.label }}/km
                     </span>
                     <span v-if="w.gymType" class="wv-pill">{{ w.gymType }}</span>
                   </div>
@@ -191,7 +192,7 @@
               <div v-if="derivedPace(selectedWorkout)" class="rn-stat rn-stat-derived" :title="derivedTitle(selectedWorkout)">
                 <span class="rn-val"><span class="rn-num">{{ derivedPace(selectedWorkout)!.label }}</span><span class="rn-unit">/km</span></span>
                 <span class="rn-lbl">
-                  Goal pace
+                  {{ derivedPace(selectedWorkout)!.basis === 'goal' ? 'Goal pace' : 'Fitness pace' }}
                   <span class="rn-delta" :class="derivedPace(selectedWorkout)!.delta < 0 ? 'faster' : 'slower'">
                     {{ derivedPace(selectedWorkout)!.delta > 0 ? '+' : '' }}{{ derivedPace(selectedWorkout)!.delta }}s
                   </span>
@@ -394,7 +395,8 @@ import ImportEditor from '../components/ImportEditor.vue';
 import ImportActivitiesModal from '../components/ImportActivitiesModal.vue';
 import { activityApi } from '../activities';
 import { parseActivityFile } from '@/import/parseActivityFile';
-import { goalVdot, nextRace as goalNextRace } from '@/settings';
+import { activeGoalVdot, activeTarget, hydrateSettings } from '@/settings';
+import { currentVdot, hydrateFitness } from '@/fitness';
 import { paceParts, derivedPaceFor, type DerivedPace } from '@/utils/paceAdvice';
 import { noteSteps } from '@/utils/workouts';
 
@@ -918,11 +920,16 @@ const hasStats = (w: Workout) => !!(w.distance || w.duration || w.targetPace || 
  * Memoised so the template can call derivedPace() per session without
  * recomputing a pace table for every chip on every render.
  */
+const paceSources = computed(() => ({
+  currentVdot: currentVdot.value,
+  goalVdot: activeGoalVdot.value,
+  goalDistanceM: activeTarget.value?.distanceM ?? null,
+}));
+
 const derivedPaces = computed(() => {
   const out = new Map<number, DerivedPace>();
-  const raceKm = goalNextRace.value?.distance_km ?? null;
   for (const w of workouts.value) {
-    const d = derivedPaceFor(w, goalVdot.value, raceKm);
+    const d = derivedPaceFor(w, paceSources.value);
     if (d) out.set(w.id, d);
   }
   return out;
@@ -934,7 +941,10 @@ const derivedTitle = (w: Workout) => {
   const d = derivedPace(w);
   if (!d) return '';
   const dir = d.delta > 0 ? 'slower' : 'faster';
-  return `Your goal (VDOT ${goalVdot.value}) implies ${d.label}/km — ${Math.abs(d.delta)} s/km ${dir} than the pace on this session.`;
+  const from = d.basis === 'goal'
+    ? `${activeTarget.value?.name} goal pace (VDOT ${activeGoalVdot.value})`
+    : `your current fitness (VDOT ${currentVdot.value})`;
+  return `${from} implies ${d.label}/km — ${Math.abs(d.delta)} s/km ${dir} than the pace on this session.`;
 };
 
 const workoutsByDate = computed(() => {
@@ -975,8 +985,13 @@ async function loadRaceGoals() {
 async function loadWorkouts() { workouts.value = await db.getWorkouts(); }
 async function loadDailyWeights() { dailyWeights.value = await db.getDailyWeights(); }
 
-onMounted(() => { loadWorkouts(); loadDailyWeights(); loadRaceGoals(); });
-onActivated(() => { loadWorkouts(); loadDailyWeights(); loadRaceGoals(); });
+// Pace advice needs both the active goal (settings) and current fitness.
+const loadAll = () => {
+  loadWorkouts(); loadDailyWeights(); loadRaceGoals();
+  hydrateSettings(); hydrateFitness();
+};
+onMounted(loadAll);
+onActivated(loadAll);
 
 </script>
 
@@ -1052,8 +1067,10 @@ onActivated(() => { loadWorkouts(); loadDailyWeights(); loadRaceGoals(); });
 .wv-pills { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 7px; }
 .wv-pill { font-size: 0.74rem; font-weight: 500; color: var(--text-secondary); background: var(--surface-2); border: 1px solid var(--border-color); padding: 2px 9px; border-radius: 999px; }
 .wv-pill-pace { color: var(--tag-color); border-color: color-mix(in srgb, var(--tag-color) 40%, transparent); background: color-mix(in srgb, var(--tag-color) 10%, transparent); font-family: var(--font-mono); }
-/* Advisory: what the goal implies, shown only when it disagrees with the written pace. */
+/* Advisory: shown only when it disagrees with the written pace. Training zones
+   come from current fitness; race-pace sessions come from the active goal. */
 .wv-pill-derived { color: var(--text-muted); background: transparent; border-style: dashed; font-family: var(--font-mono); cursor: help; }
+.wv-pill-derived.basis-goal { color: var(--primary-color); border-color: color-mix(in srgb, var(--primary-color) 40%, transparent); }
 .wv-steps { margin: 9px 0 0; padding-left: 0; list-style: none; display: flex; flex-direction: column; gap: 6px; }
 .wv-steps li { position: relative; padding-left: 16px; font-size: 0.82rem; color: var(--text-secondary); line-height: 1.4; }
 .wv-steps li::before { content: ''; position: absolute; left: 3px; top: 7px; width: 5px; height: 5px; border-radius: 50%; background: var(--tag-color); }

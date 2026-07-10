@@ -10,21 +10,25 @@
  * Call `hydrateSettings()` once at boot.
  */
 import { reactive, computed } from 'vue'
-import { db, MISSING_GOALS_TABLES } from './db'
-import { DISTANCES, vdotFromRace, type DistanceKey } from './utils/vdot'
-import type { RaceGoal } from './types'
+import { db, schema, MISSING_GOALS_TABLES } from './db'
+import { DISTANCES, DISTANCE_LABELS, vdotFromRace, type DistanceKey } from './utils/vdot'
+import type { RaceGoal, Target } from './types'
 
 export interface Settings {
 	userName: string
 	goalWeight: number | null
 	restingHR: number
 	maxHR: number | null
+	vdotOverride: number | null
 }
 
-const DEFAULTS: Settings = { userName: '', goalWeight: null, restingHR: 60, maxHR: null }
+const DEFAULTS: Settings = { userName: '', goalWeight: null, restingHR: 60, maxHR: null, vdotOverride: null }
 
 /** localStorage keys, unchanged from the pre-database version. */
-const LS = { userName: 'userName', goalWeight: 'goalWeight', restingHR: 'restingHR', maxHR: 'maxHR' } as const
+const LS = {
+	userName: 'userName', goalWeight: 'goalWeight', restingHR: 'restingHR',
+	maxHR: 'maxHR', vdotOverride: 'vdotOverride',
+} as const
 
 function readCache(): Settings {
 	const num = (k: string) => {
@@ -38,6 +42,7 @@ function readCache(): Settings {
 		goalWeight: num(LS.goalWeight),
 		restingHR: num(LS.restingHR) ?? DEFAULTS.restingHR,
 		maxHR: num(LS.maxHR),
+		vdotOverride: num(LS.vdotOverride),
 	}
 }
 
@@ -48,17 +53,22 @@ function writeCache(s: Settings) {
 	put(LS.goalWeight, s.goalWeight)
 	put(LS.restingHR, s.restingHR)
 	put(LS.maxHR, s.maxHR)
+	put(LS.vdotOverride, s.vdotOverride)
 }
 
 export const settings = reactive<Settings>(readCache())
 
-/** distance_m -> goal time in seconds. */
-export const distanceGoals = reactive<Record<number, number>>({})
+/** distance_m -> { goal time, target date (null = aspirational) }. */
+export interface DistanceGoalEntry { secs: number; date: string | null }
+export const distanceGoals = reactive<Record<number, DistanceGoalEntry>>({})
 
 export const raceGoals = reactive<{ list: RaceGoal[] }>({ list: [] })
 
-/** True when supabase_goals.sql hasn't been run yet — surfaced in Profile. */
-export const schemaMissing = reactive({ value: false })
+/**
+ * Which migration is still outstanding, if any. Surfaced in Profile so the
+ * banner can name the exact file to run.
+ */
+export const pendingMigration = reactive<{ script: string | null }>({ script: null })
 
 // ─── hydration ────────────────────────────────────────────────────────────────
 
@@ -90,19 +100,24 @@ export async function hydrateSettings(): Promise<void> {
 			settings.goalWeight = profile.goal_weight
 			settings.restingHR = profile.resting_hr ?? DEFAULTS.restingHR
 			settings.maxHR = profile.max_hr
+			settings.vdotOverride = profile.vdot_override ?? null
 			writeCache(settings)
 		}
 
 		for (const k of Object.keys(distanceGoals)) delete distanceGoals[Number(k)]
-		for (const g of goals) distanceGoals[g.distance_m] = g.goal_time_secs
+		for (const g of goals) distanceGoals[g.distance_m] = { secs: g.goal_time_secs, date: g.target_date ?? null }
 
-		// One-time lift of the old single-goal localStorage pair into a real
-		// distance goal, if it maps onto a canonical distance.
+		// getProfile/getDistanceGoals flip this when a v2 column is absent.
+		if (!schema.v2) {
+			pendingMigration.script = 'supabase_goals_v2.sql'
+			console.warn('[settings] goal dates, race results and VDOT override need supabase_goals_v2.sql')
+		}
+
 		await migrateLegacyRaceGoal()
 	} catch (e: any) {
 		if (e?.message === MISSING_GOALS_TABLES) {
-			schemaMissing.value = true
-			console.warn('[settings] goals tables missing — run supabase_goals.sql')
+			pendingMigration.script = 'supabase_goals.sql'
+			console.warn('[settings] goals tables missing — run supabase_goals.sql, then supabase_goals_v2.sql')
 			return
 		}
 		console.error('[settings] hydrate failed, using local cache', e)
@@ -126,8 +141,8 @@ async function migrateLegacyRaceGoal() {
 
 	if (match && distanceGoals[match] === undefined) {
 		try {
-			await db.setDistanceGoal(match, secs)
-			distanceGoals[match] = secs
+			await db.setDistanceGoal({ distance_m: match, goal_time_secs: secs, target_date: null })
+			distanceGoals[match] = { secs, date: null }
 		} catch (e) {
 			// Leave the legacy keys in place so the goal isn't lost; retry next boot.
 			console.error('[settings] legacy goal migration failed, keeping local copy', e)
@@ -148,14 +163,15 @@ export async function saveSettings(next: Partial<Settings>): Promise<void> {
 		goal_weight: settings.goalWeight,
 		resting_hr: settings.restingHR,
 		max_hr: settings.maxHR,
+		vdot_override: settings.vdotOverride,
 	})
 }
 
 // Distance goals have no local fallback, so the DB write has to land before the
 // reactive store changes — otherwise a failed save still lights up the pace table.
-export async function setDistanceGoal(distance_m: number, secs: number): Promise<void> {
-	await db.setDistanceGoal(distance_m, secs)
-	distanceGoals[distance_m] = secs
+export async function setDistanceGoal(distance_m: number, secs: number, date: string | null): Promise<void> {
+	await db.setDistanceGoal({ distance_m, goal_time_secs: secs, target_date: date })
+	distanceGoals[distance_m] = { secs, date }
 }
 
 export async function clearDistanceGoal(distance_m: number): Promise<void> {
@@ -167,56 +183,65 @@ export async function refreshRaceGoals(): Promise<void> {
 	raceGoals.list = await db.getRaceGoals()
 }
 
-// ─── derived ──────────────────────────────────────────────────────────────────
+// ─── targets ──────────────────────────────────────────────────────────────────
 
-/** VDOT implied by each distance goal that's set. */
-export const goalVdots = computed(() => {
-	const out: Partial<Record<DistanceKey, number>> = {}
+const todayISO = () => new Date().toISOString().slice(0, 10)
+
+/**
+ * Every thing you're training for, races and standing distance goals alike.
+ * A race is just a target that happens to have a name and a fixed date.
+ */
+export const targets = computed<Target[]>(() => {
+	const out: Target[] = []
+
 	for (const [key, m] of Object.entries(DISTANCES) as [DistanceKey, number][]) {
-		const secs = distanceGoals[m]
-		if (secs) {
-			const v = vdotFromRace(m, secs)
-			if (v !== null) out[key] = v
-		}
+		const g = distanceGoals[m]
+		if (!g) continue
+		const v = vdotFromRace(m, g.secs)
+		if (v === null) continue
+		out.push({ key: `d:${key}`, name: DISTANCE_LABELS[key], distanceM: m, goalTimeSecs: g.secs, date: g.date, neededVdot: v, kind: 'distance' })
 	}
+
+	for (const r of raceGoals.list) {
+		if (!r.distance_km || !r.goal_time_secs) continue
+		const m = r.distance_km * 1000
+		const v = vdotFromRace(m, r.goal_time_secs)
+		if (v === null) continue
+		out.push({ key: `r:${r.id}`, name: r.name, distanceM: m, goalTimeSecs: r.goal_time_secs, date: r.date, neededVdot: v, kind: 'race' })
+	}
+
 	return out
 })
 
-/** The next upcoming race, soonest first, A races winning ties. */
-export const nextRace = computed<RaceGoal | null>(() => {
-	const today = new Date().toISOString().slice(0, 10)
-	const upcoming = raceGoals.list
-		.filter(g => g.date >= today)
-		.sort((a, b) => a.date.localeCompare(b.date) ||
-			(a.priority ?? 'A').localeCompare(b.priority ?? 'A'))
-	return upcoming[0] ?? null
+/** Dated targets still ahead of us, soonest first. */
+export const upcomingTargets = computed(() => {
+	const today = todayISO()
+	return targets.value
+		.filter((t): t is Target & { date: string } => t.date !== null && t.date >= today)
+		.sort((a, b) => a.date.localeCompare(b.date))
 })
 
+/** Undated targets: tracked as a gap, never allowed to drive paces. */
+export const aspirationalTargets = computed(() => targets.value.filter(t => t.date === null))
+
 /**
- * The VDOT the schedule's paces are derived from.
+ * The thing you are training for right now: the soonest dated target.
  *
- * Prefers the next race's own goal time (it's the thing being trained for);
- * falls back to the most demanding standing distance goal. Null when no goal
- * is set anywhere — callers then simply show no derived pace.
+ * There is no "pick the fastest" fallback any more. A goal with no date can't
+ * be next, so it doesn't get a vote.
  */
-export const goalVdot = computed<number | null>(() => {
-	const race = nextRace.value
-	if (race?.goal_time_secs && race.distance_km) {
-		const v = vdotFromRace(race.distance_km * 1000, race.goal_time_secs)
-		if (v !== null) return v
-	}
-	const vs = Object.values(goalVdots.value)
-	return vs.length ? Math.max(...vs) : null
-})
+export const activeTarget = computed<Target | null>(() => upcomingTargets.value[0] ?? null)
 
 /**
- * Distance goals whose implied VDOT is far from `goalVdot` — i.e. mutually
- * inconsistent targets. Surfaced in Profile so they can be reconciled.
+ * The VDOT of the active target. This drives *race-pace sessions only* —
+ * every other zone comes from current fitness. See `paceAdvice.ts`.
  */
-export const inconsistentGoals = computed(() => {
-	const base = goalVdot.value
-	if (base === null) return [] as { key: DistanceKey; vdot: number; delta: number }[]
-	return (Object.entries(goalVdots.value) as [DistanceKey, number][])
-		.map(([key, vdot]) => ({ key, vdot, delta: Math.round((vdot - base) * 10) / 10 }))
-		.filter(g => Math.abs(g.delta) >= 1.5)
+export const activeGoalVdot = computed<number | null>(() => activeTarget.value?.neededVdot ?? null)
+
+/** The next race on the calendar, whether or not it has a goal time. */
+export const nextRace = computed<RaceGoal | null>(() => {
+	const today = todayISO()
+	return raceGoals.list
+		.filter(g => g.date >= today)
+		.sort((a, b) => a.date.localeCompare(b.date) || (a.priority ?? 'A').localeCompare(b.priority ?? 'A'))[0] ?? null
 })

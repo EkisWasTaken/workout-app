@@ -145,15 +145,21 @@ export interface RaceGoal {
 	date: string;
 	distance_km?: number | null;
 	goal_time_secs?: number | null;
+	/** What you actually ran. The most trustworthy input to current VDOT. */
+	result_time_secs?: number | null;
 	priority?: RacePriority;
 }
 
 export type AddRaceGoalPayload = Omit<RaceGoal, 'id'>;
 
-/** A standing target time for one canonical distance, keyed by metres. */
+/**
+ * A standing target time for one canonical distance.
+ * `target_date` null means "someday": tracked as a gap, never drives paces.
+ */
 export interface DistanceGoal {
 	distance_m: number;
 	goal_time_secs: number;
+	target_date?: string | null;
 }
 
 /** Single-row settings, previously scattered across localStorage. */
@@ -162,4 +168,20 @@ export interface Profile {
 	goal_weight: number | null;
 	resting_hr: number | null;
 	max_hr: number | null;
+	/** Manual current VDOT; overrides everything derived from activities. */
+	vdot_override: number | null;
+}
+
+/**
+ * A dated thing you are training for — the unification of a race goal and a
+ * standing distance goal. `date` null means aspirational.
+ */
+export interface Target {
+	key: string;
+	name: string;
+	distanceM: number;
+	goalTimeSecs: number;
+	date: string | null;
+	neededVdot: number;
+	kind: 'race' | 'distance';
 }
