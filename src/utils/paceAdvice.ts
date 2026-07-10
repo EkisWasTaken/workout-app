@@ -1,25 +1,27 @@
 /**
- * Pace advice for a planned session.
+ * The pace to show on a planned session.
  *
- * Two different VDOTs feed this, and conflating them is the whole trap:
+ * Paces are *derived*, never stored. A session records its zone ("Easy",
+ * "Threshold", "Race pace"); the number is computed at render time. Change a
+ * goal, or get fitter, and the whole schedule updates — no rewriting the plan.
+ *
+ * Two sources, and conflating them is the trap:
  *
  *   Easy, recovery, threshold, VO₂, reps  →  your CURRENT fitness.
- *     These are the paces your body can absorb today. Prescribing them from an
- *     ambitious goal turns easy days into tempos.
+ *     The paces your body can absorb today. Prescribing them from an ambitious
+ *     goal turns easy days into tempos.
  *
- *   Race-pace sessions                    →  the ACTIVE GOAL's VDOT.
+ *   Race-pace sessions                    →  the GOAL that session trains for.
  *     Rehearsing goal pace is the entire point of a race-pace workout.
  *
- * The pace written on the session always wins. This only surfaces drift.
+ * When a session's zone can't be recognised — legacy rows carrying a whole
+ * prescription in the field, like "E 6:00-6:20/km; strides 6-8x100 m" — the
+ * written text is shown verbatim and nothing is derived.
  */
 import type { Workout } from '@/types'
 import {
-	paceTable, paceMid, matchZone, parsePaceValue, racePaceSecPerKm,
-	fmtPace, fmtPaceRange, type ZoneKey,
+	paceTable, matchZone, racePaceSecPerKm, fmtPace, fmtPaceRange, type ZoneKey,
 } from './vdot'
-
-/** Below this, the two paces agree closely enough to be worth staying quiet about. */
-export const PACE_DRIFT_THRESHOLD_S = 5
 
 /** Split a target-pace string ("Threshold 4:45–4:55/km") into a zone and a value. */
 export function paceParts(workout: Workout): { zone: string; value: string } | null {
@@ -32,59 +34,73 @@ export function paceParts(workout: Workout): { zone: string; value: string } | n
 
 /** A race-pace session rehearses the goal; every other zone trains current fitness. */
 export function isRacePaceZone(zoneLabel: string, key: ZoneKey): boolean {
-	return key === 'marathon' && /race pace/i.test(zoneLabel)
+	return key === 'marathon' && /race pace|goal/i.test(zoneLabel)
 }
 
-export interface DerivedPace {
-	/** The implied pace, formatted — a range, or a single value for race pace. */
-	label: string
-	/** Seconds per km the derived pace is slower (+) or faster (−) than the written one. */
-	delta: number
-	/** Which VDOT this came from, so the tooltip can say why. */
-	basis: 'current' | 'goal'
+/** The goal a session on `date` is training for, resolved by the caller. */
+export interface GoalAtDate {
+	vdot: number
+	distanceM: number
+	name: string
 }
 
 export interface PaceSources {
 	/** VDOT you can race today. Drives every training zone. */
 	currentVdot: number | null
-	/** VDOT of the target you're training for. Drives race-pace sessions only. */
-	goalVdot: number | null
-	/** Distance of that target, metres — so "30k race pace" resolves properly. */
-	goalDistanceM: number | null
+	/** The next dated goal on or after a session's date. Drives race-pace sessions. */
+	goalFor: (date: string) => GoalAtDate | null
+}
+
+export type PaceBasis = 'fitness' | 'goal' | 'planned'
+
+export interface SessionPace {
+	/** Zone name to show ("Easy", "Lidingöloppet pace", or the raw label). */
+	zone: string
+	/** The pace itself: a range for training zones, a single value for race pace. */
+	value: string
+	basis: PaceBasis
+	/** Human explanation of where the number came from. */
+	explain: string
 }
 
 /**
- * The pace this session's zone implies, when it differs from the written pace by
- * at least PACE_DRIFT_THRESHOLD_S. Null when there's no basis, no recognisable
- * zone, no parseable written pace, or the two already agree.
+ * The pace for this session. Null when the workout carries no pace at all.
+ *
+ * Falls back to the written text whenever the zone is unrecognised, or the VDOT
+ * that zone depends on is unknown — better a stale number than a wrong one.
  */
-export function derivedPaceFor(workout: Workout, sources: PaceSources): DerivedPace | null {
+export function sessionPace(workout: Workout, sources: PaceSources): SessionPace | null {
 	const parts = paceParts(workout)
 	if (!parts) return null
 
+	const planned = (): SessionPace => ({
+		zone: parts.zone === 'Target' ? 'Planned' : parts.zone,
+		value: parts.value,
+		basis: 'planned',
+		explain: 'Written on the session. No zone recognised, so nothing is derived.',
+	})
+
 	const key = matchZone(parts.zone)
-	if (!key) return null
+	if (!key) return planned()
 
-	const written = parsePaceValue(parts.value)
-	if (written === null) return null
-
-	const racePace = isRacePaceZone(parts.zone, key)
-	const basis: 'current' | 'goal' = racePace ? 'goal' : 'current'
-	const vdot = racePace ? sources.goalVdot : sources.currentVdot
-	if (vdot === null) return null
-
-	let derivedMid: number
-	let label: string
-
-	if (racePace && sources.goalDistanceM) {
-		derivedMid = racePaceSecPerKm(vdot, sources.goalDistanceM)
-		label = fmtPace(derivedMid)
-	} else {
-		const zone = paceTable(vdot).find(z => z.key === key)!
-		derivedMid = paceMid(zone)
-		label = fmtPaceRange(zone)
+	if (isRacePaceZone(parts.zone, key)) {
+		const goal = sources.goalFor(workout.date)
+		if (!goal) return planned()
+		const pace = racePaceSecPerKm(goal.vdot, goal.distanceM)
+		return {
+			zone: `${goal.name} pace`,
+			value: fmtPace(pace),
+			basis: 'goal',
+			explain: `From your ${goal.name} goal (VDOT ${goal.vdot}). Change the goal and this changes with it.`,
+		}
 	}
 
-	const delta = derivedMid - written
-	return Math.abs(delta) >= PACE_DRIFT_THRESHOLD_S ? { label, delta, basis } : null
+	if (sources.currentVdot === null) return planned()
+	const zone = paceTable(sources.currentVdot).find(z => z.key === key)!
+	return {
+		zone: zone.label,
+		value: fmtPaceRange(zone),
+		basis: 'fitness',
+		explain: `From your current fitness (VDOT ${sources.currentVdot}) — the pace you can absorb today, not a goal pace.`,
+	}
 }

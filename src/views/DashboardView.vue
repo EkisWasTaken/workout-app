@@ -4,7 +4,7 @@
       <div class="page-head">
         <div>
           <h1>Schedule</h1>
-          <p class="sub">Plan, drag to reschedule, and complete your sessions</p>
+          <p class="sub">Paces update automatically from your fitness and goals — no need to rewrite the plan</p>
         </div>
         <div class="actions-bar">
           <button @click="openAddWorkoutModal(null)" class="action-button primary">
@@ -54,10 +54,10 @@
                   <div v-if="hasStats(w)" class="wv-pills">
                     <span v-if="w.distance" class="wv-pill">{{ w.distance }} km</span>
                     <span v-if="w.duration" class="wv-pill">{{ w.duration }} min</span>
-                    <span v-if="paceParts(w)" class="wv-pill wv-pill-pace">{{ paceParts(w)?.zone }} · {{ paceParts(w)?.value }}/km</span>
-                    <span v-if="derivedPace(w)" class="wv-pill wv-pill-derived"
-                      :class="'basis-' + derivedPace(w)!.basis" :title="derivedTitle(w)">
-                      {{ derivedPace(w)!.basis === 'goal' ? 'goal' : 'fitness' }} {{ derivedPace(w)!.label }}/km
+                    <span v-if="sessionPaceFor(w)" class="wv-pill wv-pill-pace"
+                      :class="'basis-' + sessionPaceFor(w)!.basis" :title="sessionPaceFor(w)!.explain">
+                      {{ sessionPaceFor(w)!.zone }} · {{ sessionPaceFor(w)!.value
+                      }}<template v-if="sessionPaceFor(w)!.basis !== 'planned'">/km</template>
                     </span>
                     <span v-if="w.gymType" class="wv-pill">{{ w.gymType }}</span>
                   </div>
@@ -185,18 +185,14 @@
                 <span class="rn-val"><span class="rn-num">{{ selectedWorkout.duration }}</span><span class="rn-unit">min</span></span>
                 <span class="rn-lbl">Duration</span>
               </div>
-              <div v-if="paceParts(selectedWorkout)" class="rn-stat rn-stat-pace">
-                <span class="rn-val"><span class="rn-num">{{ paceParts(selectedWorkout)?.value }}</span><span class="rn-unit">/km</span></span>
-                <span class="rn-lbl">{{ paceParts(selectedWorkout)?.zone }}</span>
-              </div>
-              <div v-if="derivedPace(selectedWorkout)" class="rn-stat rn-stat-derived" :title="derivedTitle(selectedWorkout)">
-                <span class="rn-val"><span class="rn-num">{{ derivedPace(selectedWorkout)!.label }}</span><span class="rn-unit">/km</span></span>
-                <span class="rn-lbl">
-                  {{ derivedPace(selectedWorkout)!.basis === 'goal' ? 'Goal pace' : 'Fitness pace' }}
-                  <span class="rn-delta" :class="derivedPace(selectedWorkout)!.delta < 0 ? 'faster' : 'slower'">
-                    {{ derivedPace(selectedWorkout)!.delta > 0 ? '+' : '' }}{{ derivedPace(selectedWorkout)!.delta }}s
-                  </span>
+              <div v-if="sessionPaceFor(selectedWorkout)" class="rn-stat rn-stat-pace"
+                :class="'basis-' + sessionPaceFor(selectedWorkout)!.basis"
+                :title="sessionPaceFor(selectedWorkout)!.explain">
+                <span class="rn-val">
+                  <span class="rn-num">{{ sessionPaceFor(selectedWorkout)!.value }}</span>
+                  <span v-if="sessionPaceFor(selectedWorkout)!.basis !== 'planned'" class="rn-unit">/km</span>
                 </span>
+                <span class="rn-lbl">{{ sessionPaceFor(selectedWorkout)!.zone }}</span>
               </div>
               <div v-if="selectedWorkout.gymType" class="rn-stat">
                 <span class="rn-val"><span class="rn-num rn-num-sm">{{ selectedWorkout.gymType }}</span></span>
@@ -395,9 +391,9 @@ import ImportEditor from '../components/ImportEditor.vue';
 import ImportActivitiesModal from '../components/ImportActivitiesModal.vue';
 import { activityApi } from '../activities';
 import { parseActivityFile } from '@/import/parseActivityFile';
-import { activeGoalVdot, activeTarget, hydrateSettings } from '@/settings';
+import { targetForDate, hydrateSettings } from '@/settings';
 import { currentVdot, hydrateFitness } from '@/fitness';
-import { paceParts, derivedPaceFor, type DerivedPace } from '@/utils/paceAdvice';
+import { paceParts, sessionPace, type SessionPace } from '@/utils/paceAdvice';
 import { noteSteps, type SportType } from '@/utils/workouts';
 import { buildActivityIndex, effectiveWorkoutType } from '@/utils/workoutSport';
 
@@ -915,32 +911,28 @@ const hasStats = (w: Workout) => !!(w.distance || w.duration || w.targetPace || 
  * Memoised so the template can call derivedPace() per session without
  * recomputing a pace table for every chip on every render.
  */
+/**
+ * Paces are derived, not stored: change a goal or get fitter and the schedule
+ * re-renders. Memoised so the template can call sessionPaceFor() per pill.
+ */
 const paceSources = computed(() => ({
   currentVdot: currentVdot.value,
-  goalVdot: activeGoalVdot.value,
-  goalDistanceM: activeTarget.value?.distanceM ?? null,
+  goalFor: (date: string) => {
+    const t = targetForDate(date);
+    return t ? { vdot: t.neededVdot, distanceM: t.distanceM, name: t.name } : null;
+  },
 }));
 
-const derivedPaces = computed(() => {
-  const out = new Map<number, DerivedPace>();
+const sessionPaces = computed(() => {
+  const out = new Map<number, SessionPace>();
   for (const w of workouts.value) {
-    const d = derivedPaceFor(w, paceSources.value);
-    if (d) out.set(w.id, d);
+    const p = sessionPace(w, paceSources.value);
+    if (p) out.set(w.id, p);
   }
   return out;
 });
 
-const derivedPace = (w: Workout) => derivedPaces.value.get(w.id) ?? null;
-
-const derivedTitle = (w: Workout) => {
-  const d = derivedPace(w);
-  if (!d) return '';
-  const dir = d.delta > 0 ? 'slower' : 'faster';
-  const from = d.basis === 'goal'
-    ? `${activeTarget.value?.name} goal pace (VDOT ${activeGoalVdot.value})`
-    : `your current fitness (VDOT ${currentVdot.value})`;
-  return `${from} implies ${d.label}/km — ${Math.abs(d.delta)} s/km ${dir} than the pace on this session.`;
-};
+const sessionPaceFor = (w: Workout) => sessionPaces.value.get(w.id) ?? null;
 
 const workoutsByDate = computed(() => {
 	const grouped = {} as { [key: string]: Workout[] }
@@ -1066,10 +1058,11 @@ onActivated(loadAll);
 .wv-pills { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 7px; }
 .wv-pill { font-size: 0.74rem; font-weight: 500; color: var(--text-secondary); background: var(--surface-2); border: 1px solid var(--border-color); padding: 2px 9px; border-radius: 999px; }
 .wv-pill-pace { color: var(--tag-color); border-color: color-mix(in srgb, var(--tag-color) 40%, transparent); background: color-mix(in srgb, var(--tag-color) 10%, transparent); font-family: var(--font-mono); }
-/* Advisory: shown only when it disagrees with the written pace. Training zones
-   come from current fitness; race-pace sessions come from the active goal. */
-.wv-pill-derived { color: var(--text-muted); background: transparent; border-style: dashed; font-family: var(--font-mono); cursor: help; }
-.wv-pill-derived.basis-goal { color: var(--primary-color); border-color: color-mix(in srgb, var(--primary-color) 40%, transparent); }
+/* Race-pace sessions track the goal (blue); everything else tracks current
+   fitness (sport colour). Legacy rows with no recognisable zone stay muted. */
+.wv-pill-pace.basis-goal { color: var(--primary-color); border-color: color-mix(in srgb, var(--primary-color) 40%, transparent); background: var(--primary-soft); }
+.wv-pill-pace.basis-planned { color: var(--text-muted); border-color: var(--border-color); background: transparent; font-family: inherit; }
+.wv-pill-pace { cursor: help; }
 .wv-steps { margin: 9px 0 0; padding-left: 0; list-style: none; display: flex; flex-direction: column; gap: 6px; }
 .wv-steps li { position: relative; padding-left: 16px; font-size: 0.82rem; color: var(--text-secondary); line-height: 1.4; }
 .wv-steps li::before { content: ''; position: absolute; left: 3px; top: 7px; width: 5px; height: 5px; border-radius: 50%; background: var(--tag-color); }
@@ -1197,11 +1190,9 @@ textarea { min-height: 70px; resize: vertical; }
 .rn-num-sm { font-size: 1.02rem; }
 .rn-unit { font-size: 0.72rem; color: var(--text-muted); font-weight: 500; }
 .rn-lbl { font-size: 0.66rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; }
-.rn-stat-derived { border-style: dashed; cursor: help; }
-.rn-stat-derived .rn-num { color: var(--text-secondary); }
-.rn-delta { margin-left: 4px; font-weight: 700; letter-spacing: 0; }
-.rn-delta.faster { color: var(--danger-color); }
-.rn-delta.slower { color: var(--success-color); }
+.rn-stat-pace { cursor: help; }
+.rn-stat-pace.basis-goal .rn-num { color: var(--primary-color); }
+.rn-stat-pace.basis-planned .rn-num { color: var(--text-secondary); font-size: 0.9rem; }
 .rn-plan { padding: 2px 16px 16px; }
 .rn-plan-h { font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted); font-weight: 600; }
 .rn-steps { margin: 9px 0 0; padding-left: 0; list-style: none; display: flex; flex-direction: column; gap: 8px; }

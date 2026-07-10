@@ -89,10 +89,11 @@
 					<div v-if="activeTarget" class="dg-active">
 						<n-icon :component="FlagOutline" />
 						<div>
-							Training for <strong>{{ activeTarget.name }}</strong>
+							Next up: <strong>{{ activeTarget.name }}</strong>
 							({{ fmtTime(activeTarget.goalTimeSecs) }}, VDOT {{ activeTarget.neededVdot }})
 							<span v-if="activeTarget.date"> on {{ activeTarget.date }}</span>.
-							Race-pace sessions use this; everything else uses your current fitness.
+							Each race-pace session uses whichever goal comes next after that session's date —
+							change a goal and the schedule re-paces itself.
 						</div>
 					</div>
 				</n-card>
@@ -105,17 +106,13 @@
 					</template>
 					<p class="card-hint">
 						From your <strong>current fitness</strong>, not your goal — these are the paces
-						your body can absorb today. The schedule shows them beside a session's own pace
-						when they disagree. Nothing is overwritten.
+						your body can absorb today. Every easy, threshold and VO₂ session on the schedule
+						shows the pace from this table, recalculated as your fitness changes.
 					</p>
 					<div class="pace-table">
 						<div v-for="z in paces" :key="z.key" class="pace-row">
 							<span class="pace-zone">{{ z.label }}</span>
 							<span class="pace-val mono">{{ fmtPaceRange(z) }}<span class="pace-unit">/km</span></span>
-						</div>
-						<div v-if="activeGoalPace" class="pace-row pace-row-race">
-							<span class="pace-zone">{{ activeTarget!.name }} race pace</span>
-							<span class="pace-val mono">{{ fmtPace(activeGoalPace) }}<span class="pace-unit">/km</span></span>
 						</div>
 					</div>
 
@@ -130,6 +127,33 @@
 					</div>
 				</n-card>
 
+				<!-- Race pace for every goal -->
+				<n-card v-if="goalPaceRows.length" bordered class="settings-card">
+					<template #header><span class="card-title">Goal race paces</span></template>
+					<p class="card-hint">
+						The pace each goal demands, and what you'd run that distance at today.
+						Race-pace sessions on the schedule use these automatically.
+					</p>
+					<div class="gp-table">
+						<div class="gp-row gp-head">
+							<span>Goal</span><span>Time</span><span>Pace</span><span>Needs</span><span>Today</span>
+						</div>
+						<div v-for="g in goalPaceRows" :key="g.key" class="gp-row" :class="{ reached: g.reached }">
+							<span class="gp-name">{{ g.name }}</span>
+							<span class="mono">{{ g.goalTime }}</span>
+							<span class="mono gp-pace">{{ g.goalPace }}<span class="pace-unit">/km</span></span>
+							<span class="gp-vdot">{{ g.neededVdot }}</span>
+							<span class="mono gp-today" :class="g.reached ? 'good' : 'off'">
+								{{ g.todayPace }}<span class="pace-unit">/km</span>
+							</span>
+						</div>
+					</div>
+					<p class="card-hint tight" style="margin-top: 12px">
+						<strong>Needs</strong> is the VDOT the goal requires; you're at
+						<strong>{{ currentVdot }}</strong>.
+					</p>
+				</n-card>
+
 				<!-- Race goals -->
 				<n-card bordered class="settings-card">
 					<template #header><span class="card-title">Races</span></template>
@@ -138,6 +162,18 @@
 						effort, so it's the most trustworthy read on your current fitness — better
 						than anything we can infer from training runs.
 					</p>
+
+					<div v-if="racesMissingGoalTime.length" class="dg-inconsistent">
+						<n-icon :component="WarningOutline" />
+						<div>
+							<strong>No goal time set</strong> for
+							<span v-for="(r, i) in racesMissingGoalTime" :key="r.id">
+								{{ i ? ', ' : '' }}{{ r.name }}
+							</span>.
+							Without a distance <em>and</em> a goal time, a race can't pace its own sessions —
+							they fall through to whichever goal comes next, which may be months away.
+						</div>
+					</div>
 
 					<div class="rg-form">
 						<n-input v-model:value="newRace.name" placeholder="Event name" class="rg-name" />
@@ -186,7 +222,7 @@ import { NCard, NSpace, NInput, NButton, NFormItem, NSelect, useMessage, NIcon }
 import { FlagOutline, WarningOutline } from '@vicons/ionicons5'
 import { db, MISSING_GOALS_COLUMNS } from '@/db'
 import {
-	settings, distanceGoals, raceGoals, pendingMigration, activeTarget,
+	settings, distanceGoals, raceGoals, pendingMigration, activeTarget, targets, racesMissingGoalTime,
 	saveSettings, setDistanceGoal, clearDistanceGoal, refreshRaceGoals, hydrateSettings,
 } from '@/settings'
 import { currentVdot, derivedFitness, hydrateFitness } from '@/fitness'
@@ -336,10 +372,24 @@ const equivalents = computed(() =>
 		? ({} as Record<DistanceKey, number>)
 		: equivalentTimes(currentVdot.value))
 
-/** The one pace the goal does drive: race pace for what you're training for. */
-const activeGoalPace = computed(() => {
-	const t = activeTarget.value
-	return t ? racePaceSecPerKm(t.neededVdot, t.distanceM) : null
+/**
+ * Race pace for every goal, plus what you'd run that distance at today. These
+ * are the paces race-pace sessions on the schedule resolve to.
+ */
+const goalPaceRows = computed(() => {
+	const cur = currentVdot.value
+	return targets.value
+		.slice()
+		.sort((a, b) => a.distanceM - b.distanceM)
+		.map(t => ({
+			key: t.key,
+			name: t.name,
+			goalTime: fmtTime(t.goalTimeSecs),
+			goalPace: fmtPace(racePaceSecPerKm(t.neededVdot, t.distanceM)),
+			neededVdot: t.neededVdot,
+			todayPace: cur === null ? '—' : fmtPace(racePaceSecPerKm(cur, t.distanceM)),
+			reached: cur !== null && cur >= t.neededVdot,
+		}))
 })
 
 // ─── race results ─────────────────────────────────────────────────────────────
@@ -531,6 +581,29 @@ onMounted(async () => {
 .result-tag { color: var(--success-color); font-weight: 600; }
 .rg-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
 .rg-result { width: 96px; }
+
+/* Goal race paces */
+.gp-table { display: flex; flex-direction: column; gap: 2px; }
+.gp-row {
+	display: grid; grid-template-columns: 1.4fr 0.9fr 0.9fr 0.6fr 0.9fr;
+	gap: 8px; align-items: baseline;
+	padding: 9px 12px; background: var(--surface-2); border-radius: var(--radius-sm);
+	font-size: 0.85rem;
+}
+.gp-head {
+	background: transparent; padding-top: 0; padding-bottom: 4px;
+	font-size: 0.66rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted);
+}
+.gp-row.reached { background: var(--success-soft); }
+.gp-name { font-weight: 500; color: var(--text-color); }
+.gp-pace { font-weight: 700; color: var(--text-color); }
+.gp-vdot { color: var(--text-muted); font-size: 0.78rem; }
+.gp-today.good { color: var(--success-color); }
+.gp-today.off { color: var(--text-secondary); }
+@media (max-width: 560px) {
+	.gp-row { grid-template-columns: 1.2fr 0.9fr 0.9fr; }
+	.gp-vdot, .gp-head span:nth-child(4), .gp-head span:nth-child(5), .gp-today { display: none; }
+}
 
 .date-input {
 	background: var(--surface-2); border: 1px solid var(--border-color);

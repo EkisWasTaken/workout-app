@@ -225,6 +225,16 @@ export const upcomingTargets = computed(() => {
 export const aspirationalTargets = computed(() => targets.value.filter(t => t.date === null))
 
 /**
+ * Upcoming races with no goal time. These aren't targets, so the race-pace
+ * sessions in their block silently resolve to whatever goal comes next instead —
+ * which is how a 30k race ended up paced off a half-marathon goal.
+ */
+export const racesMissingGoalTime = computed(() => {
+	const today = todayISO()
+	return raceGoals.list.filter(r => r.date >= today && !(r.distance_km && r.goal_time_secs))
+})
+
+/**
  * The thing you are training for right now: the soonest dated target.
  *
  * There is no "pick the fastest" fallback any more. A goal with no date can't
@@ -233,10 +243,15 @@ export const aspirationalTargets = computed(() => targets.value.filter(t => t.da
 export const activeTarget = computed<Target | null>(() => upcomingTargets.value[0] ?? null)
 
 /**
- * The VDOT of the active target. This drives *race-pace sessions only* —
- * every other zone comes from current fitness. See `paceAdvice.ts`.
+ * The goal a session on `date` is training for: the soonest dated target on or
+ * after it. A race-pace session in September must rehearse September's race, not
+ * whichever goal happens to be nearest *today*.
  */
-export const activeGoalVdot = computed<number | null>(() => activeTarget.value?.neededVdot ?? null)
+export function targetForDate(date: string): Target | null {
+	return targets.value
+		.filter((t): t is Target & { date: string } => t.date !== null && t.date >= date)
+		.sort((a, b) => a.date.localeCompare(b.date))[0] ?? null
+}
 
 /** The next race on the calendar, whether or not it has a goal time. */
 export const nextRace = computed<RaceGoal | null>(() => {

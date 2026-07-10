@@ -45,12 +45,12 @@
 						<div class="ts-pills">
 							<span v-if="workoutKm(w)" class="ts-pill">{{ fmt(workoutKm(w)!) }} km</span>
 							<span v-if="w.duration" class="ts-pill">{{ w.duration }} min</span>
-							<span v-if="w.targetPace" class="ts-pill pace mono">{{ w.targetPace }}</span>
-							<span v-if="w.gymType" class="ts-pill">{{ w.gymType }}</span>
-							<span v-if="todayDerivedPace(w)" class="ts-pill derived mono"
-								:title="`Your goal implies ${todayDerivedPace(w)!.label}/km here`">
-								goal {{ todayDerivedPace(w)!.label }}/km
+							<span v-if="todayPace(w)" class="ts-pill pace mono"
+								:class="'basis-' + todayPace(w)!.basis" :title="todayPace(w)!.explain">
+								{{ todayPace(w)!.zone }} · {{ todayPace(w)!.value
+								}}<template v-if="todayPace(w)!.basis !== 'planned'">/km</template>
 							</span>
+							<span v-if="w.gymType" class="ts-pill">{{ w.gymType }}</span>
 						</div>
 						<ul v-if="sessionSteps(w).length" class="ts-steps">
 							<li v-for="(step, i) in sessionSteps(w)" :key="i">{{ step }}</li>
@@ -562,9 +562,9 @@ import type { Workout, DailyWeight, RaceGoal } from '@/types'
 import { getSportColor, isDistanceSport, noteSteps, SPORT_TYPES, SPORT_LABELS } from '@/utils/workouts'
 import { buildActivityIndex, effectiveWorkoutType, effectiveDistanceKm } from '@/utils/workoutSport'
 import { PULSE_ZONES, getHRSettings, timeInZones, estimateVO2max } from '@/utils/analysis'
-import { settings, activeGoalVdot, activeTarget, distanceGoals, hydrateSettings } from '@/settings'
+import { settings, targetForDate, distanceGoals, hydrateSettings } from '@/settings'
 import { currentVdot, currentFitness, vdotTrend, vdotSamples, fitnessLine, trackedTargets, setActivities } from '@/fitness'
-import { derivedPaceFor } from '@/utils/paceAdvice'
+import { sessionPace } from '@/utils/paceAdvice'
 import { DISTANCES, DISTANCE_LABELS, type DistanceKey } from '@/utils/vdot'
 
 const workouts = ref<Workout[]>([])
@@ -671,11 +671,13 @@ async function completeToday(w: Workout) {
 	}
 }
 
-/** Implied pace for a session, when it drifts from the written one. */
-const todayDerivedPace = (w: Workout) => derivedPaceFor(w, {
+/** The session's pace, derived live from current fitness (or its goal, for race pace). */
+const todayPace = (w: Workout) => sessionPace(w, {
 	currentVdot: currentVdot.value,
-	goalVdot: activeGoalVdot.value,
-	goalDistanceM: activeTarget.value?.distanceM ?? null,
+	goalFor: (date: string) => {
+		const t = targetForDate(date)
+		return t ? { vdot: t.neededVdot, distanceM: t.distanceM, name: t.name } : null
+	},
 })
 
 const sessionSteps = (w: Workout) => noteSteps(w)
@@ -1657,8 +1659,10 @@ onUnmounted(destroyCharts)
 	font-size: 0.74rem; color: var(--text-secondary); background: var(--surface-color);
 	border: 1px solid var(--border-color); padding: 2px 9px; border-radius: 999px;
 }
-.ts-pill.pace { color: var(--primary-color); border-color: var(--primary-soft); }
-.ts-pill.derived { color: var(--text-muted); background: transparent; border-style: dashed; cursor: help; }
+.ts-pill.pace { cursor: help; }
+.ts-pill.pace.basis-fitness { color: var(--color-running-primary); border-color: color-mix(in srgb, var(--color-running-primary) 40%, transparent); }
+.ts-pill.pace.basis-goal { color: var(--primary-color); border-color: var(--primary-soft); background: var(--primary-soft); }
+.ts-pill.pace.basis-planned { color: var(--text-muted); font-family: inherit; }
 .ts-steps { margin: 9px 0 0; padding-left: 0; list-style: none; display: flex; flex-direction: column; gap: 5px; }
 .ts-steps li { position: relative; padding-left: 15px; font-size: 0.8rem; color: var(--text-secondary); line-height: 1.4; }
 .ts-steps li::before { content: ''; position: absolute; left: 3px; top: 7px; width: 4px; height: 4px; border-radius: 50%; background: var(--text-muted); }

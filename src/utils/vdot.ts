@@ -137,7 +137,8 @@ export function matchZone(zoneLabel: string): ZoneKey | null {
 	if (/threshold|tempo|lt/.test(n)) return 'threshold'
 	if (/vo2|vo₂|interval/.test(n)) return 'interval'
 	if (/rep|stride|sprint/.test(n)) return 'rep'
-	if (/marathon|race pace|\d+\s*k\s*pace/.test(n)) return 'marathon'
+	// "Goal 4:00–4:20/km" is how the plan labels a race-pace rehearsal.
+	if (/marathon|race pace|goal|\d+\s*k\s*pace/.test(n)) return 'marathon'
 	return null
 }
 
