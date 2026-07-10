@@ -9,7 +9,7 @@ import { activityApi } from './activities'
 import { settings, raceGoals, targets } from './settings'
 import {
 	raceVdotSamples, effortVdotSamples, currentVdot as computeCurrentVdot,
-	vdotTrendPerMonth, goalProgress, type GoalProgress,
+	vdotTrendPerMonth, rollingBestSeries, goalProgress, type GoalProgress,
 } from './utils/fitness'
 import type { Target } from './types'
 
@@ -60,15 +60,18 @@ export const derivedFitness = computed(() =>
 	computeCurrentVdot(raceSamples.value, effortSamples.value, null))
 
 /**
- * VDOT gained per 30 days over the last 12 weeks, from training efforts alone.
+ * The fitness line: best VDOT recorded in the trailing 90 days, at weekly points.
  *
- * Races must not enter this regression: they read several VDOT higher than any
- * training run, so one race among training samples fabricates a huge slope in
- * whichever direction it happens to sit. Efforts are a consistent ruler, so
- * their slope is the honest measure of *change* — we then apply it to whatever
- * level `currentVdot` establishes.
+ * Races belong in here alongside training efforts. It's a maximum, not a fit, so
+ * a race can only raise the line — which is exactly what a race is for. (Fitting
+ * a regression through raw samples was the old bug: easy runs imply a low VDOT,
+ * so a base block read as a fitness collapse. A trailing max only falls when a
+ * good effort ages out.)
  */
-export const vdotTrend = computed(() => vdotTrendPerMonth(effortSamples.value, 12))
+export const fitnessLine = computed(() => rollingBestSeries(vdotSamples.value, 12))
+
+/** VDOT gained per 30 days, fitted to the fitness line. Null when nothing new was measured. */
+export const vdotTrend = computed(() => vdotTrendPerMonth(vdotSamples.value, 12))
 
 export interface TrackedTarget extends Target {
 	progress: GoalProgress

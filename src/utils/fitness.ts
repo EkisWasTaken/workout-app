@@ -20,10 +20,20 @@ export const MIN_EFFORT_M = 3000
 
 /** A race stays a valid read on fitness for about six months. */
 export const RACE_WINDOW_DAYS = 180
-/** Training efforts go stale much faster. */
-export const EFFORT_WINDOW_DAYS = 42
-/** Beyond this we still show a number, but flag it as stale. */
-export const STALE_WINDOW_DAYS = 120
+
+/**
+ * How far back we look for a hard training effort.
+ *
+ * This used to be 42 days, which had it backwards: a slow easy run from last
+ * week outranked a hard effort from seven weeks ago, so a block of base training
+ * made you look unfit. A maximal effort still says something about you three
+ * months later; an easy run never said anything at all. So look back 90 days and
+ * take the best — but flag the reading as ageing once the winner is old.
+ */
+export const EFFORT_WINDOW_DAYS = 90
+
+/** Past this age, the winning effort still counts but is reported as ageing. */
+export const EFFORT_FRESH_DAYS = 42
 
 export type VdotSource = 'override' | 'race' | 'effort'
 
@@ -105,13 +115,18 @@ export function currentVdot(
 		xs.length ? xs.reduce((b, s) => (s.vdot > b.vdot ? s : b)) : null
 
 	const race = best(races.filter(s => within(s, RACE_WINDOW_DAYS)))
-	if (race) return { vdot: race.vdot, source: 'race', label: race.label, date: race.date, stale: false }
+	if (race) {
+		const stale = !within(race, EFFORT_FRESH_DAYS)
+		return { vdot: race.vdot, source: 'race', label: race.label, date: race.date, stale }
+	}
 
-	const fresh = best(efforts.filter(s => within(s, EFFORT_WINDOW_DAYS)))
-	if (fresh) return { vdot: fresh.vdot, source: 'effort', label: fresh.label, date: fresh.date, stale: false }
-
-	const stale = best(efforts.filter(s => within(s, STALE_WINDOW_DAYS)))
-	if (stale) return { vdot: stale.vdot, source: 'effort', label: stale.label, date: stale.date, stale: true }
+	// Best effort over the whole window, not the freshest — an easy run from
+	// yesterday tells you less than a hard one from two months ago.
+	const effort = best(efforts.filter(s => within(s, EFFORT_WINDOW_DAYS)))
+	if (effort) {
+		const stale = !within(effort, EFFORT_FRESH_DAYS)
+		return { vdot: effort.vdot, source: 'effort', label: effort.label, date: effort.date, stale }
+	}
 
 	return null
 }
@@ -124,29 +139,56 @@ export const MAX_PROJECTION_DAYS = 182
 /** VDOT is only defined over roughly this range; never report outside it. */
 const clampVdot = (v: number) => Math.min(90, Math.max(20, v))
 
+export interface BestPoint {
+	date: string        // the weekly anchor
+	vdot: number        // best effort within the trailing window at that anchor
+	sourceDate: string  // which sample supplied it
+}
+
 /**
- * VDOT gained per 30 days, from a least-squares fit over the best sample in each
- * week. Weekly maxima, not raw samples: easy runs would otherwise drag the line
- * down whenever you happened to log more of them.
+ * Your fitness line: at each weekly anchor, the best VDOT recorded in the
+ * preceding `windowDays`. This is exactly the number `currentVdot` reports, just
+ * plotted through time.
  *
- * Pass ONE source. Races and training efforts measure with different rulers — a
- * race in May followed by training efforts in July looks like a collapse in
- * fitness when it's really just two different kinds of measurement.
+ * Raw per-run VDOT is the wrong thing to trend. Easy runs imply a low VDOT, so a
+ * base-training block reads as a collapse in fitness when nothing has been lost —
+ * you simply haven't tried hard lately. A trailing maximum only falls when a good
+ * effort ages out, which is the honest meaning of "getting slower".
+ */
+export function rollingBestSeries(
+	samples: VdotSample[],
+	weeks = 12,
+	windowDays = EFFORT_WINDOW_DAYS,
+	today = new Date(),
+): BestPoint[] {
+	const out: BestPoint[] = []
+	for (let w = weeks - 1; w >= 0; w--) {
+		const anchor = new Date(today.getTime() - w * 7 * 86_400_000)
+		let best: VdotSample | null = null
+		for (const s of samples) {
+			const age = dayDiff(anchor, new Date(s.date))
+			if (age < 0 || age > windowDays) continue
+			if (!best || s.vdot > best.vdot) best = s
+		}
+		if (best) out.push({ date: iso(anchor), vdot: best.vdot, sourceDate: best.date })
+	}
+	return out
+}
+
+/**
+ * VDOT gained per 30 days, from a least-squares fit over the fitness line.
+ *
+ * Null when a single effort dominates every window: the line is then flat only
+ * because nothing new has been measured, and reporting "0/month" would imply we
+ * looked and found no change. We didn't look — there was nothing to look at.
  */
 export function vdotTrendPerMonth(samples: VdotSample[], weeks = 12, today = new Date()): number | null {
-	const cutoff = dayDiff.bind(null, today)
-	const recent = samples.filter(s => cutoff(new Date(s.date)) <= weeks * 7)
-	if (recent.length < 3) return null
-
-	const weekly = new Map<number, number>()
-	for (const s of recent) {
-		const w = Math.floor(cutoff(new Date(s.date)) / 7) // 0 = this week
-		weekly.set(w, Math.max(weekly.get(w) ?? 0, s.vdot))
-	}
-	if (weekly.size < 3) return null
+	const series = rollingBestSeries(samples, weeks, EFFORT_WINDOW_DAYS, today)
+	if (series.length < 3) return null
+	if (new Set(series.map(p => p.sourceDate)).size < 2) return null
 
 	// x in days-ago (negated so time runs forwards), y in VDOT
-	const pts = [...weekly].map(([w, v]) => ({ x: -w * 7, y: v }))
+	const pts = series.map(p => ({ x: -dayDiff(today, new Date(p.date)), y: p.vdot }))
 	const n = pts.length
 	const mx = pts.reduce((s, p) => s + p.x, 0) / n
 	const my = pts.reduce((s, p) => s + p.y, 0) / n

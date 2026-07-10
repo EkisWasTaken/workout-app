@@ -398,7 +398,8 @@ import { parseActivityFile } from '@/import/parseActivityFile';
 import { activeGoalVdot, activeTarget, hydrateSettings } from '@/settings';
 import { currentVdot, hydrateFitness } from '@/fitness';
 import { paceParts, derivedPaceFor, type DerivedPace } from '@/utils/paceAdvice';
-import { noteSteps } from '@/utils/workouts';
+import { noteSteps, type SportType } from '@/utils/workouts';
+import { buildActivityIndex, effectiveWorkoutType } from '@/utils/workoutSport';
 
 const isActionLoading = ref(false);
 const message = useMessage();
@@ -864,20 +865,14 @@ const workouts = ref<Workout[]>([]);
 const dailyWeights = ref<DailyWeight[]>([]);
 const raceGoals = ref<RaceGoal[]>([]);
 
-const getWorkoutType = (workout: Workout): 'gym' | 'running' | 'bike' | 'rest' | 'other' => {
-	if (workout.type) {
-		const typeLower = workout.type.toLowerCase();
-		if (typeLower === 'gym') return 'gym';
-		if (typeLower === 'running') return 'running';
-		if (typeLower === 'bike' || typeLower === 'cycling') return 'bike';
-		if (typeLower === 'rest day' || typeLower === 'rest') return 'rest';
-	}
-	const nameLower = workout.name.toLowerCase();
-	if (nameLower.includes('gym') || nameLower.includes('strength')) return 'gym';
-	if (nameLower.includes('run') || nameLower.includes('running')) return 'running';
-	if (nameLower.includes('bike') || nameLower.includes('cycle') || nameLower.includes('cycling')) return 'bike';
-	return 'other';
-};
+/**
+ * Where a workout has a recording behind it, the FIT file's sport wins over the
+ * hand-entered `type` column. Replaces a local copy of getWorkoutType that had
+ * drifted from the shared one in utils/workouts.ts.
+ */
+const activityIndex = computed(() => buildActivityIndex(stravaActivities.value));
+const getWorkoutType = (workout: Workout): SportType =>
+	effectiveWorkoutType(workout, activityIndex.value);
 
 const getWorkoutClass = (workout: Workout) => {
   const type = getWorkoutType(workout).toLowerCase();
@@ -985,10 +980,14 @@ async function loadRaceGoals() {
 async function loadWorkouts() { workouts.value = await db.getWorkouts(); }
 async function loadDailyWeights() { dailyWeights.value = await db.getDailyWeights(); }
 
-// Pace advice needs both the active goal (settings) and current fitness.
+// Pace advice needs the active goal (settings) and current fitness. The activity
+// list is needed up front too: it's what corrects each workout's sport.
 const loadAll = () => {
   loadWorkouts(); loadDailyWeights(); loadRaceGoals();
   hydrateSettings(); hydrateFitness();
+  activityApi.getAllActivities()
+    .then(a => { stravaActivities.value = a; })
+    .catch(() => { /* no recordings — workouts keep their declared type */ });
 };
 onMounted(loadAll);
 onActivated(loadAll);

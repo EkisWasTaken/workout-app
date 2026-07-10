@@ -5,6 +5,7 @@ import {
 	effortVdotSamples,
 	currentVdot,
 	vdotTrendPerMonth,
+	rollingBestSeries,
 	projectVdot,
 	goalProgress,
 	type VdotSample,
@@ -101,45 +102,104 @@ describe('currentVdot', () => {
 		expect(c.stale).toBe(false)
 	})
 
-	it('flags an effort older than six weeks as stale, but still uses it', () => {
-		const c = currentVdot([], [sample(daysAgo(90), 40)], null, TODAY)!
+	it('flags an effort older than six weeks as ageing, but still uses it', () => {
+		const c = currentVdot([], [sample(daysAgo(60), 40)], null, TODAY)!
 		expect(c).toMatchObject({ vdot: 40, source: 'effort', stale: true })
 	})
 
 	it('returns null with nothing to go on', () => {
 		expect(currentVdot([], [], null, TODAY)).toBeNull()
 		expect(currentVdot([], [sample(daysAgo(400), 40)], null, TODAY)).toBeNull()
+		expect(currentVdot([], [sample(daysAgo(120), 44)], null, TODAY)).toBeNull()  // past the 90-day window
 	})
 
 	it('takes the best of several recent efforts, not the newest', () => {
 		const c = currentVdot([], [sample(daysAgo(30), 45), sample(daysAgo(2), 39)], null, TODAY)!
 		expect(c.vdot).toBe(45)
 	})
+
+	/**
+	 * The real regression: a half-marathon effort 55 days ago read VDOT 44.9,
+	 * but a 42-day window threw it away and returned 38.6 from an easy July run.
+	 */
+	it('prefers an older hard effort over a recent easy one', () => {
+		const hard = sample(daysAgo(55), 44.9)
+		const easy = sample(daysAgo(3), 38.6)
+		const c = currentVdot([], [easy, hard], null, TODAY)!
+		expect(c.vdot).toBe(44.9)
+		expect(c.stale).toBe(true)   // ageing, and says so
+	})
+
+	it('an effort inside six weeks is not flagged as ageing', () => {
+		expect(currentVdot([], [sample(daysAgo(20), 44)], null, TODAY)!.stale).toBe(false)
+	})
+
+	it('flags an ageing race result too', () => {
+		const old = raceVdotSamples([race({ date: daysAgo(120), distance_km: 21.097, result_time_secs: 6120 })])
+		const c = currentVdot(old, [], null, TODAY)!
+		expect(c.source).toBe('race')
+		expect(c.stale).toBe(true)
+	})
+})
+
+describe('rollingBestSeries', () => {
+	it('holds the best effort until it ages out of the window', () => {
+		const hard = sample(daysAgo(60), 45)
+		const easy = [0, 7, 14].map(d => sample(daysAgo(d), 38))
+		const series = rollingBestSeries([hard, ...easy], 12, 90, TODAY)
+		// Every anchor within 90 days of the hard effort still reports it.
+		expect(series[series.length - 1].vdot).toBe(45)
+		expect(series[series.length - 1].sourceDate).toBe(hard.date)
+	})
+
+	it('drops to the next best once the good effort falls out of the window', () => {
+		const old = sample(daysAgo(100), 45)
+		const recent = sample(daysAgo(10), 38)
+		const series = rollingBestSeries([old, recent], 12, 90, TODAY)
+		expect(series[series.length - 1].vdot).toBe(38)   // 100 days > 90-day window
+	})
+
+	it('skips anchors with nothing in the window', () => {
+		expect(rollingBestSeries([sample(daysAgo(2), 40)], 12, 90, TODAY).length).toBeGreaterThan(0)
+		expect(rollingBestSeries([], 12, 90, TODAY)).toEqual([])
+	})
 })
 
 describe('vdotTrendPerMonth', () => {
-	it('measures a steady climb', () => {
-		// +1 VDOT per 30 days, sampled weekly over 12 weeks
+	it('measures a steady climb of new best efforts', () => {
 		const s = Array.from({ length: 12 }, (_, i) => sample(daysAgo(i * 7), 45 - (i * 7) / 30))
 		expect(vdotTrendPerMonth(s, 12, TODAY)).toBeCloseTo(1, 1)
 	})
 
-	it('is negative when detraining', () => {
-		const s = Array.from({ length: 8 }, (_, i) => sample(daysAgo(i * 7), 40 + (i * 7) / 30))
+	/**
+	 * The regression this whole function exists for: a hard May effort followed
+	 * by a block of easy July running used to fit a -5/month "collapse". Not
+	 * doing hard efforts is not losing fitness.
+	 */
+	it('does not read a base-training block as fitness loss', () => {
+		const hard = [sample(daysAgo(55), 44.9), sample(daysAgo(48), 44.2)]
+		const easyJuly = [9, 7, 4, 3, 2, 1].map(d => sample(daysAgo(d), 26 + d))
+		expect(vdotTrendPerMonth([...hard, ...easyJuly], 12, TODAY)).toBeNull()
+	})
+
+	it('is null when one effort dominates every window', () => {
+		const s = [sample(daysAgo(30), 45), ...[0, 7, 14].map(d => sample(daysAgo(d), 30))]
+		expect(vdotTrendPerMonth(s, 12, TODAY)).toBeNull()
+	})
+
+	it('goes negative when a good effort ages out and nothing replaces it', () => {
+		const s = [sample(daysAgo(100), 46), ...[0, 14, 28, 42, 56, 70].map(d => sample(daysAgo(d), 40))]
 		expect(vdotTrendPerMonth(s, 12, TODAY)!).toBeLessThan(0)
 	})
 
-	it('uses the weekly best, so extra easy runs do not drag the line down', () => {
-		const weeksOnly = Array.from({ length: 6 }, (_, i) => sample(daysAgo(i * 7), 45 - (i * 7) / 30))
-		const withJunk = [...weeksOnly, ...weeksOnly.map(s => ({ ...s, vdot: 30 }))]
-		expect(vdotTrendPerMonth(withJunk, 12, TODAY)).toBeCloseTo(vdotTrendPerMonth(weeksOnly, 12, TODAY)!, 5)
+	it('is unmoved by extra easy runs', () => {
+		const real = Array.from({ length: 6 }, (_, i) => sample(daysAgo(i * 7), 45 - (i * 7) / 30))
+		const withJunk = [...real, ...real.map(s => ({ ...s, vdot: 30 }))]
+		expect(vdotTrendPerMonth(withJunk, 12, TODAY)).toBeCloseTo(vdotTrendPerMonth(real, 12, TODAY)!, 5)
 	})
 
-	it('needs at least three distinct weeks', () => {
-		expect(vdotTrendPerMonth([sample(daysAgo(1), 44), sample(daysAgo(2), 44)], 12, TODAY)).toBeNull()
-		// four samples, but all inside one week
-		const oneWeek = [0, 1, 2, 3].map(d => sample(daysAgo(d), 44))
-		expect(vdotTrendPerMonth(oneWeek, 12, TODAY)).toBeNull()
+	it('needs at least three anchors', () => {
+		expect(vdotTrendPerMonth([sample(daysAgo(1), 44)], 2, TODAY)).toBeNull()
 	})
 })
 
@@ -209,19 +269,5 @@ describe('goalProgress', () => {
 		expect(goalProgress(50, 44, 1, null, TODAY).noProjectionReason).toBe('undated')
 		expect(goalProgress(50, 44, null, inDays(60), TODAY).noProjectionReason).toBe('no-trend')
 		expect(goalProgress(50, 44, 1, inDays(60), TODAY).noProjectionReason).toBeNull()
-	})
-})
-
-describe('trend must not mix races with training efforts', () => {
-	it('a race among training efforts would fabricate a collapse', () => {
-		// The real scenario: a 44.1 race in May, then 38.6-ish training runs in July.
-		const race: VdotSample = { date: daysAgo(48), vdot: 44.1, source: 'race', label: 'Half' }
-		const efforts = [0, 7, 14].map(d => sample(daysAgo(d), 38.6))
-
-		const mixed = vdotTrendPerMonth([race, ...efforts], 12, TODAY)!
-		const effortsOnly = vdotTrendPerMonth(efforts, 12, TODAY)
-
-		expect(mixed).toBeLessThan(-2)          // looks like heavy detraining
-		expect(effortsOnly).toBeCloseTo(0, 1)   // the truth: flat
 	})
 })

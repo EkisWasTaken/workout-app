@@ -43,7 +43,7 @@
 							<span v-if="w.isCompleted === 1" class="ts-done">✓</span>
 						</div>
 						<div class="ts-pills">
-							<span v-if="w.distance" class="ts-pill">{{ fmt(w.distance) }} km</span>
+							<span v-if="workoutKm(w)" class="ts-pill">{{ fmt(workoutKm(w)!) }} km</span>
 							<span v-if="w.duration" class="ts-pill">{{ w.duration }} min</span>
 							<span v-if="w.targetPace" class="ts-pill pace mono">{{ w.targetPace }}</span>
 							<span v-if="w.gymType" class="ts-pill">{{ w.gymType }}</span>
@@ -245,44 +245,39 @@
 			</p>
 		</template>
 
-		<!-- Not enough history for CTL/ATL to mean anything yet -->
-		<template v-if="formCalibrating">
-			<div class="section-head"><h2>Fitness &amp; freshness</h2><span class="section-note">calibrating</span></div>
-			<section class="panel form-calibrating">
-				<p>
-					Form needs about two weeks of heart-rate history before it says anything useful, and
-					fitness keeps filling up for roughly six. You have
-					<strong>{{ effortSpanDays }} day{{ effortSpanDays === 1 ? '' : 's' }}</strong>.
-				</p>
-				<p class="vo2-note">Import older FIT files on the Schedule page to backfill this sooner.</p>
-			</section>
-		</template>
-
-		<!-- Fitness & Freshness -->
-		<template v-if="formHasData">
+		<!-- Fitness trend: VDOT from every hard effort and race, against the goals -->
+		<template v-if="vdotTrendHasData">
 			<div class="section-head">
-				<h2>Fitness &amp; freshness</h2>
-				<span class="section-note">last 90 days · from heart-rate effort</span>
+				<h2>Fitness trend</h2>
+				<span class="section-note">VDOT from your races and hard efforts</span>
 			</div>
-			<section class="panel chart-card form-card">
+			<section class="panel chart-card vdot-card">
 				<div class="chart-head">
-					<h3>Form</h3>
+					<h3>VDOT over time</h3>
 					<div class="form-badges">
-						<span class="fb"><span class="fb-lbl">Fitness</span><span class="mono">{{ currentForm!.fitness }}</span></span>
-						<span class="fb"><span class="fb-lbl">Fatigue</span><span class="mono">{{ currentForm!.fatigue }}</span></span>
-						<span class="fb"><span class="fb-lbl">Form</span><span class="mono">{{ currentForm!.form > 0 ? '+' : '' }}{{ currentForm!.form }}</span></span>
-						<span v-if="formVerdict" class="fb-verdict" :class="formVerdict.tone">{{ formVerdict.label }}</span>
+						<span v-if="currentFitness" class="fb">
+							<span class="fb-lbl">Now</span><span class="mono">{{ currentFitness.vdot }}</span>
+						</span>
+						<span v-if="vdotTrend !== null" class="fb">
+							<span class="fb-lbl">Trend</span>
+							<span class="mono">{{ vdotTrend > 0 ? '+' : '' }}{{ vdotTrend }}/mo</span>
+						</span>
+						<span v-if="currentFitness?.stale" class="fb-verdict warn">Ageing reading</span>
 					</div>
 				</div>
-				<div class="chart-body"><canvas ref="formCanvas"></canvas></div>
+				<div class="chart-body"><canvas ref="vdotCanvas"></canvas></div>
 				<div class="form-foot">
-					<p v-if="formVerdict" class="vo2-note">{{ formVerdict.note }}.</p>
-					<p v-if="raceReadiness" class="vo2-note race-ready">
-						<strong>{{ raceReadiness.label }}</strong> — {{ raceReadiness.note }}.
-						<span v-if="nextRaceDays !== null">{{ nextRaceDays }} days to {{ nextRace!.name }}.</span>
+					<p class="vo2-note">
+						Each dot is one run: the best VDOT it implies. Races are ringed. The solid line is
+						your best effort in the trailing 90 days — the number your paces come from. Dashed
+						lines are the VDOT each goal needs.
 					</p>
-					<p v-if="formImmature" class="vo2-note warn-note">
-						Only {{ effortSpanDays }} days of history — fitness is still ramping from zero and reads low.
+					<p v-if="vdotTrend === null" class="vo2-note">
+						No trend yet: one effort still tops every 90-day window. Run something hard and the
+						line will move.
+					</p>
+					<p v-if="currentFitness?.stale" class="vo2-note warn-note">
+						Your best reading is from {{ currentFitness.date }} — race or time-trial to refresh it.
 					</p>
 				</div>
 			</section>
@@ -519,27 +514,6 @@
 			<div v-if="recentActivities.length === 0" class="recent-empty">No completed workouts yet.</div>
 		</section>
 
-		<!-- Personal records -->
-		<div class="section-head"><h2>Personal records</h2></div>
-		<section class="pr-grid">
-			<div class="pr-card">
-				<span class="pr-label"><n-icon :component="WalkOutline" /> Longest run</span>
-				<span class="pr-value mono">{{ prLongestRun ? fmt(prLongestRun) + ' km' : '—' }}</span>
-			</div>
-			<div class="pr-card">
-				<span class="pr-label"><n-icon :component="BicycleOutline" /> Longest ride</span>
-				<span class="pr-value mono">{{ prLongestRide ? fmt(prLongestRide) + ' km' : '—' }}</span>
-			</div>
-			<div class="pr-card">
-				<span class="pr-label"><n-icon :component="TrophyOutline" /> Biggest week</span>
-				<span class="pr-value mono">{{ prBiggestWeek ? fmt(prBiggestWeek) + ' km' : '—' }}</span>
-			</div>
-			<div class="pr-card">
-				<span class="pr-label"><n-icon :component="BarbellOutline" /> Heaviest session</span>
-				<span class="pr-value mono">{{ prHeaviestGym ? fmt(prHeaviestGym / 1000) + ' t' : '—' }}</span>
-			</div>
-		</section>
-
 		<!-- Running PRs from Strava -->
 		<template v-if="stravaRunPRs">
 			<div class="section-head">
@@ -573,10 +547,11 @@
 import { ref, computed, onMounted, onActivated, onUnmounted, nextTick, watch } from 'vue'
 import { NIcon } from 'naive-ui'
 import {
-	WalkOutline, BicycleOutline, BarbellOutline, BodyOutline, CheckmarkDoneOutline,
+	WalkOutline, BarbellOutline, BodyOutline, CheckmarkDoneOutline,
 	FlameOutline, FlagOutline, TrophyOutline, AddOutline, ChevronForwardOutline,
 } from '@vicons/ionicons5'
 import Chart from 'chart.js/auto'
+import 'chartjs-adapter-date-fns' // registers the time scale the VDOT trend uses
 import {
 	format, parseISO, startOfWeek, endOfWeek, subWeeks, addWeeks, addDays, subYears,
 	isWithinInterval, differenceInCalendarDays, startOfDay, isSameMonth, addMonths,
@@ -584,10 +559,11 @@ import {
 import { db } from '@/db'
 import { activityApi } from '@/activities'
 import type { Workout, DailyWeight, RaceGoal } from '@/types'
-import { getWorkoutType, getSportColor, isDistanceSport, noteSteps, SPORT_TYPES, SPORT_LABELS } from '@/utils/workouts'
-import { PULSE_ZONES, getHRSettings, timeInZones, estimateVO2max, relativeEffort, fitnessSeries } from '@/utils/analysis'
+import { getSportColor, isDistanceSport, noteSteps, SPORT_TYPES, SPORT_LABELS } from '@/utils/workouts'
+import { buildActivityIndex, effectiveWorkoutType, effectiveDistanceKm } from '@/utils/workoutSport'
+import { PULSE_ZONES, getHRSettings, timeInZones, estimateVO2max } from '@/utils/analysis'
 import { settings, activeGoalVdot, activeTarget, distanceGoals, hydrateSettings } from '@/settings'
-import { currentVdot, currentFitness, vdotTrend, trackedTargets, setActivities } from '@/fitness'
+import { currentVdot, currentFitness, vdotTrend, vdotSamples, fitnessLine, trackedTargets, setActivities } from '@/fitness'
 import { derivedPaceFor } from '@/utils/paceAdvice'
 import { DISTANCES, DISTANCE_LABELS, type DistanceKey } from '@/utils/vdot'
 
@@ -614,11 +590,20 @@ const greeting = computed(() => {
 })
 const todayLabel = computed(() => format(now, 'EEEE, d MMMM'))
 
+/**
+ * Where a workout has a recording behind it, the FIT file's sport and distance
+ * win over the hand-entered `type`/`distance` columns. Shadows the imported
+ * getWorkoutType so every call site below is corrected at once.
+ */
+const activityIndex = computed(() => buildActivityIndex(stravaActivities.value))
+const getWorkoutType = (w: Workout) => effectiveWorkoutType(w, activityIndex.value)
+const workoutKm = (w: Workout) => effectiveDistanceKm(w, activityIndex.value)
+
 const completed = computed(() => workouts.value.filter(w => w.isCompleted === 1))
 const inThisWeek = (w: Workout) => isWithinInterval(parseISO(w.date), { start: weekStart, end: weekEnd })
 
-const runWeek = computed(() => completed.value.filter(w => inThisWeek(w) && getWorkoutType(w) === 'running').reduce((s, w) => s + (w.distance || 0), 0))
-const bikeWeek = computed(() => completed.value.filter(w => inThisWeek(w) && getWorkoutType(w) === 'bike').reduce((s, w) => s + (w.distance || 0), 0))
+const runWeek = computed(() => completed.value.filter(w => inThisWeek(w) && getWorkoutType(w) === 'running').reduce((s, w) => s + (workoutKm(w) || 0), 0))
+const bikeWeek = computed(() => completed.value.filter(w => inThisWeek(w) && getWorkoutType(w) === 'bike').reduce((s, w) => s + (workoutKm(w) || 0), 0))
 const thisWeekDistance = computed(() => runWeek.value + bikeWeek.value)
 
 const weekPlanned = computed(() => workouts.value.filter(w => inThisWeek(w) && getWorkoutType(w) !== 'rest'))
@@ -658,7 +643,8 @@ const weekDays = computed(() => {
 const sportColor = (w: Workout) => getSportColor(getWorkoutType(w))
 const chipLabel = (w: Workout) => {
 	const t = getWorkoutType(w)
-	if (isDistanceSport(t) && w.distance) return `${fmt(w.distance)}k`
+	const km = workoutKm(w)
+	if (isDistanceSport(t) && km) return `${fmt(km)}k`
 	return t === 'rest' ? 'rest' : t.slice(0, 3)
 }
 
@@ -714,69 +700,18 @@ function goalBarPct(t: { neededVdot: number; progress: { currentVdot: number } }
 	return Math.max(2, Math.min(100, Math.round(pct)))
 }
 
-// ===== Fitness & Freshness (CTL / ATL / TSB) =====
+// ===== Fitness trend (VDOT over time) =====
 
-/** Total Relative Effort per calendar day, from every HR-carrying activity. */
-const dailyEfforts = computed(() => {
-	const { maxHR, restHR } = getHRSettings(stravaActivities.value)
-	const out: Record<string, number> = {}
-	if (maxHR < 140) return out
-	for (const a of stravaActivities.value) {
-		const effort = relativeEffort(a, maxHR, restHR)
-		if (effort === null) continue
-		const key = (a.start_date_local || a.start_date || '').slice(0, 10)
-		if (!key) continue
-		out[key] = (out[key] || 0) + effort
-	}
-	return out
-})
-
-const formSeries = computed(() => fitnessSeries(dailyEfforts.value, 90))
-const currentForm = computed(() => formSeries.value[formSeries.value.length - 1] ?? null)
-
-/** Days of history feeding the model — CTL is cold-started at zero, so this matters. */
-const effortSpanDays = computed(() => formSeries.value.length)
-
-/** Below two weeks the CTL ramp dominates and the numbers mean nothing. */
-const formHasData = computed(() => effortSpanDays.value >= 14)
-
-/** Some history, but not enough to trust yet — say so rather than render nothing. */
-const formCalibrating = computed(() =>
-	effortSpanDays.value > 0 && effortSpanDays.value < 14)
-
-/** CTL uses a 42-day time constant; before that, "fitness" is still filling up. */
-const formImmature = computed(() => formHasData.value && effortSpanDays.value < 42)
-
-/**
- * Training Stress Balance read as words. Positive form means rested; deeply
- * negative means you're absorbing more load than you're recovering from.
- */
-const formVerdict = computed(() => {
-	const f = currentForm.value?.form
-	if (f === undefined) return null
-	if (f > 20) return { label: 'Very fresh', tone: 'warn', note: 'Detraining risk if this holds' }
-	if (f > 5) return { label: 'Race ready', tone: 'good', note: 'Sharp and recovered' }
-	if (f >= -10) return { label: 'Neutral', tone: 'neutral', note: 'Maintaining' }
-	if (f >= -30) return { label: 'Building', tone: 'neutral', note: 'Productive training load' }
-	return { label: 'Overreaching', tone: 'bad', note: 'Back off before something breaks' }
-})
-
-/** Race-day readiness: form is only meaningful relative to how close the race is. */
-const raceReadiness = computed(() => {
-	const days = nextRaceDays.value
-	const f = currentForm.value?.form
-	if (days === null || f === undefined) return null
-	if (days > 21) return { label: 'Build phase', note: 'Form matters closer to race day' }
-	if (days > 7) return { label: 'Taper window', note: f < -10 ? 'Still carrying fatigue' : 'Freshening on schedule' }
-	return { label: 'Race week', note: f > 5 ? 'Peaked — you are ready' : 'Form is low for race week' }
-})
+/** Enough readings to draw a line through. */
+const vdotTrendHasData = computed(() => vdotSamples.value.length >= 3)
 
 const recentActivities = computed(() =>
 	[...completed.value].sort((a, b) => b.date.localeCompare(a.date)).slice(0, 6))
 const formatActivityDate = (d: string) => format(parseISO(d), 'EEE d MMM')
 const activityStat = (w: Workout) => {
 	const t = getWorkoutType(w)
-	if (isDistanceSport(t) && w.distance) return `${fmt(w.distance)} km`
+	const km = workoutKm(w)
+	if (isDistanceSport(t) && km) return `${fmt(km)} km`
 	if (t === 'gym' && w.totalWeightLifted) return `${fmt(w.totalWeightLifted / 1000)} t`
 	if (w.actualDuration) return `${w.actualDuration} min`
 	return ''
@@ -811,7 +746,7 @@ const planProgress = computed(() => {
 const sparkWeeks = computed(() => weekBuckets(8).map(wk => {
 	const inWk = (w: Workout) => isWithinInterval(parseISO(w.date), { start: wk.start, end: wk.end })
 	return {
-		dist: completed.value.filter(w => inWk(w) && isDistanceSport(getWorkoutType(w))).reduce((s, w) => s + (w.distance || 0), 0),
+		dist: completed.value.filter(w => inWk(w) && isDistanceSport(getWorkoutType(w))).reduce((s, w) => s + (workoutKm(w) || 0), 0),
 		ton: completed.value.filter(w => inWk(w) && getWorkoutType(w) === 'gym').reduce((s, w) => s + (w.totalWeightLifted || 0), 0) / 1000,
 	}
 }))
@@ -866,10 +801,10 @@ const aerobicPace = computed(() => {
 const recentPRs = computed(() => {
 	const out: string[] = []
 	const weekAgo = addDays(now, -7)
-	const runs = completed.value.filter(w => getWorkoutType(w) === 'running' && w.distance)
+	const runs = completed.value.filter(w => getWorkoutType(w) === 'running' && workoutKm(w))
 	if (runs.length >= 2) {
-		const best = runs.reduce((b, w) => (w.distance! > b.distance! ? w : b))
-		if (parseISO(best.date) >= weekAgo) out.push(`Longest run ever — ${fmt(best.distance!)} km`)
+		const best = runs.reduce((b, w) => (workoutKm(w)! > workoutKm(b)! ? w : b))
+		if (parseISO(best.date) >= weekAgo) out.push(`Longest run ever — ${fmt(workoutKm(best)!)} km`)
 	}
 	for (const name of ['1 km', '5 km', '10 km', 'Half marathon']) {
 		let bestT: number | null = null
@@ -887,27 +822,6 @@ const recentPRs = computed(() => {
 })
 
 // PRs
-const prLongestRun = computed(() => {
-	const r = completed.value.filter(w => getWorkoutType(w) === 'running' && w.distance)
-	return r.length ? Math.max(...r.map(w => w.distance!)) : 0
-})
-const prLongestRide = computed(() => {
-	const r = completed.value.filter(w => getWorkoutType(w) === 'bike' && w.distance)
-	return r.length ? Math.max(...r.map(w => w.distance!)) : 0
-})
-const prHeaviestGym = computed(() => {
-	const g = completed.value.filter(w => getWorkoutType(w) === 'gym' && w.totalWeightLifted)
-	return g.length ? Math.max(...g.map(w => w.totalWeightLifted!)) : 0
-})
-const prBiggestWeek = computed(() => {
-	const byWeek: Record<string, number> = {}
-	completed.value.filter(w => isDistanceSport(getWorkoutType(w))).forEach(w => {
-		const k = format(startOfWeek(parseISO(w.date), { weekStartsOn: 1 }), 'yyyy-MM-dd')
-		byWeek[k] = (byWeek[k] || 0) + (w.distance || 0)
-	})
-	const vals = Object.values(byWeek)
-	return vals.length ? Math.max(...vals) : 0
-})
 
 // ===== Predictions =====
 function linReg(xs: number[], ys: number[]) {
@@ -945,7 +859,7 @@ const runningPrediction = computed(() => {
 	const weeklyData = Array.from({ length: 12 }, (_, i) => {
 		const s = subWeeks(weekStart, 11 - i)
 		const e = endOfWeek(s, { weekStartsOn: 1 })
-		return completed.value.filter(w => isWithinInterval(parseISO(w.date), { start: s, end: e }) && getWorkoutType(w) === 'running').reduce((sum, w) => sum + (w.distance || 0), 0)
+		return completed.value.filter(w => isWithinInterval(parseISO(w.date), { start: s, end: e }) && getWorkoutType(w) === 'running').reduce((sum, w) => sum + (workoutKm(w) || 0), 0)
 	})
 	const nonZero = weeklyData.filter(v => v > 0)
 	if (nonZero.length < 3) return null
@@ -1127,8 +1041,9 @@ const runSamples = computed(() => {
 			out.push({ date: new Date(a.start_date_local || a.start_date), distM: a.distance, timeSec: a.moving_time })
 	}
 	for (const w of completed.value) {
-		if (getWorkoutType(w) === 'running' && w.distance && w.actualDuration)
-			out.push({ date: parseISO(w.date), distM: w.distance * 1000, timeSec: w.actualDuration * 60 })
+		const km = workoutKm(w)
+		if (getWorkoutType(w) === 'running' && km && w.actualDuration)
+			out.push({ date: parseISO(w.date), distM: km * 1000, timeSec: w.actualDuration * 60 })
 	}
 	return out
 })
@@ -1193,7 +1108,7 @@ const planWeeks = computed(() => weekBuckets(8).map(wk => {
 	const planned = workouts.value.filter(w => inWk(w) && getWorkoutType(w) !== 'rest')
 	const done = planned.filter(w => w.isCompleted === 1)
 	const plannedKm = planned.filter(w => isDistanceSport(getWorkoutType(w))).reduce((s, w) => s + (w.distance || 0), 0)
-	const doneKm = done.filter(w => isDistanceSport(getWorkoutType(w))).reduce((s, w) => s + (w.distance || 0), 0)
+	const doneKm = done.filter(w => isDistanceSport(getWorkoutType(w))).reduce((s, w) => s + (workoutKm(w) || 0), 0)
 	return {
 		label: wk.label, planned: planned.length, done: done.length,
 		plannedKm: Math.round(plannedKm), doneKm: Math.round(doneKm),
@@ -1230,7 +1145,7 @@ const vo2Canvas = ref<HTMLCanvasElement | null>(null)
 const zoneCanvas = ref<HTMLCanvasElement | null>(null)
 const zoneDonutCanvas = ref<HTMLCanvasElement | null>(null)
 const predictedCanvas = ref<HTMLCanvasElement | null>(null)
-const formCanvas = ref<HTMLCanvasElement | null>(null)
+const vdotCanvas = ref<HTMLCanvasElement | null>(null)
 let charts: Chart[] = []
 
 /** Only the active tab's canvases exist, so only its charts get built. */
@@ -1273,7 +1188,7 @@ function buildDistance() {
 	if (!distanceCanvas.value) return
 	const weeks = weekBuckets(12)
 	const sum = (type: 'running' | 'bike', wk: { start: Date; end: Date }) =>
-		completed.value.filter(w => isWithinInterval(parseISO(w.date), { start: wk.start, end: wk.end }) && getWorkoutType(w) === type).reduce((s, w) => s + (w.distance || 0), 0)
+		completed.value.filter(w => isWithinInterval(parseISO(w.date), { start: wk.start, end: wk.end }) && getWorkoutType(w) === type).reduce((s, w) => s + (workoutKm(w) || 0), 0)
 	charts.push(new Chart(distanceCanvas.value, {
 		type: 'bar',
 		data: { labels: weeks.map(w => w.label), datasets: [
@@ -1551,47 +1466,93 @@ function buildZoneDonut() {
 }
 
 /**
- * Fitness (CTL), Fatigue (ATL) and Form (TSB) over the last 90 days. Form is
- * plotted as a filled band because its sign is what you read: above zero is
- * fresh, below is fatigued.
+ * VDOT over time: one point per run (the best VDOT that run implies), races drawn
+ * larger and ringed, plus a dashed line at the VDOT each goal requires.
+ *
+ * A time axis, not a category axis — samples are irregular, and spacing them
+ * evenly would flatter a month with lots of runs and squash a quiet one.
  */
-function buildForm() {
-	if (!formCanvas.value || !formHasData.value) return
-	const series = formSeries.value
-	const labels = series.map(p => format(parseISO(p.date), 'd MMM'))
+function buildVdotTrend() {
+	if (!vdotCanvas.value || !vdotTrendHasData.value) return
 
-	charts.push(new Chart(formCanvas.value, {
+	const samples = vdotSamples.value
+	const points = samples.map(s => ({ x: parseISO(s.date).getTime(), y: s.vdot, sample: s }))
+	const isRace = (i: number) => samples[i].source === 'race'
+	const runColor = getSportColor('running')
+
+	const goalLines = trackedTargets.value.slice(0, 3).map((t, i) => ({
+		label: `${t.name} needs ${t.neededVdot}`,
+		data: [
+			{ x: points[0].x, y: t.neededVdot },
+			{ x: points[points.length - 1].x, y: t.neededVdot },
+		],
+		borderColor: [css('--success-color'), css('--warning-color'), css('--text-muted')][i],
+		borderWidth: 1.5,
+		borderDash: [5, 5],
+		pointRadius: 0,
+		fill: false,
+	}))
+
+	// The line that actually drives your paces: best effort in the trailing 90 days.
+	const bestLine = fitnessLine.value.map(p => ({ x: parseISO(p.date).getTime(), y: p.vdot }))
+
+	charts.push(new Chart(vdotCanvas.value, {
 		type: 'line',
 		data: {
-			labels,
 			datasets: [
 				{
-					label: 'Fitness (CTL)', data: series.map(p => p.fitness),
-					borderColor: css('--primary-color'), backgroundColor: 'transparent',
-					borderWidth: 2, tension: 0.3, pointRadius: 0, pointHoverRadius: 4,
+					label: 'Fitness (best of last 90 days)',
+					data: bestLine,
+					borderColor: css('--primary-color'),
+					backgroundColor: 'transparent',
+					borderWidth: 2,
+					tension: 0.2,
+					pointRadius: 0,
+					pointHoverRadius: 0,
 				},
 				{
-					label: 'Fatigue (ATL)', data: series.map(p => p.fatigue),
-					borderColor: css('--warning-color'), backgroundColor: 'transparent',
-					borderWidth: 1.5, borderDash: [4, 3], tension: 0.3, pointRadius: 0, pointHoverRadius: 4,
+					label: 'Each run',
+					data: points,
+					borderColor: 'transparent',
+					backgroundColor: runColor,
+					showLine: false,
+					pointRadius: (ctx: any) => (isRace(ctx.dataIndex) ? 6 : 3),
+					pointHoverRadius: (ctx: any) => (isRace(ctx.dataIndex) ? 8 : 5),
+					pointBorderColor: (ctx: any) => (isRace(ctx.dataIndex) ? css('--text-color') : runColor),
+					pointBorderWidth: (ctx: any) => (isRace(ctx.dataIndex) ? 2 : 0),
 				},
-				{
-					label: 'Form (TSB)', data: series.map(p => p.form),
-					borderColor: css('--success-color'),
-					backgroundColor: 'color-mix(in srgb, ' + css('--success-color') + ' 12%, transparent)',
-					borderWidth: 1.5, tension: 0.3, pointRadius: 0, pointHoverRadius: 4, fill: 'origin',
-				},
+				...goalLines,
 			],
 		},
 		options: {
-			...baseOpts(),
+			...baseOpts('VDOT'),
 			plugins: {
 				...baseOpts().plugins,
 				legend: { display: true, position: 'bottom', labels: { color: css('--text-secondary'), boxWidth: 10, font: { size: 10 }, usePointStyle: true } },
+				tooltip: {
+					...baseOpts().plugins.tooltip,
+					callbacks: {
+						title: (items: any[]) => format(new Date(items[0].parsed.x), 'd MMM yyyy'),
+						label: (ctx: any) => {
+							const s = ctx.raw?.sample
+							if (!s) return ` ${ctx.dataset.label}`
+							return ` VDOT ${s.vdot} — ${s.label}${s.source === 'race' ? ' (race)' : ''}`
+						},
+					},
+				},
 			},
 			scales: {
-				...(baseOpts() as any).scales,
-				x: { ...(baseOpts() as any).scales.x, ticks: { color: css('--text-muted'), font: { size: 10 }, maxTicksLimit: 8, maxRotation: 0 } },
+				x: {
+					type: 'time',
+					time: { unit: 'month' },
+					grid: { display: false },
+					border: { display: false },
+					ticks: { color: css('--text-muted'), font: { size: 10 }, maxRotation: 0 },
+				},
+				y: {
+					...(baseOpts('VDOT') as any).scales.y,
+					ticks: { color: css('--text-muted'), font: { size: 10 } },
+				},
 			},
 		} as any,
 	}))
@@ -1615,7 +1576,7 @@ async function buildAll() {
 	await nextTick()
 
 	if (tab.value === 'goals') {
-		buildForm(); buildPredicted(); buildVO2()
+		buildVdotTrend(); buildPredicted(); buildVO2()
 	} else if (tab.value === 'trends') {
 		buildDistance(); buildTonnage(); buildWeight(); buildMix()
 		buildZones(); buildZoneDonut(); buildHeatmap()
@@ -1934,6 +1895,9 @@ onUnmounted(destroyCharts)
 .pr-card { background: var(--surface-color); border: 1px solid var(--border-color); border-radius: var(--radius); padding: 14px 16px; display: flex; flex-direction: column; gap: 8px; box-shadow: inset 0 1px 0 rgba(255,255,255,0.04), 0 1px 3px rgba(0,0,0,0.25); }
 .pr-label { color: var(--text-secondary); font-size: 0.8rem; display: flex; align-items: center; gap: 6px; }
 .pr-value { font-size: 1.3rem; font-weight: 700; }
+/* Provenance: which activity set the record, so a wrong one is obvious. */
+.pr-prov { font-size: 0.68rem; color: var(--text-secondary); margin-top: -4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pr-prov.muted { color: var(--text-muted); }
 
 /* Projections */
 .pred-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px; }

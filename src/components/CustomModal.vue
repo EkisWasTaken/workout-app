@@ -22,7 +22,7 @@ defineProps({
   },
   title: {
     type: String,
-    default: 'Terminal',
+    default: 'Details',
   },
 });
 

@@ -2,15 +2,24 @@
 <html lang="en">
 	<head>
 		<meta charset="UTF-8" />
-		<link rel="icon" type="image/svg+xml" href="/public/favicon.png" />
-		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
-		<title>Workout-App</title>
+
+		<!-- Files in public/ are served from the root, not from /public/. -->
+		<link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+		<link rel="icon" type="image/png" sizes="512x512" href="/favicon.png" />
+		<link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+
+		<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+		<meta name="description" content="Training log: plan sessions, import FIT files, track goal paces." />
+
+		<!-- Tints the mobile browser chrome to match --background-color. -->
+		<meta name="theme-color" content="#0c0f17" />
+		<meta name="color-scheme" content="dark" />
+
+		<title>Trainlog</title>
+
+		<!-- Inter, JetBrains Mono and Young Serif are @imported from the stylesheets. -->
 		<link rel="preconnect" href="https://fonts.googleapis.com" />
 		<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-		<link
-			href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;700&display=swap"
-			rel="stylesheet"
-		/>
 	</head>
 	<body>
 		<div id="app"></div>
