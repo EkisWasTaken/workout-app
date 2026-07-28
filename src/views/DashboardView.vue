@@ -119,6 +119,15 @@
       <!-- Add Workout Modal -->
       <CustomModal v-model:show="showAddWorkoutModal" title="New workout">
         <div class="form-container">
+          <div v-if="templates.length" class="form-group">
+            <label for="workout-template">From template (optional)</label>
+            <select id="workout-template" v-model="selectedTemplateId">
+              <option :value="null">— None —</option>
+              <option v-for="t in templates" :key="t.id" :value="t.id">
+                {{ t.kind === 'run' ? 'Run' : 'Gym' }} · {{ t.name }}
+              </option>
+            </select>
+          </div>
           <div class="form-group">
             <label for="workout-name">Name</label>
             <input type="text" id="workout-name" v-model="newWorkout.name" placeholder="e.g. Easy run" />
@@ -359,7 +368,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onActivated } from 'vue';
+import { ref, computed, watch, onMounted, onActivated } from 'vue';
 import { useRouter } from 'vue-router';
 import { useMessage, NIcon } from 'naive-ui';
 import {
@@ -385,7 +394,8 @@ import {
   parseISO
 } from 'date-fns';
 import { enUS } from 'date-fns/locale';
-import type { Workout, AddWorkoutPayload, DailyWeight, CompleteWorkoutFormValues, RaceGoal, Activity } from '../types';
+import type { Workout, AddWorkoutPayload, DailyWeight, CompleteWorkoutFormValues, RaceGoal, Activity, WorkoutTemplate } from '../types';
+import { buildWorkoutFromTemplate } from '@/utils/templateSession';
 import CustomModal from '../components/CustomModal.vue';
 import ImportEditor from '../components/ImportEditor.vue';
 import ImportActivitiesModal from '../components/ImportActivitiesModal.vue';
@@ -727,6 +737,19 @@ const newWorkout = ref<AddWorkoutPayload>({
   type: 'Running',
 });
 
+// Shared template library — pick one to pre-fill the new workout from.
+const templates = ref<WorkoutTemplate[]>([]);
+const selectedTemplateId = ref<number | null>(null);
+
+watch(selectedTemplateId, (id) => {
+  if (!id) return;
+  const t = templates.value.find(t => t.id === id);
+  if (t) {
+    newWorkout.value.name = t.name;
+    newWorkout.value.type = t.kind === 'run' ? 'Running' : 'Gym';
+  }
+});
+
 const newWeight = ref({
   weight: 70,
   date: format(new Date(), 'yyyy-MM-dd'),
@@ -734,6 +757,7 @@ const newWeight = ref({
 
 function openAddWorkoutModal(date: Date | null) {
   newWorkout.value.date = date ? format(date, 'yyyy-MM-dd') : format(new Date(), 'yyyy-MM-dd');
+  selectedTemplateId.value = null;
   showAddWorkoutModal.value = true;
 }
 
@@ -741,10 +765,20 @@ async function saveNewWorkout() {
   if (!newWorkout.value.name) return;
   isActionLoading.value = true;
   try {
-    await db.addWorkout(newWorkout.value);
+    // A chosen template carries pace/distance/gymType/notes; a bare add doesn't.
+    const template = selectedTemplateId.value
+      ? templates.value.find(t => t.id === selectedTemplateId.value)
+      : null;
+    let payload: AddWorkoutPayload = { ...newWorkout.value };
+    if (template) {
+      payload = await buildWorkoutFromTemplate(template, newWorkout.value.date);
+      payload.name = newWorkout.value.name || template.name;
+    }
+    await db.addWorkout(payload);
     showAddWorkoutModal.value = false;
     await loadWorkouts();
     newWorkout.value.name = '';
+    selectedTemplateId.value = null;
   } finally {
     isActionLoading.value = false;
   }
@@ -987,6 +1021,7 @@ async function onActivitiesImported() {
 // list is needed up front too: it's what corrects each workout's sport.
 const loadAll = () => {
   loadWorkouts(); loadDailyWeights(); loadRaceGoals();
+  db.getWorkoutTemplates().then(t => { templates.value = t; }).catch(() => { /* library empty or table missing */ });
   hydrateSettings(); hydrateFitness();
   activityApi.getAllActivities()
     .then(a => { stravaActivities.value = a; })

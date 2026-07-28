@@ -469,6 +469,30 @@
 			</div>
 		</section>
 
+		<!-- Gym progress by split (Push / Pull / Legs) -->
+		<section v-if="gymSplitStats.length" class="gym-splits" style="margin-top: 14px">
+			<div class="chart-head" style="margin-bottom: 10px">
+				<h3><span class="dot gym"></span>Gym progress by split</h3>
+				<span class="note">completed sessions · load per split</span>
+			</div>
+			<div class="split-grid">
+				<div v-for="s in gymSplitStats" :key="s.split" class="panel split-card">
+					<div class="split-top">
+						<span class="split-name">{{ s.split }}</span>
+						<span class="split-count">{{ s.sessions }} session{{ s.sessions === 1 ? '' : 's' }}</span>
+					</div>
+					<div class="split-value mono">{{ fmt(s.tonnage) }}<span class="unit"> t</span></div>
+					<div class="split-sub" :class="s.delta >= 0 ? 'up' : 'down'">
+						{{ s.delta >= 0 ? '▲' : '▼' }} {{ fmt(Math.abs(s.delta)) }} t · last 4 wks vs prior 4
+					</div>
+					<div class="spark">
+						<div v-for="(h, i) in s.spark" :key="i" class="spark-bar gym"
+							:class="{ last: i === s.spark.length - 1 }" :style="{ height: Math.max(6, h) + '%' }"></div>
+					</div>
+				</div>
+			</div>
+		</section>
+
 		<!-- Zone distribution -->
 		<section v-if="zonesHasData" class="zone-section" style="margin-top: 14px">
 			<div class="panel chart-card">
@@ -570,7 +594,7 @@ import {
 import { db } from '@/db'
 import { activityApi } from '@/activities'
 import type { Workout, DailyWeight, RaceGoal } from '@/types'
-import { getSportColor, isDistanceSport, noteSteps, SPORT_TYPES, SPORT_LABELS } from '@/utils/workouts'
+import { getSportColor, isDistanceSport, noteSteps, gymSplit, SPORT_TYPES, SPORT_LABELS } from '@/utils/workouts'
 import { buildActivityIndex, effectiveWorkoutType, effectiveDistanceKm } from '@/utils/workoutSport'
 import { PULSE_ZONES, getHRSettings, timeInZones, estimateVO2max } from '@/utils/analysis'
 import { settings, targetForDate, distanceGoals, hydrateSettings } from '@/settings'
@@ -625,6 +649,42 @@ const sessionsPct = computed(() => sessionsPlanned.value ? Math.round((sessionsD
 const gymThisWeek = computed(() => completed.value.filter(w => inThisWeek(w) && getWorkoutType(w) === 'gym'))
 const gymSessionsThisWeek = computed(() => gymThisWeek.value.length)
 const thisWeekTonnage = computed(() => gymThisWeek.value.reduce((s, w) => s + (w.totalWeightLifted || 0), 0) / 1000)
+
+/**
+ * Completed gym work grouped by split (Push/Pull/Legs/…). Per split: session
+ * count, all-time tonnage, an 8-week tonnage sparkline, and the load delta of
+ * the last 4 weeks vs the 4 before — so you can see each split trending.
+ */
+const gymSplitStats = computed(() => {
+	const gyms = completed.value.filter(w => getWorkoutType(w) === 'gym')
+	const groups = new Map<string, Workout[]>()
+	for (const w of gyms) {
+		const split = gymSplit(w.gymType)
+		const list = groups.get(split)
+		if (list) list.push(w)
+		else groups.set(split, [w])
+	}
+
+	const tonnage = (ws: Workout[]) => ws.reduce((s, w) => s + (w.totalWeightLifted || 0), 0) / 1000
+	const fourWk = subWeeks(now, 4), eightWk = subWeeks(now, 8)
+
+	return [...groups.entries()].map(([split, ws]) => {
+		const last4 = tonnage(ws.filter(w => parseISO(w.date) >= fourWk))
+		const prev4 = tonnage(ws.filter(w => parseISO(w.date) >= eightWk && parseISO(w.date) < fourWk))
+		const spark = weekBuckets(8).map(wk => {
+			const t = tonnage(ws.filter(w => isWithinInterval(parseISO(w.date), { start: wk.start, end: wk.end })))
+			return t
+		})
+		const max = Math.max(1, ...spark)
+		return {
+			split,
+			sessions: ws.length,
+			tonnage: tonnage(ws),
+			delta: Math.round((last4 - prev4) * 10) / 10,
+			spark: spark.map(t => Math.round((t / max) * 100)),
+		}
+	}).sort((a, b) => b.sessions - a.sessions)
+})
 
 const latestWeight = computed(() => {
 	if (!dailyWeights.value.length) return null
@@ -1779,6 +1839,18 @@ onUnmounted(destroyCharts)
 .spark-bar.last { background: var(--color-running-primary); }
 .spark-bar.gym { background: color-mix(in srgb, var(--color-gym-primary) 32%, var(--surface-2)); }
 .spark-bar.gym.last { background: var(--color-gym-primary); }
+
+/* Gym progress by split */
+.split-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 12px; }
+.split-card { display: flex; flex-direction: column; padding: 14px 16px; }
+.split-top { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.split-name { font-size: 0.95rem; font-weight: 700; color: var(--text-color); }
+.split-count { font-size: 0.72rem; color: var(--text-muted); }
+.split-value { font-size: 1.5rem; font-weight: 700; color: var(--text-color); margin-top: 6px; }
+.split-value .unit { font-size: 0.8rem; color: var(--text-muted); font-weight: 500; }
+.split-sub { font-size: 0.74rem; margin-top: 2px; }
+.split-sub.up { color: var(--success-color); font-weight: 600; }
+.split-sub.down { color: var(--danger-color); font-weight: 600; }
 .progress-track { margin-top: 12px; height: 6px; border-radius: 999px; background: var(--surface-2); overflow: hidden; }
 .progress-fill { height: 100%; background: var(--primary-color); border-radius: 999px; transition: width 0.6s ease; }
 

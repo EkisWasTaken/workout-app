@@ -117,8 +117,9 @@ import {
   NDatePicker,
 } from 'naive-ui';
 import { format } from 'date-fns';
-import type { WorkoutTemplate, WorkoutTemplateExercise, TemplateKind, AddWorkoutPayload } from '../types';
+import type { WorkoutTemplate, WorkoutTemplateExercise, TemplateKind } from '../types';
 import { db } from '@/db';
+import { buildWorkoutFromTemplate } from '@/utils/templateSession';
 
 const message = useMessage();
 const templates = ref<WorkoutTemplate[]>([]);
@@ -265,48 +266,13 @@ function openSchedule(template: WorkoutTemplate) {
   showScheduleModal.value = true;
 }
 
-/** A one-line plan from a gym template's exercises, e.g. "Bench 3×8-12; Squat 5×5". */
-async function gymNotesFor(template: WorkoutTemplate): Promise<string> {
-  const exercises = await db.getWorkoutTemplateExercises(template.id);
-  const lines = exercises.map(ex => {
-    const setsReps = [ex.sets ? `${ex.sets}×` : '', ex.reps ?? ''].join('').trim();
-    return setsReps ? `${ex.exercise_name} ${setsReps}` : ex.exercise_name;
-  });
-  return [template.notes, lines.join('; ')].filter(Boolean).join(' — ');
-}
-
 async function confirmSchedule() {
   const template = scheduleTarget.value;
   if (!template) return;
   scheduling.value = true;
   try {
     const date = format(new Date(scheduleDate.value), 'yyyy-MM-dd');
-    let payload: AddWorkoutPayload;
-
-    if (template.kind === 'run') {
-      payload = {
-        name: template.name,
-        date,
-        type: 'Running',
-        isCompleted: 0,
-        targetPace: template.target_pace ?? undefined,
-        distance: template.distance ?? undefined,
-        duration: template.duration ?? undefined,
-        notes: template.notes ?? undefined,
-      };
-    } else {
-      payload = {
-        name: template.name,
-        date,
-        type: 'gym',
-        isCompleted: 0,
-        gymType: template.workout_type ?? undefined,
-        duration: template.duration ?? undefined,
-        notes: await gymNotesFor(template) || undefined,
-      };
-    }
-
-    await db.addWorkout(payload);
+    await db.addWorkout(await buildWorkoutFromTemplate(template, date));
     showScheduleModal.value = false;
     message.success(`Added to ${date}.`);
   } catch (e: any) {

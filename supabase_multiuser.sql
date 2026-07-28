@@ -8,6 +8,8 @@
 --     (so two people can log the same day, own a "half" goal, etc.)
 --   * replaces the open "allow all access" RLS policies with real per-user ones:
 --     from now on the database itself only ever returns a user their own rows.
+--   * EXCEPT workout templates, which stay a shared library: every signed-in
+--     user can see and edit the same set of templates (gym + run blueprints).
 --
 -- HOW TO RUN (once):
 --   1. Create the accounts first — sign up in the app, OR
@@ -24,17 +26,27 @@ declare
   owner uuid := 'OWNER_UUID_HERE';   -- ⬅️  REPLACE with your user id, then run
   tbl   text;
   r     record;
-  -- Every table that holds one person's data.
+  -- Personal tables: each row belongs to one user and only they can see it.
   gentables text[] := array[
     'workouts', 'daily_weights', 'imported_activities', 'race_goals',
-    'distance_goals', 'workout_templates', 'workout_template_exercises',
-    'workout_type_colors', 'profile'
+    'distance_goals', 'workout_type_colors', 'profile'
   ];
+  -- Shared tables: a common library every signed-in user can read AND edit.
+  -- user_id is kept only as "who created it" provenance, never as a filter.
+  sharedtables text[] := array['workout_templates', 'workout_template_exercises'];
 begin
-  -- ── 1. add user_id everywhere and backfill existing rows to the owner ──────
+  -- ── 1. add user_id to personal + shared tables; backfill to the owner ─────
+  --   personal: deleting the account removes the rows (cascade)
+  --   shared:   deleting the account just nulls the "created by" (set null)
   foreach tbl in array gentables loop
     execute format(
       'alter table public.%I add column if not exists user_id uuid references auth.users(id) on delete cascade',
+      tbl);
+    execute format('update public.%I set user_id = %L where user_id is null', tbl, owner);
+  end loop;
+  foreach tbl in array sharedtables loop
+    execute format(
+      'alter table public.%I add column if not exists user_id uuid references auth.users(id) on delete set null',
       tbl);
     execute format('update public.%I set user_id = %L where user_id is null', tbl, owner);
   end loop;
@@ -83,15 +95,28 @@ begin
   -- Old activity dedupe was global; make it per-user below.
   drop index if exists public.imported_activities_dedupe;
 
-  -- ── 4. lock in user_id, default it to the caller, and enforce RLS ─────────
+  -- ── 4a. personal tables: lock in user_id and enforce per-user RLS ─────────
   foreach tbl in array gentables loop
     execute format('alter table public.%I alter column user_id set not null', tbl);
     execute format('alter table public.%I alter column user_id set default auth.uid()', tbl);
     execute format('alter table public.%I enable row level security', tbl);
     execute format('drop policy if exists "allow all access" on public.%I', tbl);
     execute format('drop policy if exists "own rows" on public.%I', tbl);
+    execute format('drop policy if exists "shared library" on public.%I', tbl);
     execute format(
       'create policy "own rows" on public.%I for all using (auth.uid() = user_id) with check (auth.uid() = user_id)',
+      tbl);
+  end loop;
+
+  -- ── 4b. shared tables: any signed-in user can read AND write the library ──
+  foreach tbl in array sharedtables loop
+    execute format('alter table public.%I alter column user_id set default auth.uid()', tbl);
+    execute format('alter table public.%I enable row level security', tbl);
+    execute format('drop policy if exists "allow all access" on public.%I', tbl);
+    execute format('drop policy if exists "own rows" on public.%I', tbl);
+    execute format('drop policy if exists "shared library" on public.%I', tbl);
+    execute format(
+      'create policy "shared library" on public.%I for all using (auth.uid() is not null) with check (auth.uid() is not null)',
       tbl);
   end loop;
 

@@ -56,6 +56,20 @@ export function clearSportColorCache(): void {
 
 export const isDistanceSport = (type: SportType) => type === 'running' || type === 'bike'
 
+/**
+ * Normalise a gym workout's free-text `gymType` into a split label for stats.
+ * Push/Pull/Legs are recognised however they're written; anything else keeps
+ * its own name (title-cased), and a blank falls back to "Other".
+ */
+export function gymSplit(gymType?: string | null): string {
+	const t = (gymType || '').trim().toLowerCase()
+	if (!t) return 'Other'
+	if (t.includes('push')) return 'Push'
+	if (t.includes('pull')) return 'Pull'
+	if (t.includes('leg')) return 'Legs'
+	return t.charAt(0).toUpperCase() + t.slice(1)
+}
+
 /** Break a workout's notes into readable steps for a "session plan" list. */
 export function noteSteps(workout: Workout): string[] {
 	const raw = (workout.notes || '').trim()
