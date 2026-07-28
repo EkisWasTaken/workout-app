@@ -117,7 +117,7 @@ export interface DailyWeight {
 
 export type AddDailyWeightPayload = Omit<DailyWeight, 'id'>;
 
-export type TemplateKind = 'gym' | 'run';
+export type TemplateKind = 'gym' | 'run' | 'bike' | 'other';
 
 export interface WorkoutTemplate {
 	id: number;

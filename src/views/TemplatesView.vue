@@ -15,9 +15,7 @@
         <n-list-item v-for="template in templates" :key="template.id">
           <n-thing>
             <template #header>
-              <span class="tpl-kind" :class="template.kind === 'run' ? 'kind-run' : 'kind-gym'">
-                {{ template.kind === 'run' ? 'Run' : 'Gym' }}
-              </span>
+              <span class="tpl-kind" :class="`kind-${template.kind || 'gym'}`">{{ kindLabel(template.kind) }}</span>
               {{ template.name }}
             </template>
             <template #description>
@@ -48,19 +46,19 @@
           <n-radio-group v-model:value="newTemplate.kind">
             <n-radio-button value="gym">Gym session</n-radio-button>
             <n-radio-button value="run">Run</n-radio-button>
+            <n-radio-button value="bike">Bike</n-radio-button>
           </n-radio-group>
 
           <n-form-item label="Template name" :show-feedback="false">
             <n-input v-model:value="newTemplate.name" placeholder="e.g. Push day, Threshold 5×1k" />
           </n-form-item>
 
-          <n-form-item :label="newTemplate.kind === 'run' ? 'Run type' : 'Split'" :show-feedback="false">
-            <n-input v-model:value="newTemplate.workout_type"
-              :placeholder="newTemplate.kind === 'run' ? 'e.g. Easy, Threshold, Long' : 'e.g. Push, Pull, Legs'" />
+          <n-form-item :label="typeFieldLabel" :show-feedback="false">
+            <n-input v-model:value="newTemplate.workout_type" :placeholder="typeFieldPlaceholder" />
           </n-form-item>
 
-          <!-- Run-specific -->
-          <template v-if="newTemplate.kind === 'run'">
+          <!-- Distance sports (run / bike): pace + distance -->
+          <template v-if="isDistanceKind">
             <n-space :size="12" style="width: 100%">
               <n-form-item label="Target pace (/km)" :show-feedback="false" style="flex: 1">
                 <n-input v-model:value="newTemplate.target_pace" placeholder="e.g. 5:00" />
@@ -110,7 +108,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, h } from 'vue';
+import { ref, computed, onMounted, h } from 'vue';
 import {
   NButton, NList, NListItem, NThing, NModal, NSpace, NInput, NInputNumber,
   useMessage, NDataTable, NPopconfirm, NFormItem, NRadioGroup, NRadioButton, NEmpty,
@@ -146,10 +144,21 @@ const newTemplate = ref<NewTemplate>(blankTemplate());
 
 const resetNewTemplate = () => { newTemplate.value = blankTemplate(); };
 
+const isDistanceKind = computed(() => newTemplate.value.kind === 'run' || newTemplate.value.kind === 'bike');
+
+const KIND_LABELS: Record<TemplateKind, string> = { gym: 'Gym', run: 'Run', bike: 'Bike', other: 'Other' };
+const kindLabel = (k?: TemplateKind) => KIND_LABELS[k || 'gym'];
+
+const typeFieldLabel = computed(() =>
+  newTemplate.value.kind === 'gym' ? 'Split'
+    : newTemplate.value.kind === 'bike' ? 'Ride type' : 'Run type');
+const typeFieldPlaceholder = computed(() =>
+  newTemplate.value.kind === 'gym' ? 'e.g. Push, Pull, Legs' : 'e.g. Easy, Threshold, Long');
+
 function templateSummary(t: WorkoutTemplate): string {
   const bits: string[] = [];
   if (t.workout_type) bits.push(t.workout_type);
-  if (t.kind === 'run') {
+  if (t.kind === 'run' || t.kind === 'bike') {
     if (t.distance) bits.push(`${t.distance} km`);
     if (t.target_pace) bits.push(`@ ${t.target_pace}/km`);
   }
@@ -228,12 +237,13 @@ async function saveNewTemplate() {
 
   saving.value = true;
   try {
+    const distanceKind = t.kind === 'run' || t.kind === 'bike';
     await db.addWorkoutTemplate({
       name: t.name.trim(),
       kind: t.kind,
       workout_type: t.workout_type.trim() || null,
-      target_pace: t.kind === 'run' ? (t.target_pace.trim() || null) : null,
-      distance: t.kind === 'run' ? t.distance : null,
+      target_pace: distanceKind ? (t.target_pace.trim() || null) : null,
+      distance: distanceKind ? t.distance : null,
       duration: t.duration,
       notes: t.notes.trim() || null,
       exercises: t.kind === 'gym' ? t.exercises : [],
@@ -306,5 +316,7 @@ onMounted(loadTemplates);
 }
 .kind-gym { background: var(--primary-soft); color: var(--primary-color); }
 .kind-run { background: var(--success-soft); color: var(--success-color); }
+.kind-bike { background: var(--warning-soft, var(--surface-2)); color: var(--warning-color, var(--text-secondary)); }
+.kind-other { background: var(--surface-2); color: var(--text-secondary); }
 .tpl-meta { font-size: 0.8rem; color: var(--text-muted); }
 </style>

@@ -396,6 +396,7 @@ import {
 import { enUS } from 'date-fns/locale';
 import type { Workout, AddWorkoutPayload, DailyWeight, CompleteWorkoutFormValues, RaceGoal, Activity, WorkoutTemplate } from '../types';
 import { buildWorkoutFromTemplate } from '@/utils/templateSession';
+import { templatesFromWorkoutRows } from '@/utils/templateDerive';
 import CustomModal from '../components/CustomModal.vue';
 import ImportEditor from '../components/ImportEditor.vue';
 import ImportActivitiesModal from '../components/ImportActivitiesModal.vue';
@@ -490,16 +491,51 @@ const toNum = (v: any): number | undefined => {
 const toStr = (v: any): string | undefined =>
   v === undefined || v === null || String(v).trim() === '' ? undefined : String(v).trim();
 
-async function onImportConfirm(data: any[]) {
+/** Match key for update mode: same day + same name (case-insensitive). */
+const workoutKey = (date: string, name: string) =>
+  `${String(date).trim()} ${String(name).trim().toLowerCase()}`;
+
+async function onImportConfirm(data: any[], opts: { asTemplates?: boolean; mode?: 'add' | 'update' } = {}) {
   isActionLoading.value = true;
   try {
-    let successCount = 0;
-    let skipped = 0;
+    const mode = opts.mode ?? 'add';
+
+    // Update mode matches rows to existing workouts so a re-import edits the
+    // schedule in place instead of duplicating it.
+    const existingByKey = new Map<string, Workout>();
+    if (mode === 'update') {
+      for (const w of await db.getWorkouts()) existingByKey.set(workoutKey(w.date, w.name), w);
+    }
+
+    let added = 0, updated = 0, skipped = 0;
     for (const row of data) {
       if (!row.name || !row.date) { skipped++; continue; }
-      const workout: any = {
-        name: String(row.name).trim(),
-        date: String(row.date).trim(),
+      const name = String(row.name).trim();
+      const date = String(row.date).trim();
+
+      const match = mode === 'update' ? existingByKey.get(workoutKey(date, name)) : undefined;
+      if (match) {
+        // Overwrite the plan only; keep completion + logged results (incl. the
+        // sessions you've already done) untouched.
+        await db.updateWorkout({
+          ...match,
+          name,
+          date,
+          type: toStr(row.type) || match.type || 'Other',
+          duration: toNum(row.duration),
+          distance: toNum(row.distance),
+          targetPace: toStr(row.targetPace),
+          gymType: toStr(row.gymType),
+          notes: toStr(row.notes) || '',
+          caloriesBurned: toNum(row.caloriesBurned) ?? match.caloriesBurned,
+        });
+        updated++;
+        continue;
+      }
+
+      await db.addWorkout({
+        name,
+        date,
         type: toStr(row.type) || 'Other',
         duration: toNum(row.duration),
         distance: toNum(row.distance),
@@ -512,11 +548,28 @@ async function onImportConfirm(data: any[]) {
         notes: toStr(row.notes) || '',
         isCompleted: toNum(row.isCompleted) === 1 ? 1 : 0,
         isDeleted: 0,
-      };
-      await db.addWorkout(workout);
-      successCount++;
+      } as any);
+      added++;
     }
-    message.success(`Imported ${successCount} workout${successCount === 1 ? '' : 's'}${skipped ? ` (${skipped} skipped)` : ''}`);
+
+    // Optionally distil the distinct sessions into reusable templates.
+    let templateCount = 0;
+    if (opts.asTemplates) {
+      const toCreate = templatesFromWorkoutRows(data, templates.value);
+      for (const t of toCreate) {
+        try { await db.addWorkoutTemplate(t); templateCount++; }
+        catch (e) { console.error('Template create failed for', t.name, e); }
+      }
+      if (templateCount) templates.value = await db.getWorkoutTemplates();
+    }
+
+    const parts = [
+      added ? `${added} added` : '',
+      updated ? `${updated} updated` : '',
+      skipped ? `${skipped} skipped` : '',
+      templateCount ? `${templateCount} new template${templateCount === 1 ? '' : 's'}` : '',
+    ].filter(Boolean);
+    message.success(`Import done — ${parts.join(', ') || 'nothing to do'}`);
     await loadWorkouts();
   } catch (error) {
     console.error('Import confirmation error:', error);

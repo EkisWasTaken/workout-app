@@ -3,7 +3,7 @@
  * the Schedule page so "add to schedule" behaves identically wherever it's used.
  */
 import { db } from '@/db'
-import type { WorkoutTemplate, WorkoutTemplateExercise, AddWorkoutPayload } from '@/types'
+import type { WorkoutTemplate, WorkoutTemplateExercise, AddWorkoutPayload, TemplateKind } from '@/types'
 
 /** A one-line session plan from a gym template's exercises, e.g. "Bench 3×8-12; Squat 5×5". */
 export function gymNotes(
@@ -17,6 +17,11 @@ export function gymNotes(
 	return [template.notes, lines.join('; ')].filter(Boolean).join(' — ')
 }
 
+/** The workout `type` column value each template kind produces. */
+const KIND_TO_TYPE: Record<TemplateKind, string> = {
+	gym: 'gym', run: 'Running', bike: 'Bike', other: 'Other',
+}
+
 /**
  * Build the workout payload a template schedules onto `dateStr` (YYYY-MM-DD).
  * Gym templates fetch their exercise list to summarise it into the notes.
@@ -25,14 +30,27 @@ export async function buildWorkoutFromTemplate(
 	template: WorkoutTemplate,
 	dateStr: string,
 ): Promise<AddWorkoutPayload> {
-	if (template.kind === 'run') {
+	const kind: TemplateKind = template.kind ?? 'gym'
+
+	if (kind === 'run' || kind === 'bike') {
 		return {
 			name: template.name,
 			date: dateStr,
-			type: 'Running',
+			type: KIND_TO_TYPE[kind],
 			isCompleted: 0,
 			targetPace: template.target_pace ?? undefined,
 			distance: template.distance ?? undefined,
+			duration: template.duration ?? undefined,
+			notes: template.notes ?? undefined,
+		}
+	}
+
+	if (kind === 'other') {
+		return {
+			name: template.name,
+			date: dateStr,
+			type: 'Other',
+			isCompleted: 0,
 			duration: template.duration ?? undefined,
 			notes: template.notes ?? undefined,
 		}

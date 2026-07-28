@@ -3,7 +3,7 @@
 -- can describe a run as well as a gym session, and can be dropped onto any date.
 --
 -- Adds to workout_templates:
---   kind          'gym' | 'run'  — what sort of session this template builds
+--   kind          'gym' | 'run' | 'bike' | 'other'  — what session this builds
 --   workout_type  free text: a run flavour ("Easy", "Threshold") or gym split
 --                 ("Push", "Legs"); copied onto the workout when scheduled
 --   target_pace   e.g. "5:00" — runs only
@@ -28,4 +28,4 @@ update public.workout_templates set kind = 'gym' where kind is null;
 alter table public.workout_templates
   drop constraint if exists workout_templates_kind_check;
 alter table public.workout_templates
-  add  constraint workout_templates_kind_check check (kind in ('gym', 'run'));
+  add  constraint workout_templates_kind_check check (kind in ('gym', 'run', 'bike', 'other'));

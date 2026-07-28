@@ -54,6 +54,24 @@
 				:max-height="360" :scroll-x="1900" size="small"
 				:row-key="(r: DataRow) => r.id" />
 
+			<div v-if="importType === 'workout'" class="import-options">
+				<div class="opt-row">
+					<span class="opt-lbl">On import</span>
+					<n-radio-group v-model:value="importMode" size="small">
+						<n-radio-button value="add">Add as new</n-radio-button>
+						<n-radio-button value="update">Update matching by date + name</n-radio-button>
+					</n-radio-group>
+				</div>
+				<p v-if="importMode === 'update'" class="opt-note">
+					Rows that match an existing workout (same date &amp; name) update its plan — duration,
+					notes, pace, etc. Completed sessions keep their results; unmatched rows are added.
+				</p>
+				<n-checkbox v-model:checked="alsoMakeTemplates">
+					Also save unique sessions as reusable templates
+					<span class="tpl-hint">(gym splits collapse to one each; runs keep their distance)</span>
+				</n-checkbox>
+			</div>
+
 			<div class="import-footer">
 				<span class="row-count" :class="{ err: hasErrors }">
 					{{ editableData.length }} row{{ editableData.length === 1 ? '' : 's' }}<template v-if="hasErrors"> · fix highlighted cells to import</template>
@@ -72,7 +90,7 @@
 <script setup lang="ts">
 import { ref, watch, h, computed } from 'vue'
 import {
-	NModal, NSpace, NButton, NAlert, NRadioGroup, NRadioButton, NDataTable, NInput, NTooltip, NIcon
+	NModal, NSpace, NButton, NAlert, NRadioGroup, NRadioButton, NDataTable, NInput, NTooltip, NIcon, NCheckbox
 } from 'naive-ui'
 import type { DataTableColumns } from 'naive-ui'
 import { CloudUploadOutline, DocumentTextOutline, DownloadOutline, AddOutline } from '@vicons/ionicons5'
@@ -118,6 +136,9 @@ const selectedDelimiter = ref(props.initialDelimiter || ',');
 const editableData = ref<DataRow[]>([]);
 const validationErrors = ref<Record<number, Record<string, string>>>({});
 const hasErrors = computed(() => Object.keys(validationErrors.value).length > 0);
+
+const alsoMakeTemplates = ref(false);
+const importMode = ref<'add' | 'update'>('add');
 
 const rawPastedText = ref('');
 const localFileContent = ref('');
@@ -181,6 +202,8 @@ watch(() => props.show, (newVal) => {
 		rawPastedText.value = '';
 		localFileContent.value = '';
 		fileName.value = '';
+		alsoMakeTemplates.value = false;
+		importMode.value = 'add';
 		parseContent(currentRawContent.value);
 	}
 });
@@ -879,7 +902,7 @@ const cancelImport = () => {
 };
 
 const confirmImport = () => {
-	emit('confirm', editableData.value);
+	emit('confirm', editableData.value, { asTemplates: alsoMakeTemplates.value, mode: importMode.value });
 	showModal.value = false;
 };
 </script>
@@ -911,4 +934,9 @@ const confirmImport = () => {
 .import-footer { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
 .row-count { font-size: 0.82rem; color: var(--text-secondary); }
 .row-count.err { color: var(--warning-color); }
+.tpl-hint { color: var(--text-muted); font-size: 0.78rem; margin-left: 4px; }
+.import-options { display: flex; flex-direction: column; gap: 8px; }
+.opt-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.opt-lbl { color: var(--text-secondary); font-size: 0.82rem; }
+.opt-note { margin: 0; font-size: 0.78rem; color: var(--text-muted); line-height: 1.5; }
 </style>

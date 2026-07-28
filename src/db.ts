@@ -305,7 +305,7 @@ export const db = {
 
   addWorkoutTemplate: async (template: {
     name: string
-    kind?: 'gym' | 'run'
+    kind?: 'gym' | 'run' | 'bike' | 'other'
     workout_type?: string | null
     target_pace?: string | null
     duration?: number | null
