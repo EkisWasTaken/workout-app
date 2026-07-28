@@ -18,6 +18,18 @@
 			</div>
 
 			<n-space vertical size="large" style="width: 100%">
+				<!-- Account -->
+				<n-card bordered class="settings-card">
+					<template #header><span class="card-title">Account</span></template>
+					<div class="account-row">
+						<div class="account-info">
+							<span class="account-label">Signed in as</span>
+							<span class="account-email">{{ auth.user?.email || '—' }}</span>
+						</div>
+						<n-button @click="handleSignOut" tertiary>Sign out</n-button>
+					</div>
+				</n-card>
+
 				<!-- Preferences -->
 				<n-card bordered class="settings-card">
 					<template #header><span class="card-title">Preferences</span></template>
@@ -235,6 +247,7 @@ import {
 	saveSettings, setDistanceGoal, clearDistanceGoal, refreshRaceGoals, hydrateSettings,
 } from '@/settings'
 import { currentVdot, derivedFitness, hydrateFitness } from '@/fitness'
+import { auth, signOut } from '@/auth'
 import {
 	DISTANCES, DISTANCE_LABELS, paceTable, equivalentTimes, vdotFromRace,
 	raceTimeOnCourse, coursePaceSecPerKm, TERRAIN_PRESETS,
@@ -245,6 +258,14 @@ import type { RaceGoal, RacePriority } from '@/types'
 const message = useMessage()
 const saving = ref(false)
 const badTimeInput = ref(false)
+
+async function handleSignOut() {
+	try {
+		await signOut()
+	} catch (e: any) {
+		message.error(e?.message || 'Failed to sign out')
+	}
+}
 
 /** Turn a migration sentinel into something actionable. */
 const failed = (e: any, fallback: string) =>
@@ -517,6 +538,11 @@ onMounted(async () => {
 	background: var(--primary-soft); padding: 2px 8px; border-radius: 999px;
 }
 .settings-card { border-radius: var(--radius) !important; }
+
+.account-row { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.account-info { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.account-label { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-muted); }
+.account-email { font-size: 0.9rem; color: var(--text-color); font-weight: 500; overflow: hidden; text-overflow: ellipsis; }
 .card-hint { font-size: 0.8rem; color: var(--text-muted); margin: 0 0 14px; line-height: 1.5; }
 
 .schema-warning, .dg-inconsistent {

@@ -1,4 +1,5 @@
 import { supabase } from './supabase'
+import { currentUserId } from './auth'
 import type { Workout, DailyWeight, WorkoutTemplate, WorkoutTemplateExercise, Exercise, RaceGoal, AddRaceGoalPayload, DistanceGoal, Profile } from './types'
 
 /** Thrown when supabase_goals.sql hasn't been run yet. */
@@ -23,12 +24,13 @@ const isMissingColumn = (error: { code?: string } | null) => error?.code === '42
 export const schema = { v2: true, v3: true }
 
 export const db = {
-  // PROFILE (single row, id = 1)
+  // PROFILE (one row per user, keyed on user_id)
   getProfile: async (): Promise<Profile | null> => {
+    const uid = currentUserId()
     const full = await supabase
       .from('profile')
       .select('user_name, goal_weight, resting_hr, max_hr, vdot_override')
-      .eq('id', 1)
+      .eq('user_id', uid)
       .maybeSingle()
 
     if (!full.error) return full.data as Profile | null
@@ -40,17 +42,19 @@ export const db = {
     const base = await supabase
       .from('profile')
       .select('user_name, goal_weight, resting_hr, max_hr')
-      .eq('id', 1)
+      .eq('user_id', uid)
       .maybeSingle()
     if (base.error) throw base.error
     return base.data ? ({ ...base.data, vdot_override: null } as Profile) : null
   },
 
   saveProfile: async (profile: Partial<Profile>): Promise<void> => {
-    const row: Record<string, unknown> = { id: 1, ...profile, updated_at: new Date().toISOString() }
+    const row: Record<string, unknown> = {
+      user_id: currentUserId(), ...profile, updated_at: new Date().toISOString(),
+    }
     if (!schema.v2) delete row.vdot_override
 
-    const { error } = await supabase.from('profile').upsert([row])
+    const { error } = await supabase.from('profile').upsert([row], { onConflict: 'user_id' })
     if (error) {
       if (isMissingTable(error)) throw new Error(MISSING_GOALS_TABLES)
       if (isMissingColumn(error)) throw new Error(MISSING_GOALS_COLUMNS)
@@ -83,13 +87,16 @@ export const db = {
     if (!schema.v2 && goal.target_date) throw new Error(MISSING_GOALS_COLUMNS)
 
     const row: Record<string, unknown> = {
+      user_id: currentUserId(),
       distance_m: goal.distance_m,
       goal_time_secs: goal.goal_time_secs,
       updated_at: new Date().toISOString(),
     }
     if (schema.v2) row.target_date = goal.target_date ?? null
 
-    const { error } = await supabase.from('distance_goals').upsert([row])
+    const { error } = await supabase
+      .from('distance_goals')
+      .upsert([row], { onConflict: 'user_id,distance_m' })
     if (error) {
       if (isMissingTable(error)) throw new Error(MISSING_GOALS_TABLES)
       if (isMissingColumn(error)) throw new Error(MISSING_GOALS_COLUMNS)
@@ -138,7 +145,7 @@ export const db = {
   addRaceGoal: async (raceGoal: AddRaceGoalPayload): Promise<number> => {
     const { data, error } = await supabase
       .from('race_goals')
-      .insert([raceGoal])
+      .insert([{ ...raceGoal, user_id: currentUserId() }])
       .select()
     if (error) throw error
     return data[0].id
@@ -183,11 +190,12 @@ export const db = {
   },
 
   addWorkout: async (workout: Omit<Workout, 'id'>): Promise<number> => {
+    const row = { ...workout, user_id: currentUserId() }
     let attempts = 0
     while (attempts < 50) {
       const { data, error } = await supabase
         .from('workouts')
-        .insert([workout])
+        .insert([row])
         .select()
 
       if (!error) return data[0].id
@@ -250,11 +258,12 @@ export const db = {
   },
 
   addDailyWeight: async (dailyWeight: Omit<DailyWeight, 'id'>): Promise<number> => {
+    const row = { ...dailyWeight, user_id: currentUserId() }
     let attempts = 0
     while (attempts < 50) {
       const { data, error } = await supabase
         .from('daily_weights')
-        .upsert([dailyWeight], { onConflict: 'date' })
+        .upsert([row], { onConflict: 'user_id,date' })
         .select()
 
       if (!error) return data[0].id
@@ -280,7 +289,7 @@ export const db = {
   setWorkoutTypeColor: async (data: { type: string; color: string }) => {
     const { error } = await supabase
       .from('workout_type_colors')
-      .upsert([data])
+      .upsert([{ ...data, user_id: currentUserId() }], { onConflict: 'user_id,type' })
     if (error) throw error
     return 1
   },
@@ -294,14 +303,34 @@ export const db = {
     return data as WorkoutTemplate[]
   },
 
-  addWorkoutTemplate: async (template: { name: string; exercises: any[] }): Promise<number> => {
+  addWorkoutTemplate: async (template: {
+    name: string
+    kind?: 'gym' | 'run'
+    workout_type?: string | null
+    target_pace?: string | null
+    duration?: number | null
+    distance?: number | null
+    notes?: string | null
+    exercises: any[]
+  }): Promise<number> => {
+    const uid = currentUserId()
+    const templateRow = {
+      name: template.name,
+      kind: template.kind ?? 'gym',
+      workout_type: template.workout_type ?? null,
+      target_pace: template.target_pace ?? null,
+      duration: template.duration ?? null,
+      distance: template.distance ?? null,
+      notes: template.notes ?? null,
+      user_id: uid,
+    }
     let attempts = 0
     let templateId: number | null = null
 
     while (attempts < 50) {
       const { data: tData, error: tError } = await supabase
         .from('workout_templates')
-        .insert([{ name: template.name }])
+        .insert([templateRow])
         .select()
 
       if (!tError) {
@@ -320,13 +349,16 @@ export const db = {
 
     const exercisesToInsert = template.exercises.map(ex => ({
       ...ex,
-      template_id: templateId
+      template_id: templateId,
+      user_id: uid,
     }))
 
-    const { error: eError } = await supabase
-      .from('workout_template_exercises')
-      .insert(exercisesToInsert)
-    if (eError) throw eError
+    if (exercisesToInsert.length) {
+      const { error: eError } = await supabase
+        .from('workout_template_exercises')
+        .insert(exercisesToInsert)
+      if (eError) throw eError
+    }
     return templateId
   },
 
@@ -385,6 +417,7 @@ export const db = {
       distance: activity.distance,
       moving_time: activity.moving_time,
       data: activity,
+      user_id: currentUserId(),
     }
     const { data, error } = await supabase
       .from('imported_activities')

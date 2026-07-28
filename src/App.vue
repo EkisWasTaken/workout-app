@@ -1,18 +1,39 @@
 <script setup lang="ts">
+import { onMounted } from 'vue'
 import { NConfigProvider, NMessageProvider, NDialogProvider, NNotificationProvider, NLoadingBarProvider } from 'naive-ui'
 import MainLayout from './layouts/MainLayout.vue'
-import PinGate from './components/PinGate.vue'
+import AuthGate from './components/AuthGate.vue'
 import { naiveTheme, themeOverrides } from './theme'
+import { auth, initAuth, onUserChange } from './auth'
+import { hydrateSettings, resetSettingsCache } from './settings'
+import { refreshFitness } from './fitness'
+import type { User } from '@supabase/supabase-js'
+
+/** Wipe the previous user's cached settings/fitness, then load the new user's. */
+function applyUser(user: User | null) {
+	resetSettingsCache()
+	if (user) {
+		hydrateSettings()
+		refreshFitness()
+	}
+}
+
+onMounted(async () => {
+	await initAuth()
+	onUserChange(applyUser)
+	// initAuth doesn't emit for a session that's already restored at boot.
+	if (auth.user) applyUser(auth.user)
+})
 </script>
 
 <template>
-  <PinGate />
   <n-config-provider :theme="naiveTheme" :theme-overrides="themeOverrides" class="full-height">
     <n-loading-bar-provider>
       <n-notification-provider>
         <n-dialog-provider>
           <n-message-provider>
-            <MainLayout />
+            <AuthGate v-if="auth.ready && !auth.user" />
+            <MainLayout v-else-if="auth.ready && auth.user" />
           </n-message-provider>
         </n-dialog-provider>
       </n-notification-provider>

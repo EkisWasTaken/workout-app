@@ -74,6 +74,23 @@ export const pendingMigration = reactive<{ script: string | null }>({ script: nu
 
 let hydrated = false
 
+/**
+ * Wipe every trace of the current user's settings — reactive stores and the
+ * localStorage cache alike — and allow a fresh hydrate. Called on sign-in and
+ * sign-out so one account's data never bleeds into another's on a shared browser.
+ */
+export function resetSettingsCache(): void {
+	hydrated = false
+	Object.assign(settings, DEFAULTS)
+	for (const k of Object.values(LS)) localStorage.removeItem(k)
+	// Legacy single-goal keys, migrated away but possibly still cached.
+	localStorage.removeItem('goalRaceKm')
+	localStorage.removeItem('goalRaceTime')
+	for (const k of Object.keys(distanceGoals)) delete distanceGoals[Number(k)]
+	raceGoals.list = []
+	pendingMigration.script = null
+}
+
 export async function hydrateSettings(): Promise<void> {
 	if (hydrated) return
 	hydrated = true

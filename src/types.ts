@@ -117,9 +117,22 @@ export interface DailyWeight {
 
 export type AddDailyWeightPayload = Omit<DailyWeight, 'id'>;
 
+export type TemplateKind = 'gym' | 'run';
+
 export interface WorkoutTemplate {
 	id: number;
 	name: string;
+	/** What sort of session this template builds. Older rows default to 'gym'. */
+	kind?: TemplateKind;
+	/** Run flavour ("Easy", "Threshold") or gym split ("Push"); copied onto the workout. */
+	workout_type?: string | null;
+	/** Runs only, e.g. "5:00". */
+	target_pace?: string | null;
+	/** Planned minutes. */
+	duration?: number | null;
+	/** Runs only, planned kilometres. */
+	distance?: number | null;
+	notes?: string | null;
 }
 
 export interface WorkoutTemplateExercise {
