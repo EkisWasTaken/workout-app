@@ -515,15 +515,17 @@ async function onImportConfirm(data: any[], opts: { asTemplates?: boolean; mode?
 
       const match = mode === 'update' ? existingByKey.get(workoutKey(date, name)) : undefined;
       if (match) {
-        // Overwrite the plan only; keep completion + logged results (incl. the
-        // sessions you've already done) untouched.
+        // Overwrite the plan only; keep completion + logged results untouched.
+        // For a workout you've already done, `distance` holds what you actually
+        // ran, so don't let the CSV's planned distance clobber it.
+        const done = match.isCompleted === 1;
         await db.updateWorkout({
           ...match,
           name,
           date,
           type: toStr(row.type) || match.type || 'Other',
-          duration: toNum(row.duration),
-          distance: toNum(row.distance),
+          duration: done ? match.duration : toNum(row.duration),
+          distance: done ? match.distance : toNum(row.distance),
           targetPace: toStr(row.targetPace),
           gymType: toStr(row.gymType),
           notes: toStr(row.notes) || '',

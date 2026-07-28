@@ -160,7 +160,8 @@ function templateSummary(t: WorkoutTemplate): string {
   if (t.workout_type) bits.push(t.workout_type);
   if (t.kind === 'run' || t.kind === 'bike') {
     if (t.distance) bits.push(`${t.distance} km`);
-    if (t.target_pace) bits.push(`@ ${t.target_pace}/km`);
+    // target_pace is free text — some values already carry a unit ("…6:15/km").
+    if (t.target_pace) bits.push(t.target_pace.includes('km') ? `@ ${t.target_pace}` : `@ ${t.target_pace}/km`);
   }
   if (t.duration) bits.push(`${t.duration} min`);
   return bits.join(' · ') || '—';

@@ -56,12 +56,23 @@
 							<li v-for="(step, i) in sessionSteps(w)" :key="i">{{ step }}</li>
 						</ul>
 					</div>
-					<button v-if="w.isCompleted !== 1" class="ts-complete" :disabled="completingId !== null"
-						@click="completeToday(w)">
-						{{ completingId === w.id ? 'Saving…' : 'Complete' }}
-					</button>
+					<div class="ts-actions">
+						<button v-if="w.isCompleted !== 1" class="ts-complete" :disabled="busyId !== null"
+							@click="completeToday(w)">
+							{{ busyId === w.id && busyKind === 'complete' ? 'Saving…' : 'Complete' }}
+						</button>
+						<button v-if="canAttach(w)" class="ts-file" :disabled="busyId !== null" @click="pickFit(w)"
+							:title="w.isCompleted === 1 ? 'Replace or attach a recording file' : 'Complete with a .fit/.gpx/.tcx recording'">
+							<n-icon :component="CloudUploadOutline" />
+							<span class="ts-file-lbl">
+								{{ busyId === w.id && busyKind === 'file' ? 'Importing…' : (w.isCompleted === 1 ? 'Recording' : 'File') }}
+							</span>
+						</button>
+					</div>
 				</div>
 			</div>
+			<input ref="fitInput" type="file" accept=".fit,.gpx,.tcx,.gz,application/gzip" style="display: none"
+				@change="onFitPicked" />
 		</section>
 
 		<!-- Race hero -->
@@ -580,10 +591,10 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted, onActivated, onUnmounted, nextTick, watch } from 'vue'
-import { NIcon } from 'naive-ui'
+import { NIcon, useMessage } from 'naive-ui'
 import {
 	WalkOutline, BarbellOutline, BodyOutline, CheckmarkDoneOutline,
-	FlameOutline, FlagOutline, TrophyOutline, AddOutline, ChevronForwardOutline,
+	FlameOutline, FlagOutline, TrophyOutline, AddOutline, ChevronForwardOutline, CloudUploadOutline,
 } from '@vicons/ionicons5'
 import Chart from 'chart.js/auto'
 import 'chartjs-adapter-date-fns' // registers the time scale the VDOT trend uses
@@ -596,6 +607,7 @@ import { activityApi } from '@/activities'
 import type { Workout, DailyWeight, RaceGoal } from '@/types'
 import { getSportColor, isDistanceSport, noteSteps, gymSplit, SPORT_TYPES, SPORT_LABELS } from '@/utils/workouts'
 import { buildActivityIndex, effectiveWorkoutType, effectiveDistanceKm } from '@/utils/workoutSport'
+import { importFitFile, fitUpdates } from '@/utils/fitLink'
 import { PULSE_ZONES, getHRSettings, timeInZones, estimateVO2max } from '@/utils/analysis'
 import { settings, targetForDate, distanceGoals, hydrateSettings } from '@/settings'
 import { currentVdot, currentFitness, vdotTrend, vdotSamples, fitnessLine, trackedTargets, setActivities, setWorkouts } from '@/fitness'
@@ -727,18 +739,73 @@ const todayIsRest = computed(() =>
 const todayAllDone = computed(() =>
 	todaysWorkouts.value.length > 0 && todaysWorkouts.value.every(w => w.isCompleted === 1))
 
-const completingId = ref<number | null>(null)
+const message = useMessage()
+const busyId = ref<number | null>(null)
+const busyKind = ref<'complete' | 'file' | null>(null)
+const fitInput = ref<HTMLInputElement | null>(null)
+const pendingFitWorkout = ref<Workout | null>(null)
 
 async function completeToday(w: Workout) {
-	if (w.isCompleted === 1 || completingId.value !== null) return
-	completingId.value = w.id
+	if (w.isCompleted === 1 || busyId.value !== null) return
+	busyId.value = w.id
+	busyKind.value = 'complete'
 	try {
 		await db.completeWorkout({ id: w.id, isCompleted: 1 })
 		await load()
 	} catch (e) {
 		console.error('Failed to complete workout', e)
+		message.error('Failed to complete workout')
 	} finally {
-		completingId.value = null
+		busyId.value = null
+		busyKind.value = null
+	}
+}
+
+/** A recording only makes sense for a distance session (run/bike). */
+const canAttach = (w: Workout) => isDistanceSport(getWorkoutType(w))
+
+function pickFit(w: Workout) {
+	if (busyId.value !== null) return
+	pendingFitWorkout.value = w
+	fitInput.value?.click()
+}
+
+/**
+ * Bind a picked .fit/.gpx/.tcx file to the session: import the recording, then
+ * link it — completing the workout if it wasn't already, or refreshing an
+ * already-completed one's recording, distance and time from the new file.
+ */
+async function onFitPicked(e: Event) {
+	const file = (e.target as HTMLInputElement).files?.[0]
+	if (fitInput.value) fitInput.value.value = ''
+	const w = pendingFitWorkout.value
+	pendingFitWorkout.value = null
+	if (!file || !w) return
+
+	busyId.value = w.id
+	busyKind.value = 'file'
+	const wasDone = w.isCompleted === 1
+	try {
+		const imported = await importFitFile(file)
+		await db.completeWorkout({ id: w.id, isCompleted: 1, ...fitUpdates(imported) })
+		await load()
+		if (imported.duplicate && !imported.activityId) {
+			message.warning('That file was already imported but could not be matched automatically.')
+		} else if (wasDone) {
+			message.success('Recording updated.')
+		} else {
+			message.success(imported.duplicate ? 'Completed — linked the existing recording.' : 'Completed and linked to your recording.')
+		}
+	} catch (err: any) {
+		const msg = String(err?.message || err)
+		if (msg.startsWith('MISSING_TABLE')) {
+			message.error('Run supabase_imported_activities.sql in Supabase once, then try again.', { duration: 8000 })
+		} else {
+			message.error('Import failed: ' + msg)
+		}
+	} finally {
+		busyId.value = null
+		busyKind.value = null
 	}
 }
 
@@ -1718,6 +1785,18 @@ onUnmounted(destroyCharts)
 }
 .ts-complete:hover:not(:disabled) { opacity: 0.88; }
 .ts-complete:disabled { opacity: 0.5; cursor: default; }
+
+.ts-actions { display: flex; flex-direction: column; gap: 6px; align-items: stretch; flex-shrink: 0; }
+.ts-file {
+	display: inline-flex; align-items: center; justify-content: center; gap: 5px;
+	background: var(--surface-2); color: var(--text-secondary);
+	border: 1px solid var(--border-color); border-radius: var(--radius-sm);
+	padding: 6px 12px; font-family: inherit; font-size: 0.74rem; font-weight: 600;
+	cursor: pointer; transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+.ts-file:hover:not(:disabled) { background: var(--surface-hover); color: var(--text-color); border-color: var(--border-strong); }
+.ts-file:disabled { opacity: 0.5; cursor: default; }
+.ts-file .n-icon { font-size: 0.95rem; }
 
 /* Fitness & freshness */
 .form-badges { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
