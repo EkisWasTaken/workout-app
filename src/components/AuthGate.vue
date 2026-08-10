@@ -14,6 +14,15 @@
 
 			<form class="auth-form" @submit.prevent="submit">
 				<input
+					v-if="mode === 'signup'"
+					v-model="name"
+					type="text"
+					class="auth-input"
+					placeholder="Your name"
+					autocomplete="name"
+					:disabled="busy"
+				/>
+				<input
 					v-model="email"
 					type="email"
 					class="auth-input"
@@ -37,6 +46,16 @@
 			<p v-if="errorMsg" class="auth-error">{{ errorMsg }}</p>
 			<p v-if="infoMsg" class="auth-info">{{ infoMsg }}</p>
 
+			<button
+				v-if="mode === 'signin'"
+				class="auth-forgot"
+				type="button"
+				:disabled="busy"
+				@click="forgotPassword"
+			>
+				Forgot your password?
+			</button>
+
 			<button class="auth-toggle" type="button" :disabled="busy" @click="toggleMode">
 				{{ mode === 'signin' ? "No account yet? Create one" : 'Have an account? Sign in' }}
 			</button>
@@ -46,9 +65,10 @@
 
 <script setup lang="ts">
 import { ref } from 'vue'
-import { signIn, signUp } from '../auth'
+import { resetPassword, signIn, signUp } from '../auth'
 
 const mode = ref<'signin' | 'signup'>('signin')
+const name = ref('')
 const email = ref('')
 const password = ref('')
 const busy = ref(false)
@@ -60,6 +80,40 @@ function toggleMode() {
 	mode.value = mode.value === 'signin' ? 'signup' : 'signin'
 	errorMsg.value = ''
 	infoMsg.value = ''
+}
+
+/**
+ * Supabase's raw errors are written for developers. "Invalid login credentials"
+ * is technically accurate and tells a friend with a typo'd password nothing
+ * about what to do next.
+ */
+function humanError(e: any): string {
+	const raw = String(e?.message || '').toLowerCase()
+	if (raw.includes('invalid login credentials')) return 'That email and password don’t match. Check them and try again.'
+	if (raw.includes('already registered') || raw.includes('already been registered')) return 'There’s already an account with that email. Try signing in instead.'
+	if (raw.includes('email not confirmed')) return 'Check your inbox and confirm your email first, then sign in.'
+	if (raw.includes('rate limit') || raw.includes('too many')) return 'Too many attempts. Wait a minute and try again.'
+	if (raw.includes('password')) return 'That password won’t work — it needs to be at least 6 characters.'
+	if (raw.includes('fetch') || raw.includes('network')) return 'Couldn’t reach the server. Check your connection.'
+	return 'Something went wrong. Try again in a moment.'
+}
+
+async function forgotPassword() {
+	if (busy.value) return
+	if (!email.value.trim()) {
+		fail('Enter your email above first, then tap this again.')
+		return
+	}
+	errorMsg.value = ''
+	busy.value = true
+	try {
+		await resetPassword(email.value.trim())
+		infoMsg.value = 'If that email has an account, a reset link is on its way.'
+	} catch (e) {
+		fail(humanError(e))
+	} finally {
+		busy.value = false
+	}
 }
 
 function fail(msg: string) {
@@ -82,7 +136,7 @@ async function submit() {
 				fail('Password must be at least 6 characters.')
 				return
 			}
-			await signUp(email.value.trim(), password.value)
+			await signUp(email.value.trim(), password.value, name.value)
 			// With email confirmation off, sign-up returns a session and we're in.
 			// With it on, there's no session yet — tell them to check their inbox.
 			infoMsg.value = 'Account created. If nothing happens, confirm your email, then sign in.'
@@ -90,7 +144,7 @@ async function submit() {
 			password.value = ''
 		}
 	} catch (e: any) {
-		fail(e?.message || 'Something went wrong. Try again.')
+		fail(humanError(e))
 	} finally {
 		busy.value = false
 	}
@@ -189,8 +243,21 @@ async function submit() {
 	line-height: 1.5;
 }
 
+.auth-forgot {
+	margin-top: 16px;
+	background: none;
+	border: none;
+	color: var(--text-muted);
+	font-size: 0.78rem;
+	font-family: inherit;
+	cursor: pointer;
+	padding: 4px;
+}
+.auth-forgot:hover { color: var(--text-secondary); }
+.auth-forgot:disabled { opacity: 0.55; cursor: default; }
+
 .auth-toggle {
-	margin-top: 18px;
+	margin-top: 8px;
 	background: none;
 	border: none;
 	color: var(--primary-color);

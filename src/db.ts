@@ -6,6 +6,8 @@ import type { Workout, DailyWeight, WorkoutTemplate, WorkoutTemplateExercise, Ex
 export const MISSING_GOALS_TABLES = 'MISSING_GOALS_TABLES'
 /** Thrown when supabase_goals_v2.sql hasn't been run yet. */
 export const MISSING_GOALS_COLUMNS = 'MISSING_GOALS_COLUMNS'
+/** Thrown when trying to delete a template belonging to another account. */
+export const NOT_YOUR_TEMPLATE = 'NOT_YOUR_TEMPLATE'
 
 /**
  * A table that doesn't exist. PostgREST answers PGRST205 ("not found in the
@@ -371,12 +373,22 @@ export const db = {
     return data as WorkoutTemplateExercise[]
   },
 
+  /**
+   * Delete one of *your* templates.
+   *
+   * The library is shared, so the owner filter matters: RLS enforces it server
+   * side, but without it here a delete of someone else's row would silently
+   * affect nothing and still report success.
+   */
   deleteWorkoutTemplate: async (templateId: number): Promise<boolean> => {
-    const { error } = await supabase
+    const { data, error } = await supabase
       .from('workout_templates')
       .delete()
       .eq('id', templateId)
+      .eq('user_id', currentUserId())
+      .select('id')
     if (error) throw error
+    if (!data?.length) throw new Error(NOT_YOUR_TEMPLATE)
     return true
   },
 

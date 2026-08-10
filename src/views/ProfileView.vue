@@ -3,9 +3,11 @@
 		<div class="profile-content">
 			<h1 class="page-title">Profile &amp; goals</h1>
 
+			<!-- Only the owner can act on a pending migration, so only the owner is
+			     shown the filename. Everyone else gets plain language. -->
 			<div v-if="pendingMigration.script" class="schema-warning">
 				<n-icon :component="WarningOutline" />
-				<div>
+				<div v-if="isOwner">
 					<strong>Database migration pending.</strong>
 					Run <code>{{ pendingMigration.script }}</code> in the Supabase SQL editor.
 					<template v-if="pendingMigration.script === 'supabase_goals_v2.sql'">
@@ -14,6 +16,10 @@
 					<template v-else>
 						Until then, preferences save to this browser only, and goal times can't be saved at all.
 					</template>
+				</div>
+				<div v-else>
+					<strong>Some settings are temporarily unavailable.</strong>
+					{{ GENERIC_SCHEMA_MESSAGE }}
 				</div>
 			</div>
 
@@ -248,6 +254,7 @@ import {
 } from '@/settings'
 import { currentVdot, derivedFitness, hydrateFitness } from '@/fitness'
 import { auth, signOut } from '@/auth'
+import { isOwner, GENERIC_SCHEMA_MESSAGE } from '@/owner'
 import {
 	DISTANCES, DISTANCE_LABELS, paceTable, equivalentTimes, vdotFromRace,
 	raceTimeOnCourse, coursePaceSecPerKm, TERRAIN_PRESETS,
@@ -267,13 +274,16 @@ async function handleSignOut() {
 	}
 }
 
-/** Turn a migration sentinel into something actionable. */
-const failed = (e: any, fallback: string) =>
-	message.error(
-		e?.message === MISSING_GOALS_COLUMNS
-			? 'Run supabase_goals_v2.sql in Supabase first — this field needs it.'
-			: fallback,
-	)
+/**
+ * Turn a migration sentinel into something actionable — for whoever can act on
+ * it. A friend can't run SQL, so they get told what happened, not what to type.
+ */
+const failed = (e: any, fallback: string) => {
+	if (e?.message !== MISSING_GOALS_COLUMNS) return message.error(fallback)
+	return message.error(isOwner.value
+		? 'Run supabase_goals_v2.sql in Supabase first — this field needs it.'
+		: GENERIC_SCHEMA_MESSAGE)
+}
 
 // ─── preferences ──────────────────────────────────────────────────────────────
 const form = reactive({ userName: '', goalWeight: '', restingHR: '', maxHR: '', vdotOverride: '' })

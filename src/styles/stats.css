@@ -1,0 +1,128 @@
+/*
+ * Shared chrome for the statistics tabs.
+ *
+ * Every sport tab is built from the same handful of surfaces — a panel, a chart
+ * card, a metric grid, a footnote. Defining them once here keeps the four tab
+ * components to their own content and guarantees Running, Gym, Bike and Body
+ * look like one page rather than four.
+ */
+
+.stat-tab {
+	display: flex;
+	flex-direction: column;
+}
+
+/* Auto-fitting grid of MetricCards. */
+.metric-grid {
+	display: grid;
+	grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+	gap: 12px;
+}
+
+.stat-panel {
+	background: var(--surface-color);
+	border: 1px solid var(--border-color);
+	border-radius: var(--radius);
+	box-shadow: inset 0 1px 0 var(--border-subtle);
+}
+
+.stat-card {
+	padding: 14px 16px 16px;
+}
+
+.stat-head {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 10px;
+	flex-wrap: wrap;
+	margin-bottom: 10px;
+}
+
+.stat-head h3 {
+	font-size: 0.9rem;
+	font-weight: 600;
+	font-family: var(--font-family);
+	margin: 0;
+}
+
+.stat-head .hint {
+	font-size: 0.74rem;
+	color: var(--text-muted);
+}
+
+.stat-chart {
+	height: 230px;
+	position: relative;
+}
+
+/* The sentence under a chart explaining what to take from it. */
+.stat-note {
+	margin: 12px 0 0;
+	font-size: 0.78rem;
+	line-height: 1.55;
+	color: var(--text-muted);
+}
+
+.stat-badges {
+	display: flex;
+	gap: 7px;
+	flex-wrap: wrap;
+}
+
+.stat-badge {
+	display: inline-flex;
+	align-items: baseline;
+	gap: 5px;
+	font-size: 0.75rem;
+	padding: 3px 9px;
+	border-radius: 999px;
+	background: var(--surface-2);
+	color: var(--text-secondary);
+}
+
+.stat-badge .b-lbl {
+	color: var(--text-muted);
+	font-size: 0.68rem;
+	text-transform: uppercase;
+	letter-spacing: 0.03em;
+}
+
+.stat-badge.good { color: var(--success-color); background: var(--success-soft); }
+.stat-badge.warn { color: var(--warning-color); background: var(--warning-soft); }
+
+.stat-banner {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	margin-top: 12px;
+	padding: 11px 14px;
+	border-radius: var(--radius);
+	font-size: 0.82rem;
+	line-height: 1.5;
+}
+
+.stat-banner.warn { background: var(--warning-soft); color: var(--warning-color); }
+.stat-banner.info { background: var(--primary-soft); color: var(--primary-color); }
+
+/* An inline text button that sits in a SectionHead's aside slot. */
+.stat-link-btn {
+	background: none;
+	border: none;
+	padding: 0;
+	margin-left: auto;
+	cursor: pointer;
+	font-family: inherit;
+	font-size: 0.78rem;
+	color: var(--primary-color);
+}
+.stat-link-btn:hover { text-decoration: underline; }
+
+.stat-muted { color: var(--text-muted); }
+.stat-good { color: var(--success-color); }
+.stat-off { color: var(--warning-color); }
+
+@media (max-width: 768px) {
+	.stat-chart { height: 200px; }
+	.metric-grid { grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 10px; }
+}

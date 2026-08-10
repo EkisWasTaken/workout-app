@@ -122,6 +122,11 @@ export type TemplateKind = 'gym' | 'run' | 'bike' | 'other';
 export interface WorkoutTemplate {
 	id: number;
 	name: string;
+	/**
+	 * Who created it. The template library is shared across accounts, so this is
+	 * what tells the UI whose row it is — only the owner may edit or delete.
+	 */
+	user_id?: string | null;
 	/** What sort of session this template builds. Older rows default to 'gym'. */
 	kind?: TemplateKind;
 	/** Run flavour ("Easy", "Threshold") or gym split ("Push"); copied onto the workout. */

@@ -11,6 +11,7 @@
  */
 import { reactive, computed } from 'vue'
 import { db, schema, MISSING_GOALS_TABLES } from './db'
+import { signupName } from './auth'
 import { DISTANCES, DISTANCE_LABELS, vdotFromRace, vdotForCourse, FLAT, type DistanceKey } from './utils/vdot'
 import type { RaceGoal, Target } from './types'
 
@@ -114,6 +115,16 @@ export async function hydrateSettings(): Promise<void> {
 			await saveSettings(settings)
 		} else if (profile) {
 			settings.userName = profile.user_name ?? ''
+			// A brand-new account has a profile row but no name yet; fall back to
+			// whatever they typed at sign-up so the greeting isn't anonymous.
+			if (!settings.userName) {
+				const fromSignup = signupName()
+				if (fromSignup) {
+					settings.userName = fromSignup
+					saveSettings({ userName: fromSignup }).catch(e =>
+						console.warn('[settings] could not persist sign-up name', e))
+				}
+			}
 			settings.goalWeight = profile.goal_weight
 			settings.restingHR = profile.resting_hr ?? DEFAULTS.restingHR
 			settings.maxHR = profile.max_hr

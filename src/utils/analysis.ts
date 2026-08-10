@@ -108,12 +108,17 @@ export interface FitnessPoint {
 /**
  * Fitness & Freshness (CTL/ATL/TSB, the model behind Strava's premium
  * chart). `efforts` maps yyyy-MM-dd to total Relative Effort that day.
+ *
+ * `today` is injectable so callers can be tested against a fixed clock.
  */
-export function fitnessSeries(efforts: Record<string, number>, days: number): FitnessPoint[] {
+export function fitnessSeries(
+	efforts: Record<string, number>,
+	days: number,
+	today = new Date(),
+): FitnessPoint[] {
 	const dates = Object.keys(efforts).sort()
 	if (!dates.length) return []
 
-	const today = new Date()
 	const start = new Date(dates[0])
 	const out: FitnessPoint[] = []
 	let ctl = 0, atl = 0

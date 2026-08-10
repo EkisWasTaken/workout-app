@@ -70,6 +70,7 @@ import { CloudUploadOutline } from '@vicons/ionicons5'
 import CustomModal from './CustomModal.vue'
 import { parseActivityFile, type ParsedActivity } from '@/import/parseActivityFile'
 import { db } from '@/db'
+import { isOwner } from '@/owner'
 import { getSportColor } from '@/utils/workouts'
 
 defineProps<{ show: boolean }>()
@@ -161,7 +162,10 @@ async function saveAll() {
 	} catch (err: any) {
 		const msg = String(err?.message || err)
 		if (msg.startsWith('MISSING_TABLE')) {
-			message.error('Database table missing — run supabase_imported_activities.sql in the Supabase SQL editor once.', { duration: 10000 })
+			message.error(isOwner.value
+				? 'Database table missing — run supabase_imported_activities.sql in the Supabase SQL editor once.'
+				: "Activity storage isn't set up on this account yet — let the app owner know.",
+				{ duration: 10000 })
 		} else {
 			message.error('Import failed: ' + msg)
 		}

@@ -8,7 +8,8 @@
 
       <p class="hint">
         A template is a reusable session — a gym split or a run — that you can drop onto
-        any date. Build it once, schedule it whenever.
+        any date. Build it once, schedule it whenever. The library is shared with everyone
+        on this app: you can schedule anyone's template, but only edit or delete your own.
       </p>
 
       <n-list v-if="templates.length" bordered style="width: 100%">
@@ -17,6 +18,7 @@
             <template #header>
               <span class="tpl-kind" :class="`kind-${template.kind || 'gym'}`">{{ kindLabel(template.kind) }}</span>
               {{ template.name }}
+              <span v-if="!isOwn(template)" class="tpl-shared" title="Created by someone else">Shared</span>
             </template>
             <template #description>
               <span class="tpl-meta">{{ templateSummary(template) }}</span>
@@ -27,7 +29,9 @@
               <n-button size="small" type="primary" ghost @click="openSchedule(template)">
                 Add to schedule
               </n-button>
-              <n-popconfirm @positive-click="deleteTemplate(template.id)" placement="left">
+              <!-- Only the owner may delete. The library is shared, and a friend
+                   wiping your templates is not a feature. -->
+              <n-popconfirm v-if="isOwn(template)" @positive-click="deleteTemplate(template.id)" placement="left">
                 <template #trigger>
                   <n-button size="small" type="error" ghost>Delete</n-button>
                 </template>
@@ -117,7 +121,11 @@ import {
 import { format } from 'date-fns';
 import type { WorkoutTemplate, WorkoutTemplateExercise, TemplateKind } from '../types';
 import { db } from '@/db';
+import { auth } from '@/auth';
 import { buildWorkoutFromTemplate } from '@/utils/templateSession';
+
+/** Templates are a shared library; only the creator gets the destructive actions. */
+const isOwn = (t: WorkoutTemplate) => !t.user_id || t.user_id === auth.user?.id;
 
 const message = useMessage();
 const templates = ref<WorkoutTemplate[]>([]);
@@ -320,4 +328,17 @@ onMounted(loadTemplates);
 .kind-bike { background: var(--warning-soft, var(--surface-2)); color: var(--warning-color, var(--text-secondary)); }
 .kind-other { background: var(--surface-2); color: var(--text-secondary); }
 .tpl-meta { font-size: 0.8rem; color: var(--text-muted); }
+
+.tpl-shared {
+  margin-left: 8px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: 0.66rem;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  background: var(--surface-2);
+  border: 1px solid var(--border-color);
+}
 </style>

@@ -7,11 +7,13 @@ import { naiveTheme, themeOverrides } from './theme'
 import { auth, initAuth, onUserChange } from './auth'
 import { hydrateSettings, resetSettingsCache } from './settings'
 import { refreshFitness } from './fitness'
+import { resetStats } from './stats'
 import type { User } from '@supabase/supabase-js'
 
-/** Wipe the previous user's cached settings/fitness, then load the new user's. */
+/** Wipe the previous user's cached settings/stats/fitness, then load the new user's. */
 function applyUser(user: User | null) {
 	resetSettingsCache()
+	resetStats()
 	if (user) {
 		hydrateSettings()
 		refreshFitness()

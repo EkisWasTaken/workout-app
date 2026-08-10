@@ -10,6 +10,10 @@
           <button @click="openAddWorkoutModal(null)" class="action-button primary">
             <n-icon :component="AddOutline" /> Add workout
           </button>
+          <button @click="copyLastWeek" class="action-button" :disabled="isActionLoading"
+            title="Duplicate last week's sessions onto this week">
+            <n-icon :component="CopyOutline" /> Copy last week
+          </button>
           <button @click="showLogWeightModal = true" class="action-button">
             <n-icon :component="BodyOutline" /> Log weight
           </button>
@@ -146,8 +150,41 @@
               <option>Other</option>
             </select>
           </div>
+
+          <!-- The whole session in one pass — no save-then-edit round trip. -->
+          <div class="form-row">
+            <div v-if="newWorkoutIsDistance" class="form-group">
+              <label for="workout-distance">Distance (km)</label>
+              <input type="number" id="workout-distance" v-model="newWorkout.distance" min="0" step="0.5"
+                placeholder="optional" />
+            </div>
+            <div class="form-group">
+              <label for="workout-duration">Duration (min)</label>
+              <input type="number" id="workout-duration" v-model="newWorkout.duration" min="0"
+                placeholder="optional" />
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label for="workout-notes">Notes</label>
+            <textarea id="workout-notes" v-model="newWorkout.notes"
+              placeholder="Session plan, e.g. 4×1 km at threshold with 90 s jog"></textarea>
+          </div>
+
+          <div class="form-group">
+            <label for="workout-repeat">Repeat</label>
+            <select id="workout-repeat" v-model.number="repeatWeeks">
+              <option :value="1">Just this date</option>
+              <option v-for="n in [2, 3, 4, 6, 8, 12]" :key="n" :value="n">
+                Weekly for {{ n }} weeks
+              </option>
+            </select>
+          </div>
+
           <button @click="saveNewWorkout" class="action-button primary save-button" :disabled="isActionLoading">
-            <span v-if="!isActionLoading">Save workout</span>
+            <span v-if="!isActionLoading">
+              {{ repeatWeeks > 1 ? `Save ${repeatWeeks} sessions` : 'Save workout' }}
+            </span>
             <span v-else class="ascii-spinner">Saving</span>
           </button>
         </div>
@@ -372,11 +409,12 @@ import { ref, computed, watch, onMounted, onActivated } from 'vue';
 import { useRouter } from 'vue-router';
 import { useMessage, NIcon } from 'naive-ui';
 import {
-  AddOutline, BodyOutline, CloudUploadOutline, ChevronBackOutline, ChevronForwardOutline,
+  AddOutline, BodyOutline, CloudUploadOutline, CopyOutline, ChevronBackOutline, ChevronForwardOutline,
   FlagOutline, CheckmarkCircle, TrashOutline, CreateOutline, CheckmarkOutline, MapOutline,
   WatchOutline, WalkOutline, BarbellOutline, BicycleOutline, BedOutline, FitnessOutline,
 } from '@vicons/ionicons5';
 import { db } from '@/db';
+import { isOwner } from '@/owner';
 
 const router = useRouter();
 import { 
@@ -461,10 +499,10 @@ async function onDrop(event: DragEvent, date: Date) {
     try {
       await db.updateWorkout({ ...workout, date: newDate });
       await loadWorkouts();
-      message.success(`MOVED_TO_${newDate}`);
+      message.success(`Moved to ${format(date, 'EEE d MMM')}`);
     } catch (e) {
       console.error(e);
-      message.error('FAILED_TO_MOVE_WORKOUT');
+      message.error("Couldn't move that session. Check your connection and try again.");
     } finally {
       isActionLoading.value = false;
     }
@@ -493,7 +531,7 @@ const toStr = (v: any): string | undefined =>
 
 /** Match key for update mode: same day + same name (case-insensitive). */
 const workoutKey = (date: string, name: string) =>
-  `${String(date).trim()} ${String(name).trim().toLowerCase()}`;
+  `${String(date).trim()}\u0000${String(name).trim().toLowerCase()}`;
 
 async function onImportConfirm(data: any[], opts: { asTemplates?: boolean; mode?: 'add' | 'update' } = {}) {
   isActionLoading.value = true;
@@ -691,7 +729,10 @@ async function onCompletionFitPicked(e: Event) {
   } catch (err: any) {
     const msg = String(err?.message || err);
     if (msg.startsWith('MISSING_TABLE')) {
-      message.error('Database table missing — run supabase_imported_activities.sql in the Supabase SQL editor once.', { duration: 10000 });
+      message.error(isOwner.value
+        ? 'Database table missing — run supabase_imported_activities.sql in the Supabase SQL editor once.'
+        : "Activity storage isn't set up on this account yet — let the app owner know.",
+        { duration: 10000 });
     } else {
       message.error('Import failed: ' + msg);
     }
@@ -786,11 +827,27 @@ async function handleSaveCompletion() {
 const showAddWorkoutModal = ref(false);
 const showLogWeightModal = ref(false);
 
+/**
+ * The whole session, captured in one pass.
+ *
+ * This form used to take only name/date/type, so planning a 12 km easy run meant
+ * saving, reopening the session and editing it to add the distance. Everything
+ * the edit dialog offers is here now.
+ */
 const newWorkout = ref<AddWorkoutPayload>({
   name: '',
   date: format(new Date(), 'yyyy-MM-dd'),
   type: 'Running',
+  duration: undefined,
+  distance: undefined,
+  notes: '',
 });
+
+/** Repeat the session on the same weekday for this many consecutive weeks. */
+const repeatWeeks = ref(1);
+
+const newWorkoutIsDistance = computed(() =>
+  newWorkout.value.type === 'Running' || newWorkout.value.type === 'Bike');
 
 // Shared template library — pick one to pre-fill the new workout from.
 const templates = ref<WorkoutTemplate[]>([]);
@@ -811,29 +868,126 @@ const newWeight = ref({
 });
 
 function openAddWorkoutModal(date: Date | null) {
-  newWorkout.value.date = date ? format(date, 'yyyy-MM-dd') : format(new Date(), 'yyyy-MM-dd');
+  newWorkout.value = {
+    name: '',
+    date: date ? format(date, 'yyyy-MM-dd') : format(new Date(), 'yyyy-MM-dd'),
+    type: 'Running',
+    duration: undefined,
+    distance: undefined,
+    notes: '',
+  };
+  repeatWeeks.value = 1;
   selectedTemplateId.value = null;
   showAddWorkoutModal.value = true;
 }
+
+/** Blank strings and NaN out of number inputs must not reach the database. */
+const cleanNum = (v: unknown): number | undefined => {
+  if (v === undefined || v === null || String(v).trim() === '') return undefined;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : undefined;
+};
 
 async function saveNewWorkout() {
   if (!newWorkout.value.name) return;
   isActionLoading.value = true;
   try {
-    // A chosen template carries pace/distance/gymType/notes; a bare add doesn't.
     const template = selectedTemplateId.value
       ? templates.value.find(t => t.id === selectedTemplateId.value)
       : null;
-    let payload: AddWorkoutPayload = { ...newWorkout.value };
-    if (template) {
-      payload = await buildWorkoutFromTemplate(template, newWorkout.value.date);
-      payload.name = newWorkout.value.name || template.name;
+
+    const weeks = Math.max(1, Math.min(52, Math.round(Number(repeatWeeks.value) || 1)));
+    const baseDate = parseISO(newWorkout.value.date);
+
+    for (let i = 0; i < weeks; i++) {
+      const date = format(addWeeks(baseDate, i), 'yyyy-MM-dd');
+
+      // A chosen template carries pace/distance/gymType/notes; anything the user
+      // typed into the form then overrides it.
+      let payload: AddWorkoutPayload = template
+        ? await buildWorkoutFromTemplate(template, date)
+        : { ...newWorkout.value, date };
+
+      payload = {
+        ...payload,
+        date,
+        name: newWorkout.value.name || template?.name || 'Session',
+        type: newWorkout.value.type,
+        duration: cleanNum(newWorkout.value.duration) ?? payload.duration,
+        distance: newWorkoutIsDistance.value
+          ? (cleanNum(newWorkout.value.distance) ?? payload.distance)
+          : undefined,
+        notes: newWorkout.value.notes || payload.notes || '',
+      };
+
+      await db.addWorkout(payload);
     }
-    await db.addWorkout(payload);
+
     showAddWorkoutModal.value = false;
     await loadWorkouts();
-    newWorkout.value.name = '';
+    message.success(weeks === 1 ? 'Session added.' : `Added to ${weeks} weeks.`);
     selectedTemplateId.value = null;
+  } catch (e) {
+    console.error('Failed to add workout', e);
+    message.error("Couldn't save that session. Check your connection and try again.");
+  } finally {
+    isActionLoading.value = false;
+  }
+}
+
+/**
+ * Copy the previous week's plan onto this one.
+ *
+ * Building a training week one dialog at a time is the single most tedious
+ * thing in the app, and most weeks are a variation on the last.
+ */
+async function copyLastWeek() {
+  // In week view, "this week" is the week you're looking at; in month view it's
+  // the real current week.
+  const anchor = viewMode.value === 'week' ? currentWeek.value : new Date();
+  const targetStart = startOfWeek(anchor, { weekStartsOn: 1 });
+  const sourceStart = subWeeks(targetStart, 1);
+  const sourceEnd = endOfWeek(sourceStart, { weekStartsOn: 1 });
+
+  const source = workouts.value.filter(w => {
+    const d = parseISO(w.date);
+    return d >= sourceStart && d <= sourceEnd;
+  });
+
+  if (!source.length) {
+    message.warning('Nothing scheduled last week to copy.');
+    return;
+  }
+
+  const targetEnd = endOfWeek(targetStart, { weekStartsOn: 1 });
+  const already = workouts.value.some(w => {
+    const d = parseISO(w.date);
+    return d >= targetStart && d <= targetEnd;
+  });
+  if (already && !window.confirm(
+    `This week already has sessions. Add ${source.length} more from last week?`)) return;
+
+  isActionLoading.value = true;
+  try {
+    for (const w of source) {
+      // Copy the plan, never the results: a copied session starts uncompleted.
+      await db.addWorkout({
+        name: w.name,
+        date: format(addWeeks(parseISO(w.date), 1), 'yyyy-MM-dd'),
+        type: w.type,
+        duration: w.duration,
+        distance: w.isCompleted === 1 ? undefined : w.distance,
+        targetPace: w.targetPace,
+        gymType: w.gymType,
+        notes: w.notes || '',
+        isCompleted: 0,
+      } as AddWorkoutPayload);
+    }
+    await loadWorkouts();
+    message.success(`Copied ${source.length} session${source.length === 1 ? '' : 's'} from last week.`);
+  } catch (e) {
+    console.error('Copy week failed', e);
+    message.error("Couldn't copy last week. Check your connection and try again.");
   } finally {
     isActionLoading.value = false;
   }
@@ -841,7 +995,7 @@ async function saveNewWorkout() {
 
 async function saveNewWeight() {
   if (!newWeight.value.weight) {
-    message.warning('PLEASE_ENTER_VALID_MASS_VALUE');
+    message.warning('Enter a weight first.');
     return;
   }
   isActionLoading.value = true;
@@ -850,14 +1004,14 @@ async function saveNewWeight() {
       date: newWeight.value.date,
       weight: Number(newWeight.value.weight)
     });
-    message.success('BIOMETRIC_DATA_COMMITTED');
+    message.success('Weight logged.');
     showLogWeightModal.value = false;
     await loadDailyWeights();
     // Reset date after successful save
     newWeight.value.date = format(new Date(), 'yyyy-MM-dd');
   } catch (error) {
     console.error('Failed to save weight:', error);
-    message.error('WRITE_ERROR_CHECK_SYSTEM_LOGS');
+    message.error("Couldn't save that weight. Check your connection and try again.");
   } finally {
     isActionLoading.value = false;
   }
@@ -1227,6 +1381,11 @@ onActivated(loadAll);
 /* Forms */
 .form-container { display: flex; flex-direction: column; gap: 16px; padding: 6px 0; }
 .form-group { display: flex; flex-direction: column; gap: 6px; }
+
+/* Two short fields side by side; stacks on a phone. */
+.form-row { display: flex; gap: 12px; }
+.form-row .form-group { flex: 1; min-width: 0; }
+@media (max-width: 520px) { .form-row { flex-direction: column; } }
 label { font-weight: 500; color: var(--text-secondary); font-size: 0.8rem; }
 input, select, textarea {
   background: var(--surface-2);

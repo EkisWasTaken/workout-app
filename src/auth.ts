@@ -63,9 +63,32 @@ export async function signIn(email: string, password: string): Promise<void> {
 	if (error) throw error
 }
 
-export async function signUp(email: string, password: string): Promise<void> {
-	const { error } = await supabase.auth.signUp({ email, password })
+/**
+ * Create an account. The display name rides along as user metadata so the app
+ * can greet someone by name on their very first load — the profile row doesn't
+ * exist yet at this point, and an unnamed "Good evening," is a poor welcome.
+ */
+export async function signUp(email: string, password: string, name?: string): Promise<void> {
+	const { error } = await supabase.auth.signUp({
+		email,
+		password,
+		options: name?.trim() ? { data: { display_name: name.trim() } } : undefined,
+	})
 	if (error) throw error
+}
+
+/** Email a password-reset link back to this app. */
+export async function resetPassword(email: string): Promise<void> {
+	const { error } = await supabase.auth.resetPasswordForEmail(email, {
+		redirectTo: window.location.origin,
+	})
+	if (error) throw error
+}
+
+/** The name chosen at sign-up, if there was one. */
+export function signupName(): string | null {
+	const n = auth.user?.user_metadata?.display_name
+	return typeof n === 'string' && n.trim() ? n.trim() : null
 }
 
 export async function signOut(): Promise<void> {
