@@ -31,6 +31,8 @@
           <button @click="goPrev" class="nav-button" :aria-label="viewMode === 'week' ? 'Previous week' : 'Previous month'"><n-icon :component="ChevronBackOutline" /></button>
           <span class="month-display">{{ viewMode === 'week' ? weekRangeLabel : formattedCurrentMonth }}</span>
           <button @click="goNext" class="nav-button" :aria-label="viewMode === 'week' ? 'Next week' : 'Next month'"><n-icon :component="ChevronForwardOutline" /></button>
+          <!-- One click back to where you are, from anywhere in the calendar. -->
+          <button @click="goToToday" class="today-button">Today</button>
           <div class="view-toggle">
             <button :class="{ active: viewMode === 'month' }" @click="viewMode = 'month'">Month</button>
             <button :class="{ active: viewMode === 'week' }" @click="setWeekView">Week</button>
@@ -75,46 +77,56 @@
         </div>
 
         <div v-if="viewMode === 'month'" class="calendar-grid days-header">
-          <div v-for="day in weekDays" :key="day" class="day-cell header">{{ day }}</div>
+          <div v-for="(day, i) in weekDays" :key="day" class="dh-cell" :class="{ we: i >= 5 }">{{ day }}</div>
         </div>
-        <div v-if="viewMode === 'month'" class="calendar-grid">
-          <div v-for="day in days" :key="day.date.toISOString()" 
-               class="day-cell" 
-               :class="{ 
+        <div v-if="viewMode === 'month'" class="calendar-grid cal-body">
+          <div v-for="day in days" :key="day.date.toISOString()"
+               class="day-cell"
+               :class="{
                  'not-current-month': !day.isCurrentMonth,
                  'is-today': day.isToday,
+                 'we': day.isWeekend,
                  'drag-over': dragOverDate === format(day.date, 'yyyy-MM-dd')
-               }" 
+               }"
                @click.stop="openAddWorkoutModal(day.date)"
                @dragover.prevent
                @dragenter.prevent="onDragEnter(day.date)"
                @dragleave="onDragLeave(day.date)"
                @drop="onDrop($event, day.date)">
-            <div class="day-number">{{ day.dayOfMonth }}</div>
+            <!-- Fixed-height head so every cell's chips start on one baseline. -->
+            <div class="day-head"><span class="day-number">{{ day.dayOfMonth }}</span></div>
+
             <div class="events">
-              <div v-for="goal in day.raceGoals" :key="goal.id" class="event-tag race-goal-tag">
-                <n-icon :component="FlagOutline" /> {{ goal.name }}
+              <div v-for="goal in day.showRaces" :key="'r' + goal.id" class="chip race" :title="goal.name">
+                <n-icon :component="FlagOutline" class="chip-ico" />
+                <span class="chip-name">{{ goal.name }}</span>
               </div>
-              <div v-for="workout in day.workouts" :key="workout.id"
-                   class="event-tag workout-tag"
-                   :class="[getWorkoutClass(workout), { 'dragging': draggingWorkoutId === workout.id }]"
+
+              <div v-for="workout in day.showWorkouts" :key="workout.id"
+                   class="chip workout"
+                   :class="[getWorkoutClass(workout), {
+                     done: workout.isCompleted === 1,
+                     dragging: draggingWorkoutId === workout.id,
+                   }]"
                    :draggable="workout.isCompleted !== 1"
+                   :title="workout.name"
                    @dragstart="onDragStart($event, workout)"
                    @dragend="onDragEnd"
                    @click.stop="openDetailsModal(workout)">
-                <div class="workout-banner"></div>
-                <div class="wt-body">
-                  <span class="wt-title">
-                    <n-icon v-if="workout.isCompleted === 1" class="done-check" :component="CheckmarkCircle" />
-                    <n-icon v-else class="wt-ico" :component="workoutIcon(workout)" />
-                    <span class="event-name">{{ workout.name }}</span>
-                  </span>
-                  <span v-if="workoutMeta(workout)" class="wt-meta">{{ workoutMeta(workout) }}</span>
-                </div>
+                <n-icon v-if="workout.isCompleted === 1" class="chip-ico done-check" :component="CheckmarkCircle" />
+                <n-icon v-else class="chip-ico" :component="workoutIcon(workout)" />
+                <span class="chip-name">{{ workout.name }}</span>
+                <span v-if="chipMeta(workout)" class="chip-meta">{{ chipMeta(workout) }}</span>
               </div>
-              <div v-for="weight in day.dailyWeights" :key="weight.id" class="event-tag weight-tag">
-                <n-icon :component="BodyOutline" /> {{ weight.weight }} kg
+
+              <div v-for="weight in day.showWeights" :key="'w' + weight.id" class="chip weight">
+                <n-icon :component="BodyOutline" class="chip-ico" />
+                <span class="chip-name">{{ weight.weight }} kg</span>
               </div>
+
+              <button v-if="day.hiddenCount > 0" class="more" @click.stop="openWeekFor(day.date)">
+                +{{ day.hiddenCount }} more
+              </button>
             </div>
           </div>
         </div>
@@ -405,7 +417,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch, onMounted, onActivated } from 'vue';
+import { ref, computed, watch, onMounted, onActivated, onUnmounted } from 'vue';
 import { useRouter } from 'vue-router';
 import { useMessage, NIcon } from 'naive-ui';
 import {
@@ -442,7 +454,7 @@ import { activityApi } from '../activities';
 import { parseActivityFile } from '@/import/parseActivityFile';
 import { targetForDate, hydrateSettings } from '@/settings';
 import { currentVdot, hydrateFitness, refreshFitness, setActivities, setWorkouts } from '@/fitness';
-import { paceParts, sessionPace, type SessionPace } from '@/utils/paceAdvice';
+import { sessionPace, type SessionPace } from '@/utils/paceAdvice';
 import { noteSteps, type SportType } from '@/utils/workouts';
 import { buildActivityIndex, effectiveWorkoutType } from '@/utils/workoutSport';
 
@@ -1025,29 +1037,95 @@ const currentMonth = ref(new Date());
 const formattedCurrentMonth = computed(() => format(currentMonth.value, 'MMMM yyyy', { locale: enUS }));
 const weekDays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
+/**
+ * How many chips fit in a month cell before we collapse the rest.
+ *
+ * Every row is a fixed height so the grid stays aligned; capping the chips is
+ * what makes that possible. Overflow isn't hidden — it becomes a "+N more"
+ * button that opens that week in the detailed week view.
+ */
+const MAX_MONTH_CHIPS = 3;
+
+/**
+ * On a phone the month grid becomes one day per row, so cells grow to fit and
+ * there's no reason to collapse anything — capping there would hide sessions
+ * behind a "+N more" for no gain.
+ */
+const isNarrow = ref(window.innerWidth <= 768);
+const onCalendarResize = () => { isNarrow.value = window.innerWidth <= 768; };
+onMounted(() => window.addEventListener('resize', onCalendarResize));
+onUnmounted(() => window.removeEventListener('resize', onCalendarResize));
+
+const chipBudget = computed(() => (isNarrow.value ? Number.POSITIVE_INFINITY : MAX_MONTH_CHIPS));
+
 const days = computed(() => {
   const monthStart = startOfMonth(currentMonth.value);
   const monthEnd = endOfMonth(currentMonth.value);
   const startDate = startOfWeek(monthStart, { weekStartsOn: 1 });
   const endDate = endOfWeek(monthEnd, { weekStartsOn: 1 });
   const dateRange = eachDayOfInterval({ start: startDate, end: endDate });
+  const todayStr = format(new Date(), 'yyyy-MM-dd');
 
   return dateRange.map(date => {
     const formattedDate = format(date, 'yyyy-MM-dd');
-    const today = format(new Date(), 'yyyy-MM-dd');
+    const workouts = workoutsByDate.value[formattedDate] || [];
+    const dailyWeights = dailyWeightsByDate.value[formattedDate] || [];
+    const raceGoals = raceGoalsByDate.value[formattedDate] || [];
+
+    // Races first (they anchor the day), then sessions, then the weigh-in.
+    const total = raceGoals.length + workouts.length + dailyWeights.length;
+    let budget = chipBudget.value;
+    const showRaces = raceGoals.slice(0, budget);
+    budget -= showRaces.length;
+    const showWorkouts = workouts.slice(0, Math.max(0, budget));
+    budget -= showWorkouts.length;
+    const showWeights = dailyWeights.slice(0, Math.max(0, budget));
+
+    const dow = date.getDay();
     return {
-    date,
-    dayOfMonth: getDate(date),
-    isCurrentMonth: date.getMonth() === currentMonth.value.getMonth(),
-    isToday: formattedDate === today,
-    workouts: workoutsByDate.value[formattedDate] || [],
-    dailyWeights: dailyWeightsByDate.value[formattedDate] || [],
-    raceGoals: raceGoalsByDate.value[formattedDate] || [],
-    };  });
+      date,
+      dayOfMonth: getDate(date),
+      isCurrentMonth: date.getMonth() === currentMonth.value.getMonth(),
+      isToday: formattedDate === todayStr,
+      isWeekend: dow === 0 || dow === 6,
+      workouts,
+      dailyWeights,
+      raceGoals,
+      showRaces,
+      showWorkouts,
+      showWeights,
+      hiddenCount: total - showRaces.length - showWorkouts.length - showWeights.length,
+    };
+  });
 });
 
 function previousMonth() { currentMonth.value = subMonths(currentMonth.value, 1); }
 function nextMonth() { currentMonth.value = addMonths(currentMonth.value, 1); }
+
+/** Jump back to the current month or week — the fastest way to re-orient. */
+function goToToday() {
+  const now = new Date();
+  currentMonth.value = now;
+  currentWeek.value = now;
+}
+
+/** Open one day's full detail by switching to the week view around it. */
+function openWeekFor(date: Date) {
+  currentWeek.value = date;
+  viewMode.value = 'week';
+}
+
+/**
+ * The trailing figure on a month chip. One token only — the cell is 19px tall
+ * and the name needs the room; the week view carries pace, split and notes.
+ */
+function chipMeta(workout: Workout): string {
+  const type = getWorkoutType(workout);
+  if (type === 'rest') return '';
+  if (type !== 'gym' && workout.distance) return `${workout.distance} km`;
+  if (workout.duration) return `${workout.duration}m`;
+  return '';
+}
 
 // -- Week view: full session detail for a single week --
 const viewMode = ref<'month' | 'week'>('month');
@@ -1132,21 +1210,6 @@ const workoutTypeLabel = (w: Workout) => TYPE_LABELS[getWorkoutType(w)] || 'Work
 
 const formatLongDate = (date: string) => {
   try { return format(parseISO(date), 'EEE d MMM'); } catch { return date; }
-};
-
-// Compact subtitle for calendar chips (like Runna's plan cards).
-const workoutMeta = (w: Workout): string => {
-  const t = getWorkoutType(w);
-  const parts: string[] = [];
-  if (t === 'gym') { if (w.gymType) parts.push(w.gymType); }
-  else if (t === 'rest') { /* no meta */ }
-  else { // running / bike
-    if (w.distance) parts.push(`${w.distance} km`);
-    else if (w.duration) parts.push(`${w.duration} min`);
-    const p = paceParts(w);
-    if (p) parts.push(p.zone);
-  }
-  return parts.join(' · ');
 };
 
 const hasStats = (w: Workout) => !!(w.distance || w.duration || w.targetPace || w.gymType);
@@ -1277,10 +1340,27 @@ onActivated(loadAll);
 .action-button.primary:hover:not(:disabled) { background: var(--primary-strong); border-color: var(--primary-strong); }
 
 .calendar-container { border: 1px solid var(--border-color); background: var(--surface-color); border-radius: var(--radius); overflow: hidden; }
-.calendar-header { display: flex; justify-content: space-between; align-items: center; padding: 14px 16px; border-bottom: 1px solid var(--border-color); }
-.nav-button { background: var(--surface-2); border: 1px solid var(--border-color); color: var(--text-secondary); width: 34px; height: 34px; border-radius: var(--radius-sm); cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 1.1rem; transition: background 0.15s, color 0.15s; }
+/* Gap-based, not space-between: the nav cluster stays together on the left and
+   the view toggle is pushed right, so the month label doesn't wander. */
+.calendar-header { display: flex; align-items: center; gap: 8px; padding: 11px 13px; border-bottom: 1px solid var(--border-color); }
+.nav-button { background: transparent; border: 1px solid var(--border-color); color: var(--text-secondary); width: 30px; height: 30px; border-radius: var(--radius-sm); cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 1rem; flex-shrink: 0; transition: background 0.15s, color 0.15s; }
 .nav-button:hover { background: var(--surface-hover); color: var(--text-color); }
-.month-display { font-weight: 600; font-size: 1.1rem; color: var(--text-color); }
+.month-display { font-weight: 600; font-size: 1rem; color: var(--text-color); min-width: 10ch; text-align: center; }
+
+.today-button {
+  background: transparent;
+  border: 1px solid var(--border-color);
+  color: var(--text-secondary);
+  height: 30px;
+  padding: 0 12px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  font-family: var(--font-family);
+  font-size: 0.78rem;
+  font-weight: 600;
+  transition: color 0.15s, border-color 0.15s;
+}
+.today-button:hover { color: var(--primary-color); border-color: var(--primary-color); }
 
 .view-toggle { margin-left: auto; display: inline-flex; background: var(--surface-2); border: 1px solid var(--border-color); border-radius: var(--radius-sm); padding: 2px; gap: 2px; }
 .view-toggle button { background: none; border: none; color: var(--text-secondary); font-family: var(--font-family); font-size: 0.8rem; font-weight: 500; padding: 5px 12px; border-radius: calc(var(--radius-sm) - 2px); cursor: pointer; transition: background 0.15s, color 0.15s; }
@@ -1322,40 +1402,133 @@ onActivated(loadAll);
 .wv-steps li { position: relative; padding-left: 16px; font-size: 0.82rem; color: var(--text-secondary); line-height: 1.4; }
 .wv-steps li::before { content: ''; position: absolute; left: 3px; top: 7px; width: 5px; height: 5px; border-radius: 50%; background: var(--tag-color); }
 
-.calendar-grid { display: grid; grid-template-columns: repeat(7, 1fr); }
-.days-header { border-bottom: 1px solid var(--border-color); }
-.day-cell.header { min-height: auto; text-align: center; font-weight: 600; padding: 10px 4px; cursor: default; color: var(--text-muted); font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.04em; }
+/*
+ * One hairline system: a 1px grid gap over a border-coloured backdrop, instead
+ * of a border on every cell. Per-cell borders left the last column's edge
+ * doubled against the container and needed first/last-child exceptions to stay
+ * even; the gap approach can't drift out of alignment.
+ */
+.calendar-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 1px;
+  background: var(--border-color);
+}
+/* Keeps the body grid's 1px gap so the weekday labels sit exactly over their
+   columns — dropping the gap here re-divides the width and the header drifts
+   almost a pixel off by Sunday. The gap is invisible: no cell background. */
+.days-header {
+  background: transparent;
+  border-bottom: 1px solid var(--border-color);
+}
+.dh-cell {
+  text-align: center;
+  font-weight: 700;
+  padding: 8px 4px;
+  color: var(--text-muted);
+  font-size: 0.66rem;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+}
+/* Weekends read slightly brighter so the week's shape is obvious at a glance. */
+.dh-cell.we { color: var(--text-secondary); }
+
+/* Every row is exactly this tall. Rows used to grow with their busiest day, so
+   the grid came out lumpy and you couldn't scan across a week. */
+.cal-body { grid-auto-rows: 126px; }
 
 .day-cell {
-  min-height: 112px;
-  border-right: 1px solid var(--border-color);
-  border-top: 1px solid var(--border-color);
-  padding: 6px;
+  background: var(--surface-color);
+  padding: 5px;
   display: flex;
   flex-direction: column;
+  gap: 3px;
   cursor: pointer;
-  transition: background 0.15s, box-shadow 0.15s;
+  overflow: hidden;
+  position: relative;
+  transition: background 0.13s;
 }
 .day-cell:hover { background: var(--surface-2); }
-.day-cell.not-current-month { opacity: 0.4; }
-.day-number { font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 4px; font-weight: 500; }
-.day-cell.is-today { background: var(--primary-soft); }
-.is-today .day-number { color: var(--primary-color); font-weight: 700; }
+.day-cell.we { background: color-mix(in srgb, var(--surface-2) 45%, var(--surface-color)); }
+.day-cell.we:hover { background: var(--surface-2); }
+
+/* Recessed rather than faded: blanket opacity muddied the chips too. */
+.day-cell.not-current-month { background: color-mix(in srgb, var(--background-color) 60%, var(--surface-color)); }
+.day-cell.not-current-month .day-number { color: var(--text-muted); opacity: 0.6; }
+
+/* A fixed-height head row keeps every cell's chips on the same baseline. */
+.day-head { height: 20px; display: flex; align-items: center; flex-shrink: 0; }
+.day-number {
+  font-size: 0.76rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+}
+
+/* Today gets a filled disc and a ring — findable without hunting for a tint. */
+.day-cell.is-today { background: color-mix(in srgb, var(--primary-color) 8%, var(--surface-color)); }
+.is-today .day-number { background: var(--primary-color); color: #fff; font-weight: 700; }
+.is-today::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border: 1.5px solid var(--primary-color);
+  pointer-events: none;
+}
+
 .day-cell.drag-over { background: var(--primary-soft); box-shadow: inset 0 0 0 2px var(--primary-color); }
 
-.events { display: flex; flex-direction: column; gap: 4px; }
-.event-tag {
-  font-size: 0.7rem; padding: 4px 7px; border-radius: 5px;
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-  display: flex; align-items: center; gap: 5px; position: relative;
+.events { display: flex; flex-direction: column; gap: 2px; min-height: 0; overflow: hidden; }
+
+/* One-line chips. The month grid is for scanning; the week view carries the
+   detail. Two-line chips are what pushed rows past their height. */
+.chip {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 19px;
+  padding: 0 5px;
+  border-radius: 4px;
+  font-size: 0.68rem;
+  line-height: 1;
+  background: var(--surface-2);
+  color: var(--text-color);
+  flex-shrink: 0;
+  border-left: 3px solid var(--tag-color, var(--text-muted));
+  overflow: hidden;
   transition: transform 0.1s, opacity 0.1s;
 }
-.event-tag .n-icon { font-size: 0.85rem; flex-shrink: 0; }
-.event-name { overflow: hidden; text-overflow: ellipsis; }
-.workout-tag { padding-left: 11px; background: var(--surface-2); color: var(--text-color); cursor: grab; }
-.workout-banner { position: absolute; left: 0; top: 0; bottom: 0; width: 4px; border-radius: 5px 0 0 5px; background: var(--tag-color, var(--text-muted)); }
-.event-tag.dragging { opacity: 0.4; transform: scale(0.96); cursor: grabbing; }
-.done-check { color: var(--tag-color); }
+.chip.workout { cursor: grab; }
+.chip-ico { font-size: 0.76rem; flex-shrink: 0; color: var(--tag-color); }
+.chip-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
+.chip-meta { flex-shrink: 0; font-size: 0.62rem; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.chip.done { background: color-mix(in srgb, var(--tag-color) 16%, transparent); }
+.chip.done .chip-name { color: var(--text-secondary); }
+.chip.dragging { opacity: 0.4; transform: scale(0.96); cursor: grabbing; }
+.chip.race { background: var(--danger-soft); color: var(--danger-color); border-left-color: var(--danger-color); font-weight: 600; }
+.chip.race .chip-ico { color: var(--danger-color); }
+.chip.weight { background: transparent; color: var(--text-muted); border-left-color: transparent; padding-left: 6px; }
+.chip.weight .chip-ico { color: var(--text-muted); }
+
+.more {
+  height: 15px;
+  font-size: 0.62rem;
+  color: var(--text-muted);
+  padding-left: 8px;
+  background: none;
+  border: none;
+  text-align: left;
+  cursor: pointer;
+  font-family: inherit;
+  flex-shrink: 0;
+}
+.more:hover { color: var(--primary-color); }
 
 .workout-gym { --tag-color: var(--color-gym-primary); }
 .workout-running { --tag-color: var(--color-running-primary); }
@@ -1363,19 +1536,17 @@ onActivated(loadAll);
 .workout-rest { --tag-color: var(--color-rest-primary); }
 .workout-other { --tag-color: var(--color-other-primary); }
 
-.status-completed { background: color-mix(in srgb, var(--tag-color) 18%, transparent); }
-.status-completed .event-name { font-weight: 600; }
-
-.weight-tag { background: var(--success-soft); color: var(--success-color); }
-.race-goal-tag { background: var(--danger-soft); color: var(--danger-color); font-weight: 600; }
-
 @media (max-width: 768px) {
+  /* One day per row on a phone: seven 40px columns is unreadable. Weeks stay
+     grouped by the 1px gap, and empty out-of-month days are dropped. */
   .calendar-grid { grid-template-columns: 1fr; }
   .days-header { display: none; }
-  .day-cell { min-height: auto; border-right: none; flex-direction: row; align-items: flex-start; gap: 12px; padding: 12px 10px; }
+  .cal-body { grid-auto-rows: auto; }
+  .day-cell { flex-direction: row; align-items: flex-start; gap: 12px; padding: 10px; overflow: visible; }
   .day-cell.not-current-month { display: none; }
-  .day-number { width: 28px; flex-shrink: 0; }
-  .events { width: 100%; }
+  .day-head { height: auto; padding-top: 1px; }
+  .events { flex: 1; overflow: visible; gap: 4px; }
+  .chip { height: 22px; font-size: 0.72rem; }
 }
 
 /* Forms */
