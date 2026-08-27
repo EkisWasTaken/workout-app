@@ -112,6 +112,20 @@ body {
   font-variant-numeric: tabular-nums;
 }
 
+/* iOS Safari zooms the whole page in whenever a focused field's text is under
+   16px, and never zooms back out. Naive's controls default to 14px, so every
+   tap on an input or select on a phone left the layout scrolled sideways. */
+@media (max-width: 768px) {
+  .n-input .n-input__input-el,
+  .n-input .n-input__textarea-el,
+  .n-base-selection .n-base-selection-input,
+  .n-base-selection .n-base-selection-label,
+  .n-base-selection .n-base-selection-input__content,
+  .n-base-selection .n-base-selection-placeholder {
+    font-size: 16px;
+  }
+}
+
 /* Scrollbars */
 * {
   scrollbar-width: thin;

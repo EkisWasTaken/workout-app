@@ -548,11 +548,20 @@ onMounted(async () => {
 	background: var(--primary-soft); padding: 2px 8px; border-radius: 999px;
 }
 .settings-card { border-radius: var(--radius) !important; }
+/* Naive's default 24px card gutter costs a seventh of a 375px screen. */
+@media (max-width: 620px) {
+	.settings-card :deep(.n-card__content),
+	.settings-card :deep(.n-card-header) { padding-left: 14px; padding-right: 14px; }
+	.account-row { flex-direction: column; align-items: stretch; }
+	.page-title { font-size: 1.3rem; margin-bottom: 14px; }
+}
 
 .account-row { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
 .account-info { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
 .account-label { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-muted); }
-.account-email { font-size: 0.9rem; color: var(--text-color); font-weight: 500; overflow: hidden; text-overflow: ellipsis; }
+/* A long address has no spaces to break at, so it must be allowed to break
+   anywhere — otherwise it forces the card wider than the phone. */
+.account-email { font-size: 0.9rem; color: var(--text-color); font-weight: 500; overflow-wrap: anywhere; }
 .card-hint { font-size: 0.8rem; color: var(--text-muted); margin: 0 0 14px; line-height: 1.5; }
 
 .schema-warning, .dg-inconsistent {
@@ -563,6 +572,10 @@ onMounted(async () => {
 }
 .dg-inconsistent { margin: 14px 0 0; background: var(--surface-2); border-color: var(--border-color); }
 .schema-warning code, .dg-error code { font-family: var(--font-mono, monospace); font-size: 0.78rem; }
+
+/* Naive pins form labels to `white-space: nowrap`; the longer ones here ("Max
+   heart rate — leave empty to use highest recorded") then run off a phone. */
+.settings-card :deep(.n-form-item-label) { white-space: normal; line-height: 1.4; }
 
 .card-hint.tight { margin: -4px 0 10px; }
 .derived-hint { color: var(--text-muted); font-weight: 400; }
@@ -587,10 +600,28 @@ onMounted(async () => {
 }
 .dg-active strong { color: var(--text-color); }
 
+/* On a phone the five columns can't survive as columns. Each goal becomes its
+   own small card: name and VDOT on top, then the time, then the date and Clear.
+   The header row is dropped, so the VDOT figure labels itself. */
 @media (max-width: 620px) {
-	.dg-row { grid-template-columns: 1fr 1fr; grid-auto-rows: auto; }
+	.dg-list { gap: 10px; }
+	.dg-row {
+		grid-template-columns: 1fr auto;
+		grid-template-areas: "label vdot" "time time" "date clear";
+		gap: 8px 10px;
+		padding: 12px; background: var(--surface-2);
+		border: 1px solid var(--border-color); border-radius: var(--radius-sm);
+	}
 	.dg-head { display: none; }
-	.dg-vdot { text-align: left; }
+	.dg-row > :nth-child(1) { grid-area: label; }
+	.dg-row > :nth-child(2) { grid-area: time; }
+	.dg-row > :nth-child(3) { grid-area: date; }
+	.dg-row > :nth-child(4) { grid-area: vdot; }
+	.dg-row > :nth-child(5) { grid-area: clear; justify-self: end; align-self: center; }
+	.dg-label { font-weight: 600; }
+	.dg-vdot::before { content: 'VDOT '; font-weight: 400; color: var(--text-muted); }
+	.dg-vdot.muted::before { content: 'VDOT '; }
+	.dg-spacer { display: none; }
 }
 
 /* Pace table */
@@ -646,6 +677,22 @@ onMounted(async () => {
 .rg-terrain { width: 168px; }
 .gp-hilly { margin-left: 4px; opacity: 0.7; cursor: help; }
 
+/* A race row is info on the left and three controls on the right. At 375px the
+   controls alone are wider than the screen, so the row stacks and the controls
+   share a line of their own. */
+@media (max-width: 620px) {
+	.rg-form { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+	.rg-form > * { min-width: 0; }
+	.rg-name, .rg-prio, .rg-form .date-input, .rg-form > button { grid-column: 1 / -1; }
+	.rg-form .date-input { width: 100%; }
+
+	.race-goal-item { flex-direction: column; align-items: stretch; gap: 12px; }
+	.rg-actions { flex-wrap: wrap; }
+	.rg-terrain { flex: 1 1 100%; width: auto; }
+	.rg-result { flex: 1 1 0; width: auto; }
+	.rg-actions > button { flex: 0 0 auto; }
+}
+
 /* Goal race paces */
 .gp-table { display: flex; flex-direction: column; gap: 2px; }
 .gp-row {
@@ -669,10 +716,16 @@ onMounted(async () => {
 	.gp-vdot, .gp-head span:nth-child(4), .gp-head span:nth-child(5), .gp-today { display: none; }
 }
 
+/* Safari gives date inputs an intrinsic width they won't shrink below unless
+   appearance is cleared, which is enough to push a whole row off a phone.
+   16px keeps iOS from zooming the page in when the field takes focus. */
 .date-input {
 	background: var(--surface-2); border: 1px solid var(--border-color);
 	color: var(--text-color); padding: 7px 10px; font-family: var(--font-family);
-	border-radius: var(--radius-sm); outline: none;
+	font-size: 0.88rem; border-radius: var(--radius-sm); outline: none;
+	-webkit-appearance: none; appearance: none;
+	box-sizing: border-box; min-width: 0; min-height: 34px;
 }
+@media (max-width: 768px) { .date-input { font-size: 16px; min-height: 38px; } }
 .date-input:focus { border-color: var(--primary-color); box-shadow: 0 0 0 3px var(--primary-soft); }
 </style>

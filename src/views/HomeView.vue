@@ -300,7 +300,16 @@ const recentPRs = computed(() => {
 // ─── activity heatmap & sport mix ─────────────────────────────────────────────
 
 const heatmapWeeks = ref<any[]>([])
+const heatmapWrap = ref<HTMLElement | null>(null)
 const mixCanvas = ref<HTMLCanvasElement | null>(null)
+
+/** The calendar runs oldest → newest, so the interesting end is off-screen to
+ *  the right on any viewport too narrow for 12 months. Open on the latest week. */
+async function scrollHeatmapToLatest() {
+	await nextTick()
+	const el = heatmapWrap.value
+	if (el) el.scrollLeft = el.scrollWidth
+}
 
 function buildHeatmap() {
 	const start = startOfWeek(subYears(today.value, 1), { weekStartsOn: 1 })
@@ -322,6 +331,7 @@ function buildHeatmap() {
 		cursor = addDays(cursor, 7)
 	}
 	heatmapWeeks.value = weeks
+	scrollHeatmapToLatest()
 }
 
 function heatColor(day: any) {
@@ -580,7 +590,7 @@ watch(completed, () => { if (tab.value === 'today') buildTodayCharts() })
 			<template v-if="completed.length">
 				<SectionHead title="Consistency" note="every session, last 12 months" />
 				<section class="panel stat-card">
-					<div class="heatmap-wrap">
+					<div class="heatmap-wrap" ref="heatmapWrap">
 						<div class="heatmap">
 							<div class="hm-days">
 								<span></span>
@@ -832,7 +842,7 @@ watch(completed, () => { if (tab.value === 'today') buildTodayCharts() })
 
 /* Heatmap */
 .stat-card { padding: 14px 16px 16px; }
-.heatmap-wrap { overflow-x: auto; }
+.heatmap-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; overscroll-behavior-x: contain; }
 .heatmap { display: flex; gap: 4px; min-width: max-content; }
 .hm-days { display: flex; flex-direction: column; gap: 3px; padding-top: 15px; }
 .hm-days span { height: 11px; font-size: 0.58rem; color: var(--text-muted); line-height: 11px; }
