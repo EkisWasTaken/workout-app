@@ -4,11 +4,11 @@
       <div class="page-head">
         <div>
           <h1>Schedule</h1>
-          <p class="sub">Paces update automatically from your fitness and goals — no need to rewrite the plan</p>
+          <p class="sub">Click a day to add a session, click a session to log it, drag to move it. Run paces update as your fitness changes.</p>
         </div>
         <div class="actions-bar">
           <button @click="openAddWorkoutModal(null)" class="action-button primary">
-            <n-icon :component="AddOutline" /> Add workout
+            <n-icon :component="AddOutline" /> Add session
           </button>
           <button @click="copyLastWeek" class="action-button" :disabled="isActionLoading"
             title="Duplicate last week's sessions onto this week">
@@ -17,11 +17,13 @@
           <button @click="showLogWeightModal = true" class="action-button">
             <n-icon :component="BodyOutline" /> Log weight
           </button>
-          <button @click="showActivityImport = true" class="action-button">
-            <n-icon :component="WatchOutline" /> Import activities
+          <button @click="showActivityImport = true" class="action-button"
+            title="Import .fit, .gpx or .tcx files exported from a watch or Strava">
+            <n-icon :component="WatchOutline" /> Import watch files
           </button>
-          <button @click="handleImportSys" class="action-button">
-            <n-icon :component="CloudUploadOutline" /> Import CSV
+          <button @click="handleImportSys" class="action-button"
+            title="Add or update many planned sessions at once from a spreadsheet">
+            <n-icon :component="CloudUploadOutline" /> Import plan (CSV)
           </button>
         </div>
       </div>
@@ -48,7 +50,7 @@
               <span v-for="goal in day.raceGoals" :key="goal.id" class="wv-race"><n-icon :component="FlagOutline" /> {{ goal.name }}</span>
               <button class="wv-add" @click="openAddWorkoutModal(day.date)" aria-label="Add workout"><n-icon :component="AddOutline" /></button>
             </div>
-            <p v-if="day.workouts.length === 0" class="wv-restday">Rest day</p>
+            <p v-if="day.workouts.length === 0" class="wv-restday">Nothing planned</p>
             <div v-else class="wv-sessions">
               <div v-for="w in day.workouts" :key="w.id" class="wv-card" :class="getWorkoutClass(w)" @click="openDetailsModal(w)">
                 <span class="wv-badge"><n-icon :component="workoutIcon(w)" /></span>
@@ -133,14 +135,14 @@
       </div>
       
       <!-- Add Workout Modal -->
-      <CustomModal v-model:show="showAddWorkoutModal" title="New workout">
+      <CustomModal v-model:show="showAddWorkoutModal" title="New session">
         <div class="form-container">
           <div v-if="templates.length" class="form-group">
             <label for="workout-template">From template (optional)</label>
             <select id="workout-template" v-model="selectedTemplateId">
               <option :value="null">— None —</option>
               <option v-for="t in templates" :key="t.id" :value="t.id">
-                {{ t.kind === 'run' ? 'Run' : 'Gym' }} · {{ t.name }}
+                {{ TEMPLATE_KIND_LABELS[t.kind || 'gym'] }} · {{ t.name }}
               </option>
             </select>
           </div>
@@ -161,6 +163,11 @@
               <option>Rest</option>
               <option>Other</option>
             </select>
+          </div>
+
+          <div v-if="newWorkout.type === 'Gym'" class="form-group">
+            <label for="workout-split">Split <span class="label-hint">— groups your gym stats, e.g. Push, Pull, Legs</span></label>
+            <input id="workout-split" v-model="newWorkout.gymType" list="gym-splits" placeholder="optional" />
           </div>
 
           <!-- The whole session in one pass — no save-then-edit round trip. -->
@@ -202,12 +209,16 @@
         </div>
       </CustomModal>
 
+      <datalist id="gym-splits">
+        <option v-for="sp in splitSuggestions" :key="sp" :value="sp" />
+      </datalist>
+
       <!-- Log Weight Modal -->
       <CustomModal v-model:show="showLogWeightModal" title="Log body weight">
         <div class="form-container">
           <div class="form-group">
             <label for="weight-amount">Weight (kg)</label>
-            <input type="number" id="weight-amount" v-model="newWeight.weight" />
+            <input type="number" id="weight-amount" v-model="newWeight.weight" step="0.1" min="20" max="300" />
           </div>
           <div class="form-group">
             <label for="weight-date">Date</label>
@@ -254,7 +265,7 @@
               </div>
               <div v-if="selectedWorkout.gymType" class="rn-stat">
                 <span class="rn-val"><span class="rn-num rn-num-sm">{{ selectedWorkout.gymType }}</span></span>
-                <span class="rn-lbl">Focus</span>
+                <span class="rn-lbl">Split</span>
               </div>
             </div>
 
@@ -269,9 +280,9 @@
           <div v-if="selectedWorkout.isCompleted" class="detail-completed">
             <span class="status-pill"><n-icon :component="CheckmarkCircle" /> Completed</span>
             <dl class="detail-list">
-              <div v-if="selectedWorkout.actualDuration"><dt>Actual duration</dt><dd>{{ selectedWorkout.actualDuration }} min</dd></div>
-              <div v-if="selectedWorkout.totalWeightLifted"><dt>Load lifted</dt><dd>{{ selectedWorkout.totalWeightLifted }} kg</dd></div>
-              <div v-if="selectedWorkout.rpe"><dt>RPE</dt><dd>{{ selectedWorkout.rpe }}/10</dd></div>
+              <div v-if="selectedWorkout.actualDuration"><dt>Duration</dt><dd>{{ selectedWorkout.actualDuration }} min</dd></div>
+              <div v-if="selectedWorkout.totalWeightLifted"><dt>Total load</dt><dd>{{ selectedWorkout.totalWeightLifted.toLocaleString() }} kg</dd></div>
+              <div v-if="selectedWorkout.rpe"><dt>How hard it felt</dt><dd>{{ selectedWorkout.rpe }}/10 · {{ RPE_WORDS[selectedWorkout.rpe] }}</dd></div>
             </dl>
           </div>
 
@@ -283,8 +294,8 @@
             <button @click="modalMode = 'edit'" class="action-button">
               <n-icon :component="CreateOutline" /> Edit
             </button>
-            <button v-if="!selectedWorkout.isCompleted" @click="modalMode = 'complete'" class="action-button primary save-button">
-              <n-icon :component="CheckmarkOutline" /> Complete
+            <button v-if="!selectedWorkout.isCompleted" @click="startCompletion" class="action-button primary save-button">
+              <n-icon :component="CheckmarkOutline" /> Log as done
             </button>
             <button v-else @click="goToDetails" class="action-button primary save-button">
               <n-icon :component="MapOutline" /> View full details
@@ -312,14 +323,39 @@
               <option>Other</option>
             </select>
           </div>
-          <div class="form-group">
-            <label>Planned duration (min)</label>
-            <input type="number" v-model="selectedWorkout.duration" />
+          <div v-if="selectedWorkout.type === 'Gym'" class="form-group">
+            <label>Split <span class="label-hint">— groups your gym stats</span></label>
+            <input v-model="selectedWorkout.gymType" list="gym-splits" placeholder="e.g. Push" />
           </div>
-          <div class="form-group">
-            <label>Planned distance (km)</label>
-            <input type="number" v-model="selectedWorkout.distance" />
+          <div class="form-row">
+            <div class="form-group">
+              <label>{{ selectedWorkout.isCompleted ? 'Planned duration (min)' : 'Duration (min)' }}</label>
+              <input type="number" v-model="selectedWorkout.duration" min="0" />
+            </div>
+            <div v-if="selectedWorkout.type === 'Running' || selectedWorkout.type === 'Bike'" class="form-group">
+              <label>{{ selectedWorkout.isCompleted ? 'Distance done (km)' : 'Distance (km)' }}</label>
+              <input type="number" v-model="selectedWorkout.distance" min="0" step="0.1" />
+            </div>
           </div>
+          <template v-if="selectedWorkout.isCompleted">
+            <div class="form-row">
+              <div class="form-group">
+                <label>Actual duration (min)</label>
+                <input type="number" v-model="selectedWorkout.actualDuration" min="0" />
+              </div>
+              <div class="form-group">
+                <label>How hard it felt</label>
+                <select v-model.number="selectedWorkout.rpe">
+                  <option :value="undefined">—</option>
+                  <option v-for="n in 10" :key="n" :value="n">{{ n }} · {{ RPE_WORDS[n] }}</option>
+                </select>
+              </div>
+            </div>
+            <div v-if="selectedWorkout.type === 'Gym'" class="form-group">
+              <label>Total load (kg)</label>
+              <input type="number" v-model="selectedWorkout.totalWeightLifted" min="0" />
+            </div>
+          </template>
           <div class="form-group">
             <label>Notes</label>
             <textarea v-model="selectedWorkout.notes"></textarea>
@@ -336,27 +372,27 @@
 
         <!-- Complete Mode -->
         <div v-else-if="modalMode === 'complete'" class="form-container">
-          <!-- Running / bike: link a recorded activity as the source of truth -->
+          <!-- Running / bike: a recording is the most accurate source -->
           <template v-if="getWorkoutType(selectedWorkout) === 'running' || getWorkoutType(selectedWorkout) === 'bike'">
             <div class="form-group">
-              <label for="strava-activity">Recorded activity</label>
+              <label for="strava-activity">Recording <span class="label-hint">— from your watch, if you imported one</span></label>
               <select id="strava-activity" v-model="completionData.stravaActivityId" :disabled="isStravaLoading">
-                <option :value="undefined">-- {{ isStravaLoading ? 'Loading…' : 'Enter manually' }} --</option>
+                <option :value="undefined">{{ isStravaLoading ? 'Loading recordings…' : 'No recording — enter it by hand' }}</option>
                 <option v-for="activity in stravaActivityOptions" :key="activity.value" :value="activity.value">
                   {{ activity.label }}
                 </option>
-                <option v-if="!isStravaLoading && stravaActivityOptions.length === 0" disabled>
-                  -- No activities found --
-                </option>
               </select>
+              <span v-if="!isStravaLoading && stravaActivityOptions.length === 0" class="field-hint">
+                No recordings imported yet. Import a file below, or fill in the distance by hand.
+              </span>
             </div>
 
             <div class="fit-import-row">
               <button class="action-button" :disabled="isFitImporting" @click="fitInput?.click()">
-                <span v-if="!isFitImporting">Import FIT file…</span>
+                <span v-if="!isFitImporting">Import a watch file…</span>
                 <span v-else class="ascii-spinner">Importing</span>
               </button>
-              <span class="fit-import-hint">import a .fit/.gpx/.tcx file and link it to this workout</span>
+              <span class="fit-import-hint">.fit, .gpx or .tcx — it's linked to this session automatically</span>
               <input ref="fitInput" type="file" accept=".fit,.gpx,.tcx,.gz,application/gzip" style="display: none"
                 @change="onCompletionFitPicked" />
             </div>
@@ -364,35 +400,69 @@
             <div v-if="stravaPreview" class="strava-preview">
               <span class="sp-item"><span class="sp-num">{{ stravaPreview.distance }}</span> km</span>
               <span class="sp-item"><span class="sp-num">{{ stravaPreview.duration }}</span> min</span>
-              <span class="sp-note">pulled from activity</span>
+              <span class="sp-note">taken from the recording</span>
             </div>
 
-            <!-- Manual fallback when no Strava activity is linked -->
-            <template v-if="!completionData.stravaActivityId">
+            <div v-if="!completionData.stravaActivityId" class="form-row">
               <div class="form-group">
-                <label>Actual distance (km)</label>
-                <input type="number" v-model="completionData.distance" />
+                <label>Distance (km)</label>
+                <input type="number" v-model="completionData.distance" min="0" step="0.1" />
               </div>
-            </template>
-          </template>
-
-          <!-- Gym: load lifted -->
-          <template v-else-if="getWorkoutType(selectedWorkout) === 'gym'">
-            <div class="form-group">
-              <label>Load lifted (kg)</label>
-              <input type="number" v-model="completionData.totalWeightLifted" />
+              <div class="form-group">
+                <label>Duration (min)</label>
+                <input type="number" v-model="completionData.actualDuration" min="0" />
+              </div>
             </div>
           </template>
+
+          <!-- Gym: total load -->
+          <template v-else-if="getWorkoutType(selectedWorkout) === 'gym'">
+            <div class="form-row">
+              <div class="form-group">
+                <label>Total load (kg)</label>
+                <input type="number" v-model="completionData.totalWeightLifted" min="0" step="5" />
+              </div>
+              <div class="form-group">
+                <label>Duration (min)</label>
+                <input type="number" v-model="completionData.actualDuration" min="0" />
+              </div>
+            </div>
+            <p class="field-hint block">
+              Add up weight × reps for every working set — 3 sets of 8 at 100 kg is 2,400 kg.
+              This is what the Gym stats track, so count it the same way each time.
+            </p>
+          </template>
+
+          <template v-else-if="getWorkoutType(selectedWorkout) !== 'rest'">
+            <div class="form-group">
+              <label>Duration (min)</label>
+              <input type="number" v-model="completionData.actualDuration" min="0" />
+            </div>
+          </template>
+
+          <div v-if="getWorkoutType(selectedWorkout) !== 'rest'" class="form-group">
+            <label>How hard did it feel?</label>
+            <div class="rpe-scale" role="radiogroup" aria-label="How hard did it feel, 1 to 10">
+              <button
+                v-for="n in 10" :key="n" type="button" class="rpe-dot"
+                :class="{ on: completionData.rpe === n }"
+                :aria-checked="completionData.rpe === n" role="radio"
+                :title="RPE_WORDS[n]"
+                @click="completionData.rpe = completionData.rpe === n ? undefined : n"
+              >{{ n }}</button>
+            </div>
+            <span class="field-hint">{{ completionData.rpe ? RPE_WORDS[completionData.rpe] : 'Optional · 1 is very easy, 10 is all-out' }}</span>
+          </div>
 
           <div class="form-group">
             <label>Notes</label>
-            <textarea v-model="completionData.notes"></textarea>
+            <textarea v-model="completionData.notes" placeholder="How did it go?"></textarea>
           </div>
 
           <div class="modal-actions">
             <button @click="modalMode = 'view'" class="action-button">Cancel</button>
             <button @click="handleSaveCompletion" class="action-button primary save-button" :disabled="isActionLoading">
-              <span v-if="!isActionLoading">Save completion</span>
+              <span v-if="!isActionLoading">Save as done</span>
               <span v-else class="ascii-spinner">Saving</span>
             </button>
           </div>
@@ -409,7 +479,7 @@
         initial-delimiter=","
         :raw-file-content="importRawContent"
         import-type="workout"
-        csv-model-description="name, date (YYYY-MM-DD), type, duration (min), distance (km), isCompleted (0/1), actualDuration (min), rpe, totalWeightLifted (kg), caloriesBurned, targetPace, notes"
+        csv-model-description="name, date (YYYY-MM-DD), type, gymType (split, e.g. Push), duration (min), distance (km), isCompleted (0/1), actualDuration (min), rpe (1–10), totalWeightLifted (kg), caloriesBurned, targetPace, notes"
         @confirm="onImportConfirm"
       />
     </div>
@@ -654,9 +724,9 @@ const stravaPreview = computed(() => {
 });
 
 const modalTitle = computed(() => {
-  if (modalMode.value === 'edit') return 'Edit workout';
-  if (modalMode.value === 'complete') return 'Complete workout';
-  return 'Workout details';
+  if (modalMode.value === 'edit') return 'Edit session';
+  if (modalMode.value === 'complete') return 'Log session';
+  return 'Session';
 });
 
 const isStravaLoading = ref(false);
@@ -678,11 +748,15 @@ async function loadStravaActivities() {
                 if (workoutType === 'bike') return st === 'ride' || st === 'virtualride' || st === 'ebikeride';
                 return true;
             });
+            // Closest to the session's date first, so the right recording is at the top.
+            const target = selectedWorkout.value ? parseISO(selectedWorkout.value.date).getTime() : Date.now();
+            const when = (act: any) => new Date(act.start_date_local || act.start_date || 0).getTime();
+            filtered.sort((a: any, b: any) => Math.abs(when(a) - target) - Math.abs(when(b) - target));
             stravaActivityOptions.value = filtered.map((act: any) => {
                 let dateStr = 'unknown date';
                 try {
                     if (act.start_date_local) {
-                        dateStr = format(parseISO(act.start_date_local), 'dd/MM/yy');
+                        dateStr = format(parseISO(act.start_date_local), 'EEE d MMM yyyy');
                     }
                 } catch (e) {
                     console.error('Date parsing error:', e);
@@ -753,6 +827,26 @@ async function onCompletionFitPicked(e: Event) {
   }
 }
 
+/**
+ * Open the completion form with a same-day recording already picked, so logging
+ * a run you've imported is one click rather than a hunt through a long list.
+ */
+function startCompletion() {
+  const w = selectedWorkout.value;
+  if (w && !completionData.value.stravaActivityId) {
+    const sameDay = stravaActivities.value.find((a: any) =>
+      String(a.start_date_local || '').slice(0, 10) === w.date &&
+      stravaActivityOptions.value.some(o => String(o.value) === String(a.id)));
+    if (sameDay) completionData.value.stravaActivityId = sameDay.id as any;
+  }
+  modalMode.value = 'complete';
+}
+
+const RPE_WORDS: Record<number, string> = {
+  1: 'Very easy', 2: 'Easy', 3: 'Comfortable', 4: 'Steady', 5: 'Moderate',
+  6: 'Somewhat hard', 7: 'Hard', 8: 'Very hard', 9: 'Near max', 10: 'All-out',
+};
+
 function goToDetails() {
   if (!selectedWorkout.value?.id) return;
   const id = selectedWorkout.value.id;
@@ -765,8 +859,10 @@ function openDetailsModal(workout: Workout) {
   modalMode.value = 'view';
   completionData.value = {
     notes: workout.notes || '',
-    totalWeightLifted: workout.totalWeightLifted || 0,
-    distance: workout.distance || 0,
+    totalWeightLifted: workout.totalWeightLifted || undefined,
+    distance: workout.distance || undefined,
+    actualDuration: workout.actualDuration || workout.duration || undefined,
+    rpe: workout.rpe || undefined,
     stravaActivityId: undefined,
   };
 
@@ -782,9 +878,22 @@ async function handleUpdateWorkout() {
   if (!selectedWorkout.value) return;
   isActionLoading.value = true;
   try {
-    await db.updateWorkout(selectedWorkout.value);
+    const w = selectedWorkout.value;
+    await db.updateWorkout({
+      ...w,
+      duration: cleanNum(w.duration),
+      distance: cleanNum(w.distance),
+      actualDuration: cleanNum(w.actualDuration),
+      rpe: cleanNum(w.rpe),
+      totalWeightLifted: cleanNum(w.totalWeightLifted),
+      gymType: w.type === 'Gym' ? (w.gymType?.trim() || undefined) : w.gymType,
+    });
     showDetailsModal.value = false;
     await loadWorkouts();
+    message.success('Changes saved.');
+  } catch (e) {
+    console.error('Update failed', e);
+    message.error("Couldn't save your changes. Check your connection and try again.");
   } finally {
     isActionLoading.value = false;
   }
@@ -798,6 +907,10 @@ async function handleDeleteWorkout() {
       await db.deleteWorkout(selectedWorkout.value.id);
       showDetailsModal.value = false;
       await loadWorkouts();
+      message.success('Session deleted.');
+    } catch (e) {
+      console.error('Delete failed', e);
+      message.error("Couldn't delete that session. Check your connection and try again.");
     } finally {
       isActionLoading.value = false;
     }
@@ -808,11 +921,19 @@ async function handleSaveCompletion() {
   if (!selectedWorkout.value || selectedWorkout.value.id === undefined) return;
   isActionLoading.value = true;
   try {
+    const c = completionData.value;
     const payload: any = {
       id: selectedWorkout.value.id,
       isCompleted: 1,
-      ...completionData.value
+      notes: c.notes ?? '',
+      stravaActivityId: c.stravaActivityId,
+      distance: cleanNum(c.distance),
+      actualDuration: cleanNum(c.actualDuration),
+      rpe: cleanNum(c.rpe),
+      totalWeightLifted: cleanNum(c.totalWeightLifted),
     };
+    // Never overwrite a field the form didn't show with an empty value.
+    for (const k of Object.keys(payload)) if (payload[k] === undefined) delete payload[k];
 
     // For Strava-linked runs/rides, the activity is the source of truth:
     // pull actual distance (km) and moving time (min) straight from Strava.
@@ -828,6 +949,10 @@ async function handleSaveCompletion() {
     await db.completeWorkout(payload);
     showDetailsModal.value = false;
     await loadWorkouts();
+    message.success('Logged. Nice work.');
+  } catch (e) {
+    console.error('Completion failed', e);
+    message.error("Couldn't save that. Check your connection and try again.");
   } finally {
     isActionLoading.value = false;
   }
@@ -865,13 +990,27 @@ const newWorkoutIsDistance = computed(() =>
 const templates = ref<WorkoutTemplate[]>([]);
 const selectedTemplateId = ref<number | null>(null);
 
+const TEMPLATE_KIND_LABELS: Record<string, string> = { gym: 'Gym', run: 'Run', bike: 'Bike', other: 'Other' };
+const TEMPLATE_KIND_TYPES: Record<string, string> = { gym: 'Gym', run: 'Running', bike: 'Bike', other: 'Other' };
+
+/** Picking a template fills the form, so you can see — and change — what it brings. */
 watch(selectedTemplateId, (id) => {
   if (!id) return;
   const t = templates.value.find(t => t.id === id);
   if (t) {
     newWorkout.value.name = t.name;
-    newWorkout.value.type = t.kind === 'run' ? 'Running' : 'Gym';
+    newWorkout.value.type = TEMPLATE_KIND_TYPES[t.kind || 'gym'];
+    if (t.kind === 'gym' && t.workout_type) newWorkout.value.gymType = t.workout_type;
+    if (t.duration) newWorkout.value.duration = t.duration;
+    if (t.distance) newWorkout.value.distance = t.distance;
+    if (t.notes && !newWorkout.value.notes) newWorkout.value.notes = t.notes;
   }
+});
+
+/** Splits already in use first, then the common ones — so spelling stays consistent. */
+const splitSuggestions = computed(() => {
+  const used = workouts.value.map(w => w.gymType?.trim()).filter((x): x is string => !!x);
+  return [...new Set([...used, 'Push', 'Pull', 'Legs', 'Upper', 'Lower', 'Full body'])];
 });
 
 const newWeight = ref({
@@ -886,6 +1025,7 @@ function openAddWorkoutModal(date: Date | null) {
     type: 'Running',
     duration: undefined,
     distance: undefined,
+    gymType: undefined,
     notes: '',
   };
   repeatWeeks.value = 1;
@@ -901,7 +1041,10 @@ const cleanNum = (v: unknown): number | undefined => {
 };
 
 async function saveNewWorkout() {
-  if (!newWorkout.value.name) return;
+  if (!newWorkout.value.name.trim()) {
+    message.warning('Give the session a name first.');
+    return;
+  }
   isActionLoading.value = true;
   try {
     const template = selectedTemplateId.value
@@ -930,6 +1073,9 @@ async function saveNewWorkout() {
           ? (cleanNum(newWorkout.value.distance) ?? payload.distance)
           : undefined,
         notes: newWorkout.value.notes || payload.notes || '',
+        gymType: newWorkout.value.type === 'Gym'
+          ? (newWorkout.value.gymType?.trim() || payload.gymType || undefined)
+          : undefined,
       };
 
       await db.addWorkout(payload);
@@ -1004,6 +1150,13 @@ async function copyLastWeek() {
     isActionLoading.value = false;
   }
 }
+
+/** Start from the last weigh-in rather than an arbitrary 70 kg. */
+watch(showLogWeightModal, open => {
+  if (!open) return;
+  const last = [...dailyWeights.value].sort((a, b) => b.date.localeCompare(a.date))[0];
+  newWeight.value = { weight: last?.weight ?? newWeight.value.weight, date: format(new Date(), 'yyyy-MM-dd') };
+});
 
 async function saveNewWeight() {
   if (!newWeight.value.weight) {
@@ -1203,7 +1356,7 @@ const TYPE_ICONS: Record<string, any> = {
   running: WalkOutline, gym: BarbellOutline, bike: BicycleOutline, rest: BedOutline, other: FitnessOutline,
 };
 const TYPE_LABELS: Record<string, string> = {
-  running: 'Run', gym: 'Strength', bike: 'Bike', rest: 'Rest day', other: 'Workout',
+  running: 'Run', gym: 'Gym', bike: 'Bike', rest: 'Rest day', other: 'Other',
 };
 const workoutIcon = (w: Workout) => TYPE_ICONS[getWorkoutType(w)] || FitnessOutline;
 const workoutTypeLabel = (w: Workout) => TYPE_LABELS[getWorkoutType(w)] || 'Workout';
@@ -1306,6 +1459,17 @@ onActivated(loadAll);
 
 
 <style scoped>
+.label-hint { font-weight: 400; color: var(--text-muted); font-size: 0.78rem; }
+.field-hint { display: block; margin-top: 5px; font-size: 0.76rem; color: var(--text-muted); line-height: 1.45; }
+.field-hint.block { margin: -4px 0 12px; }
+.rpe-scale { display: grid; grid-template-columns: repeat(10, 1fr); gap: 4px; }
+.rpe-dot {
+  height: 34px; border-radius: var(--radius-sm); cursor: pointer;
+  border: 1px solid var(--border-color); background: var(--surface-2);
+  color: var(--text-secondary); font-family: var(--font-mono); font-size: 0.8rem;
+}
+.rpe-dot:hover { border-color: var(--border-strong); color: var(--text-color); }
+.rpe-dot.on { background: var(--primary-color); border-color: var(--primary-color); color: #fff; }
 /* min-height, not height: a fixed 100% clamps to the scroll container's padded
    content box, so the calendar overflowed past the padding that clears the nav. */
 .dashboard-view-wrapper { min-height: 100%; }
@@ -1317,7 +1481,13 @@ onActivated(loadAll);
 .sub { margin: 4px 0 0; color: var(--text-secondary); font-size: 0.9rem; }
 
 .actions-bar { display: flex; gap: 10px; flex-wrap: wrap; }
-@media (max-width: 600px) { .actions-bar { width: 100%; } .action-button { flex: 1; justify-content: center; } }
+@media (max-width: 600px) {
+  .actions-bar { width: 100%; display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .actions-bar .action-button { justify-content: center; white-space: nowrap; font-size: 0.8rem; padding: 9px 8px; }
+  /* The primary action gets the full row. */
+  .actions-bar .action-button.primary { grid-column: 1 / -1; }
+  .action-button { flex: 1; justify-content: center; }
+}
 
 .action-button {
   background: var(--surface-2);
@@ -1342,7 +1512,12 @@ onActivated(loadAll);
 .calendar-container { border: 1px solid var(--border-color); background: var(--surface-color); border-radius: var(--radius); overflow: hidden; }
 /* Gap-based, not space-between: the nav cluster stays together on the left and
    the view toggle is pushed right, so the month label doesn't wander. */
-.calendar-header { display: flex; align-items: center; gap: 8px; padding: 11px 13px; border-bottom: 1px solid var(--border-color); }
+.calendar-header { display: flex; align-items: center; gap: 8px; padding: 11px 13px; border-bottom: 1px solid var(--border-color); flex-wrap: wrap; }
+@media (max-width: 480px) {
+  .month-display { min-width: 0; flex: 1; font-size: 0.92rem; }
+  .view-toggle { margin-left: 0; width: 100%; }
+  .view-toggle button { flex: 1; }
+}
 .nav-button { background: transparent; border: 1px solid var(--border-color); color: var(--text-secondary); width: 30px; height: 30px; border-radius: var(--radius-sm); cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 1rem; flex-shrink: 0; transition: background 0.15s, color 0.15s; }
 .nav-button:hover { background: var(--surface-hover); color: var(--text-color); }
 .month-display { font-weight: 600; font-size: 1rem; color: var(--text-color); min-width: 10ch; text-align: center; }

@@ -7,102 +7,39 @@
  * the last four weeks. The chart uses a real time axis: the old one spaced
  * weigh-ins evenly, so a three-week gap looked like a day.
  */
-import { computed, nextTick, onMounted, ref, watch } from 'vue'
-import Chart from 'chart.js/auto'
-import 'chartjs-adapter-date-fns'
+import { computed } from 'vue'
 import { BodyOutline } from '@vicons/ionicons5'
 import { format, parseISO } from 'date-fns'
 import MetricCard from '@/components/stats/MetricCard.vue'
 import EmptyState from '@/components/stats/EmptyState.vue'
 import SectionHead from '@/components/stats/SectionHead.vue'
-import { baseOpts, css, legend, useCharts } from '@/utils/chartTheme'
+import TimeSeriesChart, { type ChartSeries, type GoalLine } from '@/components/charts/TimeSeriesChart.vue'
 import { body, dailyWeights, today } from '@/stats'
 import { settings } from '@/settings'
 
-const { add, destroy } = useCharts()
-const weightCanvas = ref<HTMLCanvasElement | null>(null)
-
 const goalWeight = computed(() => settings.goalWeight)
 
-function buildWeight() {
-	if (!weightCanvas.value || !body.value.smoothed.length) return
-	const smoothed = body.value.smoothed
-	const raw = [...dailyWeights.value].sort((a, b) => a.date.localeCompare(b.date))
-	const t = (d: string) => parseISO(d).getTime()
+const t = (d: string) => parseISO(d).getTime()
 
-	const datasets: any[] = [
-		{
-			label: 'Trend weight',
-			data: smoothed.map(p => ({ x: t(p.date), y: p.weight })),
-			borderColor: css('--primary-color'),
-			backgroundColor: 'transparent',
-			borderWidth: 2.25,
-			tension: 0.35,
-			cubicInterpolationMode: 'monotone',
-			pointRadius: 0,
-			pointHoverRadius: 0,
-		},
-		{
-			label: 'Weigh-ins',
-			data: raw.map(p => ({ x: t(p.date), y: p.weight })),
-			borderColor: 'transparent',
-			backgroundColor: css('--text-muted'),
-			showLine: false,
-			pointRadius: 2.5,
-			pointHoverRadius: 4,
-		},
-	]
+const weightSeries = computed<ChartSeries[]>(() => [
+	{
+		key: 'weighin', label: 'Weigh-in', kind: 'dots', color: 'var(--text-muted)', size: 5,
+		points: [...dailyWeights.value]
+			.sort((a, b) => a.date.localeCompare(b.date))
+			.map(w => ({ x: t(w.date), y: w.weight })),
+	},
+	{
+		key: 'trend', label: 'Trend weight', kind: 'line', color: 'var(--primary-color)', width: 2.5, connectGaps: true,
+		points: body.value.smoothed.map(p => ({ x: t(p.date), y: p.weight })),
+	},
+])
 
-	if (goalWeight.value !== null) {
-		datasets.push({
-			label: 'Goal',
-			data: [{ x: t(raw[0].date), y: goalWeight.value }, { x: Math.max(t(raw[raw.length - 1].date), today.value.getTime()), y: goalWeight.value }],
-			borderColor: css('--success-color'),
-			borderWidth: 1.5,
-			borderDash: [5, 5],
-			pointRadius: 0,
-			pointHoverRadius: 0,
-		})
-	}
+const weightGoals = computed<GoalLine[]>(() =>
+	goalWeight.value === null ? [] : [{ label: `Goal ${goalWeight.value.toFixed(1)} kg`, value: goalWeight.value, color: 'var(--success-color)' }])
 
-	add(new Chart(weightCanvas.value, {
-		type: 'line',
-		data: { datasets },
-		options: {
-			...baseOpts('kg'),
-			animation: { duration: 450, easing: 'easeOutCubic' },
-			plugins: {
-				...baseOpts().plugins,
-				legend: legend(),
-				tooltip: {
-					...baseOpts().plugins.tooltip,
-					callbacks: {
-						title: (items: any[]) => format(new Date(items[0].parsed.x), 'EEE d MMM yyyy'),
-						label: (ctx: any) => ` ${ctx.dataset.label}: ${Number(ctx.parsed.y).toFixed(1)} kg`,
-					},
-				},
-			},
-			scales: {
-				x: {
-					type: 'time',
-					time: { unit: raw.length && t(raw[raw.length - 1].date) - t(raw[0].date) > 120 * 86_400_000 ? 'month' : 'week' },
-					grid: { display: false }, border: { display: false },
-					ticks: { color: css('--text-muted'), font: { size: 10 }, maxRotation: 0, maxTicksLimit: 8 },
-				},
-				y: { ...baseOpts('kg').scales.y, beginAtZero: false },
-			},
-		} as any,
-	}))
-}
-
-async function buildAll() {
-	destroy()
-	await nextTick()
-	buildWeight()
-}
-
-onMounted(buildAll)
-watch(body, buildAll)
+const kg = (v: number) => v.toFixed(1)
+const goalDate = computed(() =>
+	body.value.weeksToGoal === null ? null : format(new Date(today.value.getTime() + body.value.weeksToGoal * 7 * 86_400_000), 'MMMM yyyy'))
 </script>
 
 <template>
@@ -129,7 +66,7 @@ watch(body, buildAll)
 						<template v-else-if="body.weeksToGoal !== null">
 							At the current rate you'd reach it in about
 							{{ body.weeksToGoal }} week{{ body.weeksToGoal === 1 ? '' : 's' }}
-							(around {{ format(new Date(today.getTime() + body.weeksToGoal * 7 * 86_400_000), 'MMMM yyyy') }}).
+							(around {{ goalDate }}).
 						</template>
 						<template v-else-if="body.ratePerWeek === null">
 							Needs a few more weigh-ins in the last four weeks to project a date.
@@ -147,7 +84,7 @@ watch(body, buildAll)
 					<h3>Body weight</h3>
 					<span class="hint">{{ dailyWeights.length }} weigh-in{{ dailyWeights.length === 1 ? '' : 's' }}</span>
 				</div>
-				<div class="stat-chart"><canvas ref="weightCanvas"></canvas></div>
+				<TimeSeriesChart :series="weightSeries" :goals="weightGoals" :y-format="kg" y-label="kg" />
 				<p class="stat-note">
 					The dots are individual weigh-ins and the line is your trend weight — a moving average that
 					accounts for the days between readings, so it means the same whether you weigh in daily or

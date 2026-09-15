@@ -7,41 +7,20 @@
  * same. Fitness is estimated power rather than speed per heartbeat: on a bike,
  * speed mostly reflects the route and the wind.
  */
-import { computed, nextTick, onMounted, ref, watch } from 'vue'
+import { computed } from 'vue'
 import { BicycleOutline } from '@vicons/ionicons5'
 import MetricCard from '@/components/stats/MetricCard.vue'
 import EmptyState from '@/components/stats/EmptyState.vue'
 import SectionHead from '@/components/stats/SectionHead.vue'
-import { useCharts } from '@/utils/chartTheme'
-import { weeklyVolumeChart } from '@/utils/weeklyChart'
-import { getSportColor } from '@/utils/workouts'
+import WeeklyBarsChart from '@/components/charts/WeeklyBarsChart.vue'
 import { bike, bikeKmByWeek, bikeSessions, hrSettings, today } from '@/stats'
 import { rollingWeeklyAverage, weekWindows } from '@/utils/progress'
 
-const { add, destroy } = useCharts()
-const volumeCanvas = ref<HTMLCanvasElement | null>(null)
-
 const noHR = computed(() => hrSettings.value.maxHR === null)
 
-function buildVolume() {
-	if (!volumeCanvas.value) return
-	add(weeklyVolumeChart(volumeCanvas.value, {
-		weeks: weekWindows(12, today.value),
-		totals: bikeKmByWeek.value,
-		rolling: rollingWeeklyAverage(bikeSessions.value, s => s.date, s => s.km, 12, today.value),
-		color: getSportColor('bike'),
-		unit: 'km',
-	}))
-}
-
-async function buildAll() {
-	destroy()
-	await nextTick()
-	buildVolume()
-}
-
-onMounted(buildAll)
-watch(bike, buildAll)
+const weeks = computed(() => weekWindows(12, today.value))
+const rollingKm = computed(() =>
+	rollingWeeklyAverage(bikeSessions.value, x => x.date, x => x.km, 12, today.value))
 </script>
 
 <template>
@@ -72,7 +51,13 @@ watch(bike, buildAll)
 			<SectionHead title="Volume" note="last 12 weeks" />
 			<section class="stat-panel stat-card">
 				<div class="stat-head"><h3>Weekly distance</h3><span class="hint">km</span></div>
-				<div class="stat-chart"><canvas ref="volumeCanvas"></canvas></div>
+				<WeeklyBarsChart
+					:labels="weeks.map(w => w.label)"
+					:totals="bikeKmByWeek"
+					:average="rollingKm"
+					color="var(--color-bike-primary)"
+					unit="km"
+				/>
 			</section>
 		</template>
 	</div>

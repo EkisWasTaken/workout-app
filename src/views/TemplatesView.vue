@@ -2,14 +2,14 @@
   <div class="templates-view-wrapper">
     <div class="templates-content">
       <n-space justify="space-between" align="center" style="margin-bottom: 16px; width: 100%">
-        <h1 class="page-title">Workout Templates</h1>
-        <n-button type="primary" @click="showAddTemplateModal = true">Create New Template</n-button>
+        <h1 class="page-title">Templates</h1>
+        <n-button type="primary" @click="showAddTemplateModal = true">New template</n-button>
       </n-space>
 
       <p class="hint">
-        A template is a reusable session — a gym split or a run — that you can drop onto
-        any date. Build it once, schedule it whenever. The library is shared with everyone
-        on this app: you can schedule anyone's template, but only edit or delete your own.
+        A template is a session you do again and again — a push day, a threshold run. Build it once,
+        then add it to any date from here or with "Add session" on the schedule.
+        Templates are shared with everyone using the app: you can use anyone's, but only delete your own.
       </p>
 
       <n-list v-if="templates.length" bordered style="width: 100%">
@@ -41,16 +41,21 @@
           </template>
         </n-list-item>
       </n-list>
-      <n-empty v-else description="No templates yet." style="margin-top: 40px" />
+      <n-empty v-else description="No templates yet. Create one for a session you repeat every week." style="margin-top: 40px">
+        <template #extra>
+          <n-button size="small" @click="showAddTemplateModal = true">New template</n-button>
+        </template>
+      </n-empty>
 
       <!-- Create template -->
       <n-modal v-model:show="showAddTemplateModal" preset="card" :style="{ width: '800px', maxWidth: '95vw' }"
-        title="Create New Template" @after-leave="resetNewTemplate">
+        title="New template" @after-leave="resetNewTemplate">
         <n-space vertical size="large">
           <n-radio-group v-model:value="newTemplate.kind">
             <n-radio-button value="gym">Gym session</n-radio-button>
             <n-radio-button value="run">Run</n-radio-button>
             <n-radio-button value="bike">Bike</n-radio-button>
+            <n-radio-button value="other">Other</n-radio-button>
           </n-radio-group>
 
           <n-form-item label="Template name" :show-feedback="false">
@@ -79,13 +84,19 @@
           </template>
 
           <!-- Gym-specific -->
+          <template v-else-if="newTemplate.kind === 'other'">
+            <n-form-item label="Duration (min)" :show-feedback="false">
+              <n-input-number v-model:value="newTemplate.duration" :min="0" placeholder="e.g. 45"
+                style="width: 200px" />
+            </n-form-item>
+          </template>
           <template v-else>
             <n-form-item label="Duration (min)" :show-feedback="false">
               <n-input-number v-model:value="newTemplate.duration" :min="0" placeholder="e.g. 60"
                 style="width: 200px" />
             </n-form-item>
             <n-data-table :columns="columns" :data="newTemplate.exercises" :pagination="false" :bordered="false" />
-            <n-button @click="addExercise" block dashed>Add Exercise</n-button>
+            <n-button @click="addExercise" block dashed>Add exercise</n-button>
           </template>
 
           <n-form-item label="Notes" :show-feedback="false">
@@ -93,7 +104,7 @@
               placeholder="Anything to copy onto the scheduled session" />
           </n-form-item>
 
-          <n-button type="primary" @click="saveNewTemplate" block :loading="saving">Save Template</n-button>
+          <n-button type="primary" @click="saveNewTemplate" block :loading="saving">Save template</n-button>
         </n-space>
       </n-modal>
 
@@ -103,6 +114,9 @@
         <n-space vertical size="large">
           <n-form-item label="Date" :show-feedback="false">
             <n-date-picker v-model:value="scheduleDate" type="date" style="width: 100%" />
+          </n-form-item>
+          <n-form-item label="Repeat" :show-feedback="false">
+            <n-select v-model:value="scheduleWeeks" :options="repeatOptions" />
           </n-form-item>
           <n-button type="primary" block :loading="scheduling" @click="confirmSchedule">Add to schedule</n-button>
         </n-space>
@@ -116,9 +130,9 @@ import { ref, computed, onMounted, h } from 'vue';
 import {
   NButton, NList, NListItem, NThing, NModal, NSpace, NInput, NInputNumber,
   useMessage, NDataTable, NPopconfirm, NFormItem, NRadioGroup, NRadioButton, NEmpty,
-  NDatePicker,
+  NDatePicker, NSelect, NAutoComplete,
 } from 'naive-ui';
-import { format } from 'date-fns';
+import { addWeeks, format } from 'date-fns';
 import type { WorkoutTemplate, WorkoutTemplateExercise, TemplateKind } from '../types';
 import { db } from '@/db';
 import { auth } from '@/auth';
@@ -158,10 +172,12 @@ const KIND_LABELS: Record<TemplateKind, string> = { gym: 'Gym', run: 'Run', bike
 const kindLabel = (k?: TemplateKind) => KIND_LABELS[k || 'gym'];
 
 const typeFieldLabel = computed(() =>
-  newTemplate.value.kind === 'gym' ? 'Split'
-    : newTemplate.value.kind === 'bike' ? 'Ride type' : 'Run type');
+  newTemplate.value.kind === 'gym' ? 'Split — groups your gym stats'
+    : newTemplate.value.kind === 'bike' ? 'Ride type'
+    : newTemplate.value.kind === 'run' ? 'Run type — sets the pace shown on the schedule' : 'Type');
 const typeFieldPlaceholder = computed(() =>
-  newTemplate.value.kind === 'gym' ? 'e.g. Push, Pull, Legs' : 'e.g. Easy, Threshold, Long');
+  newTemplate.value.kind === 'gym' ? 'e.g. Push, Pull, Legs'
+    : newTemplate.value.kind === 'run' ? 'e.g. Easy, Threshold, Long, Intervals' : 'optional');
 
 function templateSummary(t: WorkoutTemplate): string {
   const bits: string[] = [];
@@ -172,17 +188,20 @@ function templateSummary(t: WorkoutTemplate): string {
     if (t.target_pace) bits.push(t.target_pace.includes('km') ? `@ ${t.target_pace}` : `@ ${t.target_pace}/km`);
   }
   if (t.duration) bits.push(`${t.duration} min`);
-  return bits.join(' · ') || '—';
+  return bits.join(' · ') || 'No details yet';
 }
 
 const createColumns = ({ remove }: { remove: (rowIndex: number) => void }) => [
   {
-    title: 'Exercise Name', key: 'exercise_name',
+    title: 'Exercise', key: 'exercise_name',
     render(row: Partial<WorkoutTemplateExercise>, index: number) {
-      return h(NInput, {
+      // Suggest names from the exercise library so the same lift is spelled the same way.
+      const q = (row.exercise_name || '').toLowerCase();
+      return h(NAutoComplete, {
         value: row.exercise_name,
+        options: q.length < 2 ? [] : exerciseNames.value.filter(n => n.toLowerCase().includes(q)).slice(0, 8),
         onUpdateValue(v: string) { newTemplate.value.exercises[index].exercise_name = v; },
-        placeholder: 'Exercise Name',
+        placeholder: 'e.g. Bench press',
       });
     },
   },
@@ -217,7 +236,7 @@ const createColumns = ({ remove }: { remove: (rowIndex: number) => void }) => [
     },
   },
   {
-    title: 'Actions', key: 'actions',
+    title: '', key: 'actions',
     render(_: Partial<WorkoutTemplateExercise>, index: number) {
       return h(NButton, { size: 'small', type: 'error', tertiary: true, onClick: () => remove(index) },
         { default: () => 'Remove' });
@@ -230,8 +249,22 @@ const columns = createColumns({
 });
 
 async function loadTemplates() {
-  templates.value = await db.getWorkoutTemplates();
+  try {
+    templates.value = await db.getWorkoutTemplates();
+  } catch (e) {
+    console.error('Failed to load templates', e);
+    message.error("Couldn't load templates. Check your connection and refresh.");
+  }
 }
+
+const exerciseNames = ref<string[]>([]);
+db.getExercises().then(list => { exerciseNames.value = list.map(e => e.name).sort(); }).catch(() => {});
+
+const scheduleWeeks = ref(1);
+const repeatOptions = [
+  { label: 'Just this date', value: 1 },
+  ...[2, 3, 4, 6, 8, 12].map(n => ({ label: `Weekly for ${n} weeks`, value: n })),
+];
 
 function addExercise() {
   newTemplate.value.exercises.push({ exercise_name: '', sets: undefined, reps: '', notes: '' });
@@ -261,16 +294,22 @@ async function saveNewTemplate() {
     await loadTemplates();
     message.success('Template created.');
   } catch (e: any) {
-    message.error(e?.message || 'Failed to create template.');
+    console.error('Template create failed', e);
+    message.error("Couldn't save the template. Check your connection and try again.");
   } finally {
     saving.value = false;
   }
 }
 
 async function deleteTemplate(templateId: number) {
-  await db.deleteWorkoutTemplate(templateId);
-  await loadTemplates();
-  message.success('Template deleted.');
+  try {
+    await db.deleteWorkoutTemplate(templateId);
+    await loadTemplates();
+    message.success('Template deleted.');
+  } catch (e) {
+    console.error('Template delete failed', e);
+    message.error("Couldn't delete the template. Check your connection and try again.");
+  }
 }
 
 // ── schedule a template onto a date → creates a workout ──────────────────────
@@ -282,6 +321,7 @@ const scheduling = ref(false);
 function openSchedule(template: WorkoutTemplate) {
   scheduleTarget.value = template;
   scheduleDate.value = Date.now();
+  scheduleWeeks.value = 1;
   showScheduleModal.value = true;
 }
 
@@ -290,12 +330,18 @@ async function confirmSchedule() {
   if (!template) return;
   scheduling.value = true;
   try {
-    const date = format(new Date(scheduleDate.value), 'yyyy-MM-dd');
-    await db.addWorkout(await buildWorkoutFromTemplate(template, date));
+    const start = new Date(scheduleDate.value);
+    for (let i = 0; i < scheduleWeeks.value; i++) {
+      const date = format(addWeeks(start, i), 'yyyy-MM-dd');
+      await db.addWorkout(await buildWorkoutFromTemplate(template, date));
+    }
     showScheduleModal.value = false;
-    message.success(`Added to ${date}.`);
+    message.success(scheduleWeeks.value === 1
+      ? `Added to ${format(start, 'EEE d MMM')}.`
+      : `Added every ${format(start, 'EEEE')} for ${scheduleWeeks.value} weeks.`);
   } catch (e: any) {
-    message.error(e?.message || 'Failed to schedule.');
+    console.error('Schedule failed', e);
+    message.error("Couldn't add it to the schedule. Check your connection and try again.");
   } finally {
     scheduling.value = false;
   }

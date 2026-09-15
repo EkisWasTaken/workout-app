@@ -1,9 +1,9 @@
 <template>
   <div v-if="show" class="modal-overlay" @click.self="close">
-    <div class="modal-content">
+    <div class="modal-content" role="dialog" aria-modal="true" :aria-label="title">
       <div class="modal-header">
         <h3 class="modal-title">{{ title }}</h3>
-        <button @click="close" class="close-button">&times;</button>
+        <button @click="close" class="close-button" aria-label="Close">&times;</button>
       </div>
       <div class="modal-body">
         <slot></slot>
@@ -13,9 +13,9 @@
 </template>
 
 <script setup lang="ts">
-import { defineProps, defineEmits } from 'vue';
+import { onUnmounted, watch } from 'vue';
 
-defineProps({
+const props = defineProps({
   show: {
     type: Boolean,
     required: true,
@@ -31,6 +31,16 @@ const emit = defineEmits(['update:show']);
 function close() {
   emit('update:show', false);
 }
+
+/** Escape closes, like every other dialog people have used. */
+function onKey(e: KeyboardEvent) {
+  if (e.key === 'Escape') close();
+}
+watch(() => props.show, open => {
+  if (open) window.addEventListener('keydown', onKey);
+  else window.removeEventListener('keydown', onKey);
+}, { immediate: true });
+onUnmounted(() => window.removeEventListener('keydown', onKey));
 </script>
 
 <style scoped>

@@ -1,79 +1,94 @@
 <template>
-  <div class="exercises-view-wrapper">
-    <div style="padding: 16px; width: 100%">
-      <h1>Exercise Library</h1>
-      <n-collapse accordion v-if="groupedExercises.length > 0" style="width: 100%">
-        <n-collapse-item v-for="group in groupedExercises" :key="group.body_part" :title="group.body_part">
-          <n-list bordered>
-            <n-list-item v-for="exercise in group.exercises" :key="exercise.id">
-              <div class="exercise-item">
-                <n-popover trigger="hover" placement="bottom">
-                  <template #trigger>
-                    <n-thing :title="exercise.name" />
-                  </template>
-                  <div class="body-part-icon">
-                    {{ exercise.body_part }}
-                  </div>
-                </n-popover>
-              </div>
-            </n-list-item>
-          </n-list>
-        </n-collapse-item>
-      </n-collapse>
-      <div v-else>
-        <p>No exercises found.</p>
+  <div class="exercises-view">
+    <header class="ex-head">
+      <div>
+        <h1 class="page-title">Exercises</h1>
+        <p class="hint">
+          The exercise library, grouped by body part. These names are suggested when you add
+          exercises to a gym template, so the same lift is always logged the same way.
+        </p>
       </div>
-    </div>
+      <n-input v-model:value="query" placeholder="Search exercises" clearable class="ex-search" />
+    </header>
+
+    <div v-if="loading" class="ex-state">Loading…</div>
+    <div v-else-if="failed" class="ex-state">Couldn't load the exercise library. Check your connection and refresh.</div>
+    <div v-else-if="!exercises.length" class="ex-state">The exercise library is empty.</div>
+    <div v-else-if="!groups.length" class="ex-state">No exercises match "{{ query }}".</div>
+
+    <section v-else class="ex-grid">
+      <div v-for="group in groups" :key="group.bodyPart" class="ex-group">
+        <div class="ex-group-head">
+          <h2>{{ group.bodyPart }}</h2>
+          <span class="ex-count">{{ group.exercises.length }}</span>
+        </div>
+        <ul>
+          <li v-for="exercise in group.exercises" :key="exercise.id">{{ exercise.name }}</li>
+        </ul>
+      </div>
+    </section>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, computed } from 'vue';
-import { NCollapse, NCollapseItem, NList, NListItem, NThing, NPopover } from 'naive-ui';
+import { computed, onMounted, ref } from 'vue';
+import { NInput } from 'naive-ui';
 import { db } from '@/db';
 import type { Exercise } from '../types';
 
 const exercises = ref<Exercise[]>([]);
+const loading = ref(true);
+const failed = ref(false);
+const query = ref('');
 
-const groupedExercises = computed(() => {
-  const groups: { [key: string]: { body_part: string, exercises: Exercise[] } } = {};
-  for (const exercise of exercises.value) {
-    if (!groups[exercise.body_part]) {
-      groups[exercise.body_part] = {
-        body_part: exercise.body_part,
-        exercises: [],
-      };
-    }
-    groups[exercise.body_part].exercises.push(exercise);
+const groups = computed(() => {
+  const q = query.value.trim().toLowerCase();
+  const map = new Map<string, Exercise[]>();
+  for (const e of exercises.value) {
+    if (q && !e.name.toLowerCase().includes(q) && !e.body_part.toLowerCase().includes(q)) continue;
+    const key = e.body_part || 'Other';
+    const list = map.get(key);
+    if (list) list.push(e);
+    else map.set(key, [e]);
   }
-  return Object.values(groups);
+  return [...map.entries()]
+    .map(([bodyPart, list]) => ({ bodyPart, exercises: list.sort((a, b) => a.name.localeCompare(b.name)) }))
+    .sort((a, b) => a.bodyPart.localeCompare(b.bodyPart));
 });
 
-async function loadExercises() {
-  const data = await db.getExercises();
-  console.log('Fetched exercises:', data);
-  exercises.value = data;
-}
-
-onMounted(loadExercises);
+onMounted(async () => {
+  try {
+    exercises.value = await db.getExercises();
+  } catch (e) {
+    console.error('Failed to load exercises', e);
+    failed.value = true;
+  } finally {
+    loading.value = false;
+  }
+});
 </script>
 
 <style scoped>
-.exercise-item {
-  width: 100%;
-}
+.exercises-view { padding: 24px 28px 40px; max-width: 1000px; margin: 0 auto; width: 100%; box-sizing: border-box; }
+@media (max-width: 768px) { .exercises-view { padding: 16px 16px 32px; } }
 
-.body-part-icon {
-  width: 50px;
-  height: 50px;
-  border: 1px solid #ccc;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  font-size: 10px;
-  text-align: center;
-  line-height: 1.2;
-  word-break: break-all;
-  padding: 2px;
+.ex-head { display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; flex-wrap: wrap; margin-bottom: 18px; }
+.page-title { font-size: 1.5rem; font-weight: 400; margin: 0; }
+.hint { font-size: 0.82rem; color: var(--text-muted); margin: 6px 0 0; line-height: 1.5; max-width: 560px; }
+.ex-search { width: 240px; }
+@media (max-width: 600px) { .ex-search { width: 100%; } }
+
+.ex-state { padding: 48px 0; text-align: center; color: var(--text-muted); font-size: 0.88rem; }
+
+.ex-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 12px; align-items: start; }
+.ex-group {
+  background: var(--surface-color); border: 1px solid var(--border-color);
+  border-radius: var(--radius); padding: 12px 14px;
 }
+.ex-group-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 6px; }
+.ex-group-head h2 { font-size: 0.9rem; font-weight: 600; font-family: var(--font-family); margin: 0; text-transform: capitalize; }
+.ex-count { font-size: 0.72rem; color: var(--text-muted); font-family: var(--font-mono); }
+.ex-group ul { list-style: none; margin: 0; padding: 0; }
+.ex-group li { font-size: 0.84rem; color: var(--text-secondary); padding: 5px 0; border-top: 1px solid var(--border-subtle, var(--border-color)); }
+.ex-group li:first-child { border-top: none; }
 </style>

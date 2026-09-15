@@ -8,7 +8,7 @@
 					<n-icon :component="ArrowBackOutline" /> Back
 				</button>
 				<span v-if="workout" class="type-chip" :style="{ color: sportCol, background: sportColSoft }">
-					{{ workout.type }}
+					{{ SPORT_LABELS[sport] }}
 				</span>
 			</header>
 
@@ -75,13 +75,13 @@
 					</div>
 					<div class="stat-divider"></div>
 					<div class="stat-item">
-						<span class="stat-label">Duration</span>
+						<span class="stat-label">Moving time</span>
 						<span class="stat-value mono">{{ formatDuration(stravaActivity.moving_time) }}</span>
 					</div>
 					<div class="stat-divider"></div>
 					<div class="stat-item">
-						<span class="stat-label">{{ workout.type?.toLowerCase() === 'bike' ? 'Speed' : 'Pace' }}</span>
-						<span class="stat-value mono">{{ workout.type?.toLowerCase() === 'bike'
+						<span class="stat-label">{{ isBike ? 'Avg speed' : 'Avg pace' }}</span>
+						<span class="stat-value mono">{{ isBike
 							? calculateSpeed(stravaActivity.moving_time, stravaActivity.distance)
 							: calculatePace(stravaActivity.moving_time, stravaActivity.distance) }}</span>
 					</div>
@@ -100,7 +100,7 @@
 					</div>
 					<div class="stat-divider" v-if="workout.rpe"></div>
 					<div class="stat-item" v-if="workout.rpe">
-						<span class="stat-label">RPE</span>
+						<span class="stat-label" title="Rate of perceived exertion: how hard it felt, 1 to 10">Effort</span>
 						<span class="stat-value mono">{{ workout.rpe }}<span class="stat-unit"> /10</span></span>
 					</div>
 				</div>
@@ -112,7 +112,7 @@
 						<span class="sec-value mono">{{ Math.round(stravaActivity.average_heartrate) }} <span class="sec-unit">bpm</span></span>
 					</div>
 					<div v-if="gapPace" class="sec-stat">
-						<span class="sec-label">Grade adj. pace</span>
+						<span class="sec-label" title="Your pace adjusted for hills: what it would have been on flat ground">Flat-equivalent pace</span>
 						<span class="sec-value mono">{{ gapPace }} <span class="sec-unit">/km</span></span>
 					</div>
 					<div v-if="avgCadence" class="sec-stat">
@@ -136,14 +136,14 @@
 				<!-- Effort & zones (from raw HR stream) -->
 				<div v-if="effortScore || zoneTimes" class="effort-section">
 					<div v-if="effortScore" class="effort-card">
-						<span class="sec-label">Relative effort</span>
+						<span class="sec-label">Training load</span>
 						<span class="effort-value mono">{{ effortScore }}</span>
-						<span class="effort-note">TRIMP · from heart rate</span>
+						<span class="effort-note">duration × heart-rate intensity</span>
 					</div>
 					<div v-if="vo2maxEstimate" class="effort-card">
-						<span class="sec-label">VO₂ max</span>
+						<span class="sec-label">VO₂max estimate</span>
 						<span class="effort-value mono">{{ vo2maxEstimate }}</span>
-						<span class="effort-note">ml/kg/min · pace + HR estimate</span>
+						<span class="effort-note">ml/kg/min · a single run is a rough read</span>
 					</div>
 					<div v-if="zoneTimes" class="zone-bar-card">
 						<span class="sec-label">Time in zones</span>
@@ -154,7 +154,7 @@
 						</div>
 						<div class="zone-legend">
 							<span v-for="(z, i) in zoneSegments.filter(s => s.pct > 0)" :key="i" class="zone-legend-item">
-								<i :style="{ background: z.color }"></i>{{ z.name.split(' ')[0] }} {{ z.pct }}%
+								<i :style="{ background: z.color }"></i>{{ z.name }} · {{ z.pct }}% ({{ z.mins }} min)
 							</span>
 						</div>
 					</div>
@@ -162,8 +162,13 @@
 
 				<!-- HR / pace graph from raw streams -->
 				<div v-if="hasStreamChart" class="stream-section">
-					<h2 class="splits-title">Heart rate &amp; pace</h2>
-					<div class="stream-chart-card"><canvas ref="streamCanvas"></canvas></div>
+					<div class="stream-title-row">
+						<h2 class="splits-title">{{ isBike ? 'Speed' : 'Pace' }} &amp; heart rate</h2>
+						<label v-if="stravaActivity?.streams?.cadence" class="stream-toggle">
+							<input v-model="showCadence" type="checkbox" /> Show cadence
+						</label>
+					</div>
+					<div class="stream-chart-card"><StreamTracks :time="stravaActivity.streams.time" :tracks="streamTracks" /></div>
 				</div>
 
 				<!-- Best efforts -->
@@ -192,8 +197,8 @@
 					<div class="splits-table" :class="{ 'has-gap': showSplitGap }">
 						<div class="split-head">
 							<span>KM</span>
-							<span>{{ workout.type?.toLowerCase() === 'bike' ? 'Speed' : 'Pace' }}</span>
-							<span v-if="showSplitGap">GAP</span>
+							<span>{{ isBike ? 'Speed' : 'Pace' }}</span>
+							<span v-if="showSplitGap" title="Pace adjusted for hills">Flat</span>
 							<span>Elev</span>
 							<span>HR</span>
 						</div>
@@ -217,23 +222,27 @@
 
 			</template>
 
-			<div v-else class="empty-state">Workout not found.</div>
+			<div v-else class="empty-state">
+				This workout doesn't exist any more. It may have been deleted.
+				<router-link to="/schedule" class="empty-link">Back to schedule</router-link>
+			</div>
 
 		</div>
 	</div>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { NIcon, NSpin } from 'naive-ui'
 import { ArrowBackOutline } from '@vicons/ionicons5'
 import { decode } from '@mapbox/polyline'
 import { format, parseISO } from 'date-fns'
-import Chart from 'chart.js/auto'
 import { db } from '@/db'
 import { activityApi } from '@/activities'
-import { getWorkoutType, getSportColor } from '@/utils/workouts'
+import { getSportColor, SPORT_LABELS } from '@/utils/workouts'
+import { buildActivityIndex, effectiveWorkoutType, resolveActivity } from '@/utils/workoutSport'
+import StreamTracks, { type StreamTrack } from '@/components/charts/StreamTracks.vue'
 import { PULSE_ZONES, getHRSettings, timeInZones, relativeEffort, fmtSecs, gradeAdjustedPace, estimateVO2max, estimateBikePower } from '@/utils/analysis'
 import type { Workout, BestEffort } from '../types'
 
@@ -245,13 +254,22 @@ const loading = ref(true)
 const allActivities = ref<any[]>([])
 const latestWeightKg = ref<number | null>(null)
 
-const isBike = computed(() => workout.value?.type?.toLowerCase() === 'bike')
-const isRun = computed(() => workout.value?.type?.toLowerCase() === 'running')
+/**
+ * The sport as recorded, not as typed. Home already believes the recording over
+ * the hand-entered type, so this page must too — otherwise a run typed "Bike"
+ * showed km/h here and a pace on Home.
+ */
+const sport = computed(() => {
+	if (!workout.value) return 'other'
+	return effectiveWorkoutType(workout.value, buildActivityIndex(stravaActivity.value ? [stravaActivity.value] : []))
+})
+const isBike = computed(() => sport.value === 'bike')
+const isRun = computed(() => sport.value === 'running')
 
 const handleBack = () => router.go(-1)
 const formatDate = (d: string) => format(parseISO(d), 'EEEE, d MMMM yyyy')
 
-const sportCol = computed(() => workout.value ? getSportColor(getWorkoutType(workout.value)) : '#9aa7b8')
+const sportCol = computed(() => workout.value ? getSportColor(sport.value) : '#9aa7b8')
 const sportColSoft = computed(() => {
 	const c = sportCol.value
 	return c.startsWith('#')
@@ -321,21 +339,25 @@ const calculateSpeed = (time: number, dist: number) => {
 
 const formatPaceOrSpeedFromSpeed = (spd: number) => {
 	if (!spd) return '—'
-	if (workout.value?.type?.toLowerCase() === 'bike') return `${(spd * 3.6).toFixed(1)} km/h`
+	if (isBike.value) return `${(spd * 3.6).toFixed(1)} km/h`
 	const s = 1000 / spd
 	return `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')} /km`
 }
 
+/**
+ * Split bars scaled within this activity: the fastest split is full, the slowest
+ * a quarter. A fixed 2:50–10:00/km scale drew every split of a normal run at
+ * almost the same length, so the bars couldn't show which kilometres were quick.
+ */
+const splitSpeedRange = computed(() => {
+	const v = (stravaActivity.value?.splits_metric ?? []).map((sp: any) => sp.average_speed).filter((x: number) => x > 0)
+	return v.length ? [Math.min(...v), Math.max(...v)] : [0, 0]
+})
 const paceBarWidth = (split: any) => {
 	if (!split.average_speed) return 0
-	if (workout.value?.type?.toLowerCase() === 'bike') {
-		// 45 km/h = full bar, 10 km/h = empty
-		const kmh = split.average_speed * 3.6
-		return Math.max(0, Math.min(100, (kmh - 10) / (45 - 10) * 100))
-	}
-	// Running: 2:50 min/km (170 s/km) = full, 10:00 min/km (600 s/km) = empty
-	const pace = 1000 / split.average_speed
-	return Math.max(0, Math.min(100, (600 - pace) / (600 - 170) * 100))
+	const [lo, hi] = splitSpeedRange.value
+	if (hi - lo < 1e-6) return 100
+	return 25 + ((split.average_speed - lo) / (hi - lo)) * 75
 }
 
 // ─── Premium analysis (imported activities carry raw streams) ────────────────
@@ -437,69 +459,67 @@ const effortPace = (be: BestEffort) => {
 	return `${Math.floor(p / 60)}:${String(Math.floor(p % 60)).padStart(2, '0')} /km`
 }
 
-const streamCanvas = ref<HTMLCanvasElement | null>(null)
-let streamChart: Chart | null = null
 const hasStreamChart = computed(() => {
-	const s = stravaActivity.value?.streams
-	return !!(s?.time?.length && (s.heartrate || s.velocity))
+	const st = stravaActivity.value?.streams
+	return !!(st?.time?.length && (st.heartrate || st.velocity))
 })
 
-function buildStreamChart() {
-	const s = stravaActivity.value?.streams
-	if (!streamCanvas.value || !s) return
-	const css = (n: string) => getComputedStyle(document.documentElement).getPropertyValue(n).trim()
-	const labels = s.time.map((t: number) => fmtSecs(t))
-	const isBike = workout.value?.type?.toLowerCase() === 'bike'
-
-	const datasets: any[] = []
-	if (s.heartrate) {
-		datasets.push({
-			label: 'Heart rate (bpm)', data: s.heartrate, yAxisID: 'yHr',
-			borderColor: '#e53935', backgroundColor: 'rgba(229,57,53,0.08)',
-			borderWidth: 1.5, pointRadius: 0, tension: 0.3, spanGaps: true, fill: true,
-		})
+/** Mean over a trailing time window, so second-by-second GPS jitter doesn't hide the shape. */
+function smoothByTime(time: number[], values: (number | null)[], windowSecs: number): (number | null)[] {
+	const out: (number | null)[] = []
+	let lo = 0, sum = 0, n = 0
+	for (let i = 0; i < values.length; i++) {
+		const v = values[i]
+		if (v !== null && v !== undefined) { sum += v; n++ }
+		while (time[i] - time[lo] > windowSecs) {
+			const old = values[lo]
+			if (old !== null && old !== undefined) { sum -= old; n-- }
+			lo++
+		}
+		out.push(n && v !== null && v !== undefined ? sum / n : null)
 	}
-	if (s.velocity) {
-		datasets.push({
-			label: isBike ? 'Speed (km/h)' : 'Pace (min/km)',
-			data: s.velocity.map((v: number | null) =>
-				v === null || v < 0.4 ? null : isBike ? Math.round(v * 36) / 10 : Math.round((1000 / v / 60) * 100) / 100),
-			yAxisID: 'yPace',
-			borderColor: sportCol.value, borderWidth: 1.5, pointRadius: 0, tension: 0.3, spanGaps: true,
-		})
-	}
-	if (s.cadence) {
-		datasets.push({
-			label: isBike ? 'Cadence (rpm)' : 'Cadence (spm)',
-			data: s.cadence.map((c: number | null) => (c === null || c <= 0 ? null : Math.round(c))),
-			yAxisID: 'yCad', hidden: true, // toggle via legend, off by default
-			borderColor: '#a06ee1', borderWidth: 1, pointRadius: 0, tension: 0.3, spanGaps: true,
-		})
-	}
-
-	streamChart = new Chart(streamCanvas.value, {
-		type: 'line',
-		data: { labels, datasets },
-		options: {
-			responsive: true, maintainAspectRatio: false, animation: false,
-			interaction: { mode: 'index', intersect: false },
-			plugins: {
-				legend: { display: true, position: 'bottom', labels: { color: css('--text-secondary'), boxWidth: 10, font: { size: 10 }, usePointStyle: true } },
-				tooltip: { backgroundColor: css('--surface-2'), borderColor: css('--border-strong'), borderWidth: 1, titleColor: css('--text-color'), bodyColor: css('--text-secondary'), padding: 10, cornerRadius: 8 },
-			},
-			scales: {
-				x: { ticks: { color: css('--text-muted'), font: { size: 10 }, maxTicksLimit: 8, maxRotation: 0 }, grid: { display: false }, border: { display: false } },
-				yHr: { display: !!s.heartrate, position: 'left', ticks: { color: '#e53935', font: { size: 10 } }, grid: { color: css('--border-color') }, border: { display: false } },
-				yPace: {
-					display: !!s.velocity, position: 'right',
-					reverse: !isBike, // lower pace number = faster, plot it upward
-					ticks: { color: sportCol.value, font: { size: 10 } }, grid: { display: false }, border: { display: false },
-				},
-				yCad: { display: false },
-			},
-		} as any,
-	})
+	return out
 }
+
+const showCadence = ref(false)
+
+const streamTracks = computed<StreamTrack[]>(() => {
+	const st = stravaActivity.value?.streams
+	if (!st?.time?.length) return []
+	const tracks: StreamTrack[] = []
+	const avg = (xs: (number | null)[]) => {
+		const v = xs.filter((x): x is number => x !== null && Number.isFinite(x))
+		return v.length ? v.reduce((a, b) => a + b, 0) / v.length : null
+	}
+	if (st.velocity) {
+		// Stopped samples are gaps, not a pace of 40 min/km.
+		const moving = st.velocity.map((v: number | null) => (v === null || v < 0.5 ? null : v))
+		const smooth = smoothByTime(st.time, moving, 30)
+		if (isBike.value) {
+			const kmh = smooth.map(v => (v === null ? null : v * 3.6))
+			const a = avg(kmh)
+			tracks.push({ key: 'speed', label: 'Speed · 30 s average', unit: 'km/h', color: sportCol.value, values: kmh, format: v => v.toFixed(1), summary: a ? `avg ${a.toFixed(1)} km/h` : undefined })
+		} else {
+			const pace = smooth.map(v => (v === null ? null : 1000 / v))
+			const avgSpeed = stravaActivity.value.average_speed
+			tracks.push({
+				key: 'pace', label: 'Pace · 30 s average', unit: '/km', color: sportCol.value, values: pace, reverse: true,
+				format: v => fmtSecs(Math.round(v)),
+				summary: avgSpeed ? `avg ${fmtSecs(Math.round(1000 / avgSpeed))} /km` : undefined,
+			})
+		}
+	}
+	if (st.heartrate) {
+		const a = avg(st.heartrate)
+		tracks.push({ key: 'hr', label: 'Heart rate', unit: 'bpm', color: '#e5484d', values: st.heartrate, area: true, format: v => String(Math.round(v)), summary: a ? `avg ${Math.round(a)} bpm` : undefined })
+	}
+	if (st.cadence && showCadence.value) {
+		const cad = st.cadence.map((c: number | null) => (c === null || c <= 0 ? null : c))
+		const a = avg(cad)
+		tracks.push({ key: 'cad', label: 'Cadence', unit: isBike.value ? 'rpm' : 'spm', color: '#a06ee1', values: smoothByTime(st.time, cad, 15), format: v => String(Math.round(v)), summary: a ? `avg ${Math.round(a)}` : undefined })
+	}
+	return tracks
+})
 
 onMounted(async () => {
 	try {
@@ -513,30 +533,33 @@ onMounted(async () => {
 					)
 				} catch {}
 			}
+			// Older workouts carry dead ids from before file import; Home matches
+			// those to a recording on the same day, so this page does the same.
+			if (workout.value && !stravaActivity.value) {
+				const acts = await activityApi.getAllActivities().catch(() => [])
+				allActivities.value = acts
+				stravaActivity.value = resolveActivity(workout.value, buildActivityIndex(acts))
+			}
 		}
 	} finally {
 		loading.value = false
 	}
-	await nextTick()
-	if (hasStreamChart.value) buildStreamChart()
-
 	// Background loads: all activities for PR badges, latest weight for power
-	if (stravaActivity.value) {
+	if (stravaActivity.value && !allActivities.value.length) {
 		activityApi.getAllActivities()
 			.then(acts => { allActivities.value = acts })
 			.catch(() => {})
-		if (isBike.value) {
-			db.getDailyWeights()
-				.then(ws => {
-					const latest = [...ws].sort((a, b) => b.date.localeCompare(a.date))[0]
-					if (latest) latestWeightKg.value = latest.weight
-				})
-				.catch(() => {})
-		}
+	}
+	if (stravaActivity.value && isBike.value) {
+		db.getDailyWeights()
+			.then(ws => {
+				const latest = [...ws].sort((a, b) => b.date.localeCompare(a.date))[0]
+				if (latest) latestWeightKg.value = latest.weight
+			})
+			.catch(() => {})
 	}
 })
 
-onUnmounted(() => { streamChart?.destroy() })
 </script>
 
 <style scoped>
@@ -629,8 +652,10 @@ onUnmounted(() => { streamChart?.destroy() })
 .stream-section { margin-top: 24px; }
 .stream-chart-card {
 	background: var(--surface-color); border: 1px solid var(--border-color);
-	border-radius: var(--radius); padding: 14px; height: 260px;
+	border-radius: var(--radius); padding: 14px;
 }
+.stream-title-row { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.stream-toggle { display: inline-flex; align-items: center; gap: 6px; font-size: 0.78rem; color: var(--text-secondary); cursor: pointer; }
 
 /* Best efforts */
 .best-efforts-section { margin-top: 24px; }
@@ -686,5 +711,6 @@ onUnmounted(() => { streamChart?.destroy() })
 
 /* States */
 .loading-state { display: flex; justify-content: center; padding: 80px 0; }
-.empty-state { text-align: center; color: var(--text-muted); padding: 80px 0; }
+.empty-state { text-align: center; color: var(--text-muted); padding: 80px 0; display: flex; flex-direction: column; gap: 12px; align-items: center; }
+.empty-link { color: var(--primary-color); font-size: 0.88rem; }
 </style>

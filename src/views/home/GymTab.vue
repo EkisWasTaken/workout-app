@@ -8,23 +8,18 @@
  * answers "am I lifting more than I was", so it leads, with volume and
  * consistency behind it.
  */
-import { computed, nextTick, onMounted, ref, watch } from 'vue'
+import { computed } from 'vue'
 import { BarbellOutline } from '@vicons/ionicons5'
 import MetricCard from '@/components/stats/MetricCard.vue'
 import TrendSpark from '@/components/stats/TrendSpark.vue'
 import LongTrendLine from '@/components/stats/LongTrendLine.vue'
 import EmptyState from '@/components/stats/EmptyState.vue'
 import SectionHead from '@/components/stats/SectionHead.vue'
-import { useCharts } from '@/utils/chartTheme'
-import { weeklyVolumeChart } from '@/utils/weeklyChart'
-import { getSportColor } from '@/utils/workouts'
+import WeeklyBarsChart from '@/components/charts/WeeklyBarsChart.vue'
 import { gym, gymSessions, today } from '@/stats'
 import { COMPARE_OFFSET, rollingWeeklyAverage, weeklyTotals, weekWindows } from '@/utils/progress'
 import { parseISO } from 'date-fns'
 import type { Workout } from '@/types'
-
-const { add, destroy } = useCharts()
-const tonnageCanvas = ref<HTMLCanvasElement | null>(null)
 
 /** True when sessions exist but nobody has typed in a load. */
 const missingLoad = computed(() =>
@@ -33,29 +28,12 @@ const missingLoad = computed(() =>
 const dateOf = (w: Workout) => parseISO(w.date)
 const tonnes = (w: Workout) => (w.totalWeightLifted || 0) / 1000
 
-function buildTonnage() {
-	if (!tonnageCanvas.value) return
-	add(weeklyVolumeChart(tonnageCanvas.value, {
-		weeks: weekWindows(12, today.value),
-		totals: weeklyTotals(gymSessions.value, dateOf, tonnes, 12, today.value),
-		rolling: rollingWeeklyAverage(gymSessions.value, dateOf, tonnes, 12, today.value),
-		color: getSportColor('gym'),
-		unit: 't',
-		dp: 2,
-	}))
-}
-
-async function buildAll() {
-	destroy()
-	await nextTick()
-	buildTonnage()
-}
+const weeks = computed(() => weekWindows(12, today.value))
+const weeklyTonnes = computed(() => weeklyTotals(gymSessions.value, dateOf, tonnes, 12, today.value))
+const rollingTonnes = computed(() => rollingWeeklyAverage(gymSessions.value, dateOf, tonnes, 12, today.value))
 
 const splitCompare = (trend: (number | null)[]) => (trend.length > COMPARE_OFFSET ? trend.length - 1 - COMPARE_OFFSET : null)
 const fmtT = (v: number | null) => (v === null ? null : `${v.toFixed(2)} t`)
-
-onMounted(buildAll)
-watch(gym, buildAll)
 </script>
 
 <template>
@@ -86,7 +64,14 @@ watch(gym, buildAll)
 			<SectionHead title="Volume" note="last 12 weeks" />
 			<section class="stat-panel stat-card">
 				<div class="stat-head"><h3>Weekly tonnage</h3><span class="hint">total load moved</span></div>
-				<div class="stat-chart"><canvas ref="tonnageCanvas"></canvas></div>
+				<WeeklyBarsChart
+					:labels="weeks.map(w => w.label)"
+					:totals="weeklyTonnes"
+					:average="rollingTonnes"
+					color="var(--color-gym-primary)"
+					unit="t"
+					:dp="2"
+				/>
 				<p class="stat-note">
 					Total load rises when you train more often as well as when you train harder — read it
 					next to "load per session" above to tell the two apart.
@@ -107,10 +92,10 @@ watch(gym, buildAll)
 						</div>
 						<div v-if="s.loadPerSession !== null && s.previousLoadPerSession !== null" class="split-sub" :class="s.direction">
 							<template v-if="s.direction === 'improving'">
-								▲ {{ (s.loadPerSession - s.previousLoadPerSession).toFixed(2) }} t more per session than the 28 days before
+								+{{ (s.loadPerSession - s.previousLoadPerSession).toFixed(2) }} t per session vs the 28 days before
 							</template>
 							<template v-else-if="s.direction === 'declining'">
-								▼ {{ (s.previousLoadPerSession - s.loadPerSession).toFixed(2) }} t less per session than the 28 days before
+								−{{ (s.previousLoadPerSession - s.loadPerSession).toFixed(2) }} t per session vs the 28 days before
 							</template>
 							<template v-else-if="s.direction === 'holding'">Steady — was {{ s.previousLoadPerSession.toFixed(2) }} t</template>
 							<template v-else>

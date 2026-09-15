@@ -5,11 +5,12 @@
       <span class="race-label">Next race</span>
       <span class="race-name">{{ nextRace.name }}</span>
       <span class="race-count" :class="{ urgent: isUrgent }">
-        in {{ daysRemaining }} day{{ daysRemaining === 1 ? '' : 's' }}
+        {{ daysRemaining === 0 ? 'today' : daysRemaining === 1 ? 'tomorrow' : `in ${daysRemaining} days` }}
       </span>
     </div>
 
     <div v-if="followingRaces.length > 0" class="race-chain">
+      <span class="chain-label">Then</span>
       <span v-for="race in followingRaces" :key="race.id" class="chain-item">
         {{ race.name }} · {{ formatDateShort(race.date) }}
       </span>
@@ -23,7 +24,7 @@ import { NIcon } from 'naive-ui';
 import { FlagOutline } from '@vicons/ionicons5';
 import { db } from '@/db';
 import type { RaceGoal } from '@/types';
-import { differenceInSeconds, parseISO, startOfDay, addHours, format } from 'date-fns';
+import { differenceInCalendarDays, differenceInSeconds, parseISO, startOfDay, addHours, format } from 'date-fns';
 
 const raceGoals = ref<RaceGoal[]>([]);
 const currentTime = ref(new Date());
@@ -52,9 +53,9 @@ const followingRaces = computed(() => upcomingRaces.value.slice(1, 4));
 
 const daysRemaining = computed(() => {
   if (!nextRace.value) return 0;
-  const targetDate = addHours(startOfDay(parseISO(nextRace.value.date)), 12);
-  const totalSeconds = differenceInSeconds(targetDate, currentTime.value);
-  return totalSeconds <= 0 ? 0 : Math.floor(totalSeconds / (3600 * 24));
+  // Calendar days, not 24-hour blocks: a race tomorrow morning is "tomorrow",
+  // not "in 0 days".
+  return Math.max(0, differenceInCalendarDays(parseISO(nextRace.value.date), startOfDay(currentTime.value)));
 });
 
 const isUrgent = computed(() => {
@@ -65,7 +66,7 @@ const isUrgent = computed(() => {
 });
 
 const formatDateShort = (dateStr: string) => {
-  return format(parseISO(dateStr), 'dd/MM');
+  return format(parseISO(dateStr), 'd MMM');
 };
 
 onMounted(() => {
@@ -107,7 +108,8 @@ onUnmounted(() => {
 }
 .race-count.urgent { color: var(--danger-color); background: transparent; }
 
-.race-chain { display: flex; gap: 16px; color: var(--text-muted); font-size: 0.76rem; }
+.race-chain { display: flex; gap: 16px; color: var(--text-muted); font-size: 0.76rem; align-items: baseline; }
+.chain-label { font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.04em; }
 
 @media (max-width: 768px) {
   .race-bar { padding: 8px 16px; }

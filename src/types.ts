@@ -79,9 +79,12 @@ export interface ImportedActivity extends Activity {
 
 export interface CompleteWorkoutFormValues {
     notes: string;
-    totalWeightLifted: number;
+    totalWeightLifted?: number;
     stravaActivityId?: number;
     distance?: number;
+    actualDuration?: number;
+    /** How hard it felt, 1–10. */
+    rpe?: number;
 }
 
 export interface DateDataPoint {

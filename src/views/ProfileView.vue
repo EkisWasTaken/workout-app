@@ -36,37 +36,69 @@
 					</div>
 				</n-card>
 
-				<!-- Preferences -->
+				<!-- About you: applies to everyone, whatever they train -->
 				<n-card bordered class="settings-card">
-					<template #header><span class="card-title">Preferences</span></template>
+					<template #header><span class="card-title">You</span></template>
 					<n-space vertical>
-						<n-form-item label="Your name">
-							<n-input v-model:value="form.userName" placeholder="Enter your name" />
+						<n-form-item label="Name">
+							<n-input v-model:value="form.userName" placeholder="What should we call you?" />
 						</n-form-item>
 						<n-form-item label="Goal body weight (kg)">
-							<n-input v-model:value="form.goalWeight" placeholder="e.g. 75.5" />
-						</n-form-item>
-						<n-form-item label="Resting heart rate (bpm)">
-							<n-input v-model:value="form.restingHR" placeholder="e.g. 55" />
-						</n-form-item>
-						<n-form-item label="Max heart rate (bpm) — leave empty to use highest recorded">
-							<n-input v-model:value="form.maxHR" placeholder="e.g. 195" />
-						</n-form-item>
-						<n-form-item>
-							<template #label>
-								Current VDOT — leave empty to derive from your data
-								<span v-if="derivedFitness" class="derived-hint">
-									(data suggests <strong>{{ derivedFitness.vdot }}</strong> {{ derivedSourceLabel }})
-								</span>
-							</template>
-							<n-input v-model:value="form.vdotOverride" :placeholder="derivedFitness ? String(derivedFitness.vdot) : 'e.g. 44.1'" />
+							<n-input v-model:value="form.goalWeight" placeholder="optional, e.g. 75.5" />
 						</n-form-item>
 						<p class="card-hint tight">
-							Training paces come from this number, not from your goals. Training runs
-							underestimate it — log a race result below and it'll be used instead.
+							With a goal weight, the Body tab tracks whether your trend is heading toward it and
+							roughly when you'll get there.
 						</p>
-						<n-button @click="savePrefs" type="primary" :loading="saving">Save preferences</n-button>
+
+						<div class="sub-head">Heart rate</div>
+						<p class="card-hint tight">
+							Heart-rate zones, training load and "pace at heart rate" are all measured against
+							these two numbers, so it's worth getting them right.
+						</p>
+						<div class="hr-row">
+							<n-form-item label="Resting (bpm)">
+								<n-input v-model:value="form.restingHR" placeholder="e.g. 55" />
+							</n-form-item>
+							<n-form-item label="Maximum (bpm)">
+								<n-input v-model:value="form.maxHR" :placeholder="inferredMaxHR ? `${inferredMaxHR} from your recordings` : 'e.g. 190'" />
+							</n-form-item>
+						</div>
+						<p class="card-hint tight">
+							<strong>Resting:</strong> your pulse lying still just after waking.
+							<strong>Maximum:</strong> the highest you've seen in an all-out effort. Leave it empty and
+							we'll use the highest value in your recordings<template v-if="inferredMaxHR"> (currently {{ inferredMaxHR }} bpm)</template>.
+						</p>
+						<n-button @click="savePrefs" type="primary" :loading="saving">Save</n-button>
 					</n-space>
+				</n-card>
+
+				<div class="section-divider">
+					<span>Running</span>
+					<p>Goal times, training paces and races. Skip this if you don't run.</p>
+				</div>
+
+				<!-- Running fitness -->
+				<n-card bordered class="settings-card">
+					<template #header><span class="card-title">Running fitness (VDOT)</span></template>
+					<p class="card-hint">
+						VDOT is a single number for your current running fitness, worked out from race results
+						and hard runs. Every training pace on your schedule comes from it.
+						<template v-if="derivedFitness">
+							Right now your data suggests <strong>{{ derivedFitness.vdot }}</strong> {{ derivedSourceLabel }}.
+						</template>
+						<template v-else>
+							There isn't enough data to work it out yet — log a race below or import a hard run.
+						</template>
+					</p>
+					<n-form-item label="Set it yourself (optional)">
+						<n-input v-model:value="form.vdotOverride" :placeholder="derivedFitness ? `leave empty to use ${derivedFitness.vdot}` : 'e.g. 44'" />
+					</n-form-item>
+					<p class="card-hint tight">
+						Only needed if you know better than your data — say, after a race you didn't log.
+						Training runs tend to underestimate it; a logged race result is used automatically.
+					</p>
+					<n-button @click="savePrefs" :loading="saving">Save</n-button>
 				</n-card>
 
 				<!-- Distance goals -->
@@ -80,7 +112,7 @@
 
 					<div class="dg-list">
 						<div class="dg-row dg-head">
-							<span></span><span>Time</span><span>By</span><span>VDOT</span><span></span>
+							<span></span><span>Target time</span><span>By date (optional)</span><span title="The fitness this time requires">Needs</span><span></span>
 						</div>
 						<div v-for="d in distanceRows" :key="d.key" class="dg-row">
 							<span class="dg-label">{{ d.label }}</span>
@@ -196,12 +228,12 @@
 					</div>
 
 					<div class="rg-form">
-						<n-input v-model:value="newRace.name" placeholder="Event name" class="rg-name" />
-						<input v-model="newRace.date" type="date" class="date-input" />
-						<n-input v-model:value="newRace.distanceKm" placeholder="km" class="rg-km" />
-						<n-input v-model:value="newRace.time" placeholder="Goal time" class="rg-time" />
-						<n-select v-model:value="newRace.priority" :options="priorityOptions" class="rg-prio" />
-						<n-button @click="addRace" type="primary" :disabled="!newRace.name || !newRace.date">Add</n-button>
+						<label class="rg-field rg-name"><span>Race</span><n-input v-model:value="newRace.name" placeholder="e.g. Stockholm Half" /></label>
+						<label class="rg-field"><span>Date</span><input v-model="newRace.date" type="date" class="date-input" /></label>
+						<label class="rg-field rg-km"><span>Distance (km)</span><n-input v-model:value="newRace.distanceKm" placeholder="21.1" /></label>
+						<label class="rg-field rg-time"><span>Goal time</span><n-input v-model:value="newRace.time" placeholder="1:45:00" /></label>
+						<label class="rg-field rg-prio"><span title="A = the race you're peaking for; B and C are tune-ups">Priority</span><n-select v-model:value="newRace.priority" :options="priorityOptions" /></label>
+						<n-button @click="addRace" type="primary" class="rg-add" :disabled="!newRace.name || !newRace.date">Add race</n-button>
 					</div>
 
 					<div v-if="raceGoals.list.length" class="race-goals-list">
@@ -227,7 +259,7 @@
 								<n-input
 									v-if="goal.distance_km && isPast(goal)"
 									:value="resultInputs[goal.id] ?? ''"
-									size="small" placeholder="Result" class="rg-result"
+									size="small" placeholder="Your time" class="rg-result"
 									@update:value="v => resultInputs[goal.id] = v"
 									@blur="commitResult(goal)"
 									@keyup.enter="commitResult(goal)"
@@ -236,7 +268,7 @@
 							</div>
 						</div>
 					</div>
-					<div v-else class="status-text">No races yet.</div>
+					<div v-else class="status-text">No races yet. Add one above and it shows as a countdown across the app.</div>
 				</n-card>
 			</n-space>
 		</div>
@@ -253,6 +285,7 @@ import {
 	saveSettings, setDistanceGoal, clearDistanceGoal, refreshRaceGoals, hydrateSettings,
 } from '@/settings'
 import { currentVdot, derivedFitness, hydrateFitness } from '@/fitness'
+import { hrSettings, loaded as statsLoaded, loadStats } from '@/stats'
 import { auth, signOut } from '@/auth'
 import { isOwner, GENERIC_SCHEMA_MESSAGE } from '@/owner'
 import {
@@ -301,6 +334,13 @@ const num = (s: string) => {
 	return s.trim() !== '' && Number.isFinite(n) ? n : null
 }
 
+/** What max HR falls back to when the field is empty, so the placeholder is honest. */
+const inferredMaxHR = computed(() => {
+	if (!statsLoaded.value) return null
+	const { maxHR, inferred } = hrSettings.value
+	return inferred ? maxHR : null
+})
+
 const derivedSourceLabel = computed(() => {
 	const d = derivedFitness.value
 	if (!d) return ''
@@ -313,6 +353,20 @@ async function savePrefs() {
 		message.error('VDOT should be between 20 and 90')
 		return
 	}
+	const rest = num(form.restingHR)
+	const max = num(form.maxHR)
+	if (rest !== null && (rest < 30 || rest > 110)) {
+		message.error('Resting heart rate should be between 30 and 110 bpm')
+		return
+	}
+	if (max !== null && (max < 120 || max > 230)) {
+		message.error('Maximum heart rate should be between 120 and 230 bpm')
+		return
+	}
+	if (rest !== null && max !== null && max - rest < 50) {
+		message.error("Maximum heart rate should be well above resting — check those two numbers")
+		return
+	}
 	saving.value = true
 	try {
 		await saveSettings({
@@ -322,7 +376,7 @@ async function savePrefs() {
 			maxHR: num(form.maxHR),
 			vdotOverride: vdot,
 		})
-		message.success('Preferences saved')
+		message.success('Saved')
 	} catch (e) {
 		failed(e, 'Saved locally, but the database write failed')
 	} finally {
@@ -485,9 +539,9 @@ async function commitResult(goal: RaceGoal) {
 
 // ─── races ────────────────────────────────────────────────────────────────────
 const priorityOptions = [
-	{ label: 'A race', value: 'A' },
-	{ label: 'B race', value: 'B' },
-	{ label: 'C race', value: 'C' },
+	{ label: 'A — main goal', value: 'A' },
+	{ label: 'B — important', value: 'B' },
+	{ label: 'C — tune-up', value: 'C' },
 ]
 
 const newRace = reactive({ name: '', date: '', distanceKm: '', time: '', priority: 'A' as RacePriority })
@@ -513,7 +567,7 @@ async function addRace() {
 		window.dispatchEvent(new CustomEvent('race-goals-updated'))
 		message.success('Race added')
 	} catch {
-		message.error('Failed to save')
+		message.error("Couldn't save that race. Check your connection and try again.")
 	}
 }
 
@@ -524,12 +578,12 @@ async function removeRace(id: number) {
 		window.dispatchEvent(new CustomEvent('race-goals-updated'))
 		message.success('Race removed')
 	} catch {
-		message.error('Failed to delete')
+		message.error("Couldn't delete that race. Check your connection and try again.")
 	}
 }
 
 onMounted(async () => {
-	await Promise.all([hydrateSettings(), hydrateFitness()])
+	await Promise.all([hydrateSettings(), hydrateFitness(), statsLoaded.value ? null : loadStats().catch(() => {})])
 	loadForm()
 	loadDistanceInputs()
 	loadResultInputs()
@@ -578,6 +632,15 @@ onMounted(async () => {
 .settings-card :deep(.n-form-item-label) { white-space: normal; line-height: 1.4; }
 
 .card-hint.tight { margin: -4px 0 10px; }
+.sub-head { font-size: 0.8rem; font-weight: 600; color: var(--text-color); margin-top: 8px; padding-top: 14px; border-top: 1px solid var(--border-color); }
+.hr-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+@media (max-width: 480px) { .hr-row { grid-template-columns: 1fr; gap: 0; } }
+.section-divider { margin: 10px 0 -4px; }
+.section-divider span { font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-muted); }
+.section-divider p { margin: 3px 0 0; font-size: 0.8rem; color: var(--text-muted); }
+.rg-field { display: flex; flex-direction: column; gap: 4px; }
+.rg-field > span { font-size: 0.7rem; color: var(--text-muted); }
+.rg-add { align-self: flex-end; }
 .derived-hint { color: var(--text-muted); font-weight: 400; }
 .derived-hint strong { color: var(--primary-color); }
 
@@ -645,7 +708,7 @@ onMounted(async () => {
 @media (max-width: 560px) { .equiv-row { grid-template-columns: repeat(2, 1fr); } }
 
 /* Races */
-.rg-form { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 14px; }
+.rg-form { display: flex; flex-wrap: wrap; gap: 8px; align-items: flex-end; margin-bottom: 14px; }
 .rg-name { flex: 2 1 160px; }
 .rg-km { flex: 0 1 80px; }
 .rg-time { flex: 0 1 110px; }
@@ -683,7 +746,7 @@ onMounted(async () => {
 @media (max-width: 620px) {
 	.rg-form { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 	.rg-form > * { min-width: 0; }
-	.rg-name, .rg-prio, .rg-form .date-input, .rg-form > button { grid-column: 1 / -1; }
+	.rg-name, .rg-prio, .rg-form > button { grid-column: 1 / -1; }
 	.rg-form .date-input { width: 100%; }
 
 	.race-goal-item { flex-direction: column; align-items: stretch; gap: 12px; }

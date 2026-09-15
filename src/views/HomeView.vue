@@ -14,7 +14,6 @@ import {
 } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { NIcon, useMessage } from 'naive-ui'
-import Chart from 'chart.js/auto'
 import {
 	AddOutline, ChevronForwardOutline, CloudUploadOutline,
 	FlagOutline, FlameOutline, TrophyOutline, WalkOutline, WarningOutline,
@@ -29,6 +28,7 @@ const RunningTab = defineAsyncComponent(() => import('./home/RunningTab.vue'))
 const GymTab = defineAsyncComponent(() => import('./home/GymTab.vue'))
 const BikeTab = defineAsyncComponent(() => import('./home/BikeTab.vue'))
 const BodyTab = defineAsyncComponent(() => import('./home/BodyTab.vue'))
+const DonutChart = defineAsyncComponent(() => import('@/components/charts/DonutChart.vue'))
 import EmptyState from '@/components/stats/EmptyState.vue'
 import SectionHead from '@/components/stats/SectionHead.vue'
 import { db } from '@/db'
@@ -39,7 +39,6 @@ import { getSportColor, isDistanceSport, noteSteps, SPORT_LABELS, SPORT_TYPES } 
 import { importFitFile, fitUpdates } from '@/utils/fitLink'
 import { sessionPace } from '@/utils/paceAdvice'
 import { fmtTime } from '@/utils/vdot'
-import { baseOpts, css, legend, useCharts } from '@/utils/chartTheme'
 import {
 	activities, completed, dailyWeights, kmOf, loadStats, loaded, raceGoals,
 	ramp, recentActivities, sportOf, sportTabs, syncClock, today, workouts,
@@ -49,7 +48,6 @@ import type { Workout } from '@/types'
 const route = useRoute()
 const router = useRouter()
 const message = useMessage()
-const { add, destroy } = useCharts()
 
 const fmt = (n: number) => {
 	const r = Math.round(n * 10) / 10
@@ -253,7 +251,8 @@ const chipLabel = (w: Workout) => {
 	const t = sportOf(w)
 	const km = kmOf(w)
 	if (isDistanceSport(t) && km) return `${fmt(km)}k`
-	return t === 'rest' ? 'rest' : t.slice(0, 3)
+	// Full words: "oth" and "gym" in lower case read like typos.
+	return SPORT_LABELS[t]
 }
 
 const weekSessions = computed(() => {
@@ -301,7 +300,6 @@ const recentPRs = computed(() => {
 
 const heatmapWeeks = ref<any[]>([])
 const heatmapWrap = ref<HTMLElement | null>(null)
-const mixCanvas = ref<HTMLCanvasElement | null>(null)
 
 /** The calendar runs oldest → newest, so the interesting end is off-screen to
  *  the right on any viewport too narrow for 12 months. Open on the latest week. */
@@ -336,44 +334,25 @@ function buildHeatmap() {
 
 function heatColor(day: any) {
 	if (day.future) return 'transparent'
-	if (!day.value) return css('--surface-2')
+	if (!day.value) return 'var(--surface-2)'
 	const intensity = Math.min(day.value / 3, 1)
-	return `color-mix(in srgb, ${getSportColor('running')} ${Math.round((0.3 + intensity * 0.7) * 100)}%, transparent)`
+	return `color-mix(in srgb, var(--color-running-primary) ${Math.round((0.3 + intensity * 0.7) * 100)}%, transparent)`
 }
 
-function buildMix() {
-	if (!mixCanvas.value) return
-	const counts = SPORT_TYPES
+const mixSlices = computed(() =>
+	SPORT_TYPES
 		.filter(t => t !== 'rest')
-		.map(t => ({ type: t, n: completed.value.filter(w => sportOf(w) === t).length }))
-		.filter(c => c.n > 0)
-	if (!counts.length) return
-
-	add(new Chart(mixCanvas.value, {
-		type: 'doughnut',
-		data: {
-			labels: counts.map(c => SPORT_LABELS[c.type]),
-			datasets: [{
-				data: counts.map(c => c.n),
-				backgroundColor: counts.map(c => getSportColor(c.type)),
-				borderWidth: 0,
-			}],
-		},
-		options: {
-			responsive: true,
-			maintainAspectRatio: false,
-			cutout: '62%',
-			plugins: { ...baseOpts().plugins, legend: legend() },
-		} as any,
-	}))
-}
+		.map(t => ({
+			label: SPORT_LABELS[t],
+			value: completed.value.filter(w => sportOf(w) === t).length,
+			color: `var(--color-${t}-primary)`,
+		}))
+		.filter(s => s.value > 0))
 
 async function buildTodayCharts() {
-	destroy()
 	await nextTick()
 	if (tab.value !== 'today') return
 	buildHeatmap()
-	buildMix()
 }
 
 // ─── lifecycle ────────────────────────────────────────────────────────────────
@@ -414,7 +393,7 @@ watch(completed, () => { if (tab.value === 'today') buildTodayCharts() })
 					<n-icon class="flame" :component="FlameOutline" /> {{ weekStreak }}-week streak
 				</span>
 				<router-link to="/schedule" class="primary-btn">
-					<n-icon :component="AddOutline" /> Plan workout
+					<n-icon :component="AddOutline" /> Plan a session
 				</router-link>
 			</div>
 		</header>
@@ -609,20 +588,21 @@ watch(completed, () => { if (tab.value === 'today') buildTodayCharts() })
 								</div>
 							</div>
 						</div>
-						<div class="hm-legend">
-							<span>Less</span>
-							<i v-for="n in 4" :key="n" :style="{ opacity: 0.25 + n * 0.18 }"></i>
-							<span>More</span>
-						</div>
+					</div>
+					<div class="hm-legend">
+						<span>Fewer sessions</span>
+						<i v-for="n in 4" :key="n" :style="{ opacity: 0.25 + n * 0.18 }"></i>
+						<span>More</span>
 					</div>
 				</section>
 
-				<SectionHead title="Training mix" note="all completed sessions" />
+				<SectionHead title="Training mix" note="all completed sessions, and your latest" />
 				<section class="mix-row">
 					<div class="panel stat-card mix-card">
-						<div class="stat-chart mix-chart"><canvas ref="mixCanvas"></canvas></div>
+						<DonutChart :slices="mixSlices" unit="sessions" />
 					</div>
 					<div class="panel recent-panel">
+						<h3 class="recent-head">Recent sessions</h3>
 						<router-link
 							v-for="w in recentActivities"
 							:key="w.id"
@@ -856,8 +836,8 @@ watch(completed, () => { if (tab.value === 'today') buildTodayCharts() })
 /* Mix + recent */
 .mix-row { display: grid; grid-template-columns: minmax(240px, 1fr) minmax(260px, 1.3fr); gap: 12px; }
 @media (max-width: 768px) { .mix-row { grid-template-columns: 1fr; } }
-.mix-chart { height: 190px; }
 .recent-panel { padding: 6px 4px; }
+.recent-head { margin: 8px 12px 4px; font-size: 0.72rem; font-weight: 600; font-family: var(--font-family); text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-muted); }
 .recent-row {
 	display: flex; align-items: center; gap: 10px;
 	padding: 9px 12px; border-radius: var(--radius-sm); text-decoration: none;
