@@ -23,6 +23,7 @@ import SectionHead from '@/components/stats/SectionHead.vue'
 import TimeSeriesChart, { type ChartSeries, type GoalLine } from '@/components/charts/TimeSeriesChart.vue'
 import WeeklyBarsChart from '@/components/charts/WeeklyBarsChart.vue'
 import StackedShareChart from '@/components/charts/StackedShareChart.vue'
+import RouteHeatmap from '@/components/RouteHeatmap.vue'
 import { WalkOutline, TrophyOutline, WarningOutline, TrendingUpOutline, PulseOutline } from '@vicons/ionicons5'
 import { PULSE_ZONES, timeInZones } from '@/utils/analysis'
 import { bests, hrSettings, load, ramp, running, runKmByWeek, runSessions, activities, today } from '@/stats'
@@ -39,6 +40,10 @@ import {
 // Colours are CSS variables, not resolved values: the SVG reads them live, so
 // the charts follow the theme without being rebuilt.
 const RUN = 'var(--color-running-primary)'
+
+/** Runs with GPS behind them — the only ones the heatmap can draw. */
+const mappedRuns = computed(() =>
+	activities.value.filter(a => actSport(a).includes('run') && (a?.map?.polyline || a?.map?.summary_polyline)))
 const showRaceDetail = ref(false)
 
 // ─── rolling bests ────────────────────────────────────────────────────────────
@@ -353,6 +358,17 @@ const vdotGoals = computed<GoalLine[]>(() =>
 						Most weeks should be dominated by the easy zones. If Z3 is your biggest band week
 						after week, you're training in the middle ground that's too hard to recover from
 						and too easy to drive adaptation.
+					</p>
+				</section>
+			</template>
+
+			<template v-if="mappedRuns.length">
+				<SectionHead title="Where you run" note="every recorded route, stacked" />
+				<section>
+					<RouteHeatmap :activities="mappedRuns" color="var(--color-running-primary)" />
+					<p class="stat-note">
+						Each route is drawn faintly, so the roads you repeat come out brightest. Only runs
+						imported from a watch carry GPS — hand-logged sessions aren't here.
 					</p>
 				</section>
 			</template>

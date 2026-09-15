@@ -30,6 +30,7 @@ const BikeTab = defineAsyncComponent(() => import('./home/BikeTab.vue'))
 const BodyTab = defineAsyncComponent(() => import('./home/BodyTab.vue'))
 const DonutChart = defineAsyncComponent(() => import('@/components/charts/DonutChart.vue'))
 import EmptyState from '@/components/stats/EmptyState.vue'
+import RacePlanCard from '@/components/RacePlanCard.vue'
 import SectionHead from '@/components/stats/SectionHead.vue'
 import { db } from '@/db'
 import { auth } from '@/auth'
@@ -40,9 +41,10 @@ import { importFitFile, fitUpdates } from '@/utils/fitLink'
 import { sessionPace } from '@/utils/paceAdvice'
 import { fmtTime } from '@/utils/vdot'
 import {
-	activities, completed, dailyWeights, kmOf, loadStats, loaded, raceGoals,
-	ramp, recentActivities, sportOf, sportTabs, syncClock, today, workouts,
+	activities, completed, dailyWeights, effortPoints, kmOf, loadStats, loaded,
+	raceGoals, ramp, recentActivities, sportOf, sportTabs, syncClock, today, workouts,
 } from '@/stats'
+import { weekReview } from '@/utils/weekReview'
 import type { Workout } from '@/types'
 
 const route = useRoute()
@@ -260,6 +262,36 @@ const weekSessions = computed(() => {
 		isWithinInterval(parseISO(w.date), { start: weekStart.value, end: weekEnd.value }) && sportOf(w) !== 'rest')
 	const done = planned.filter(w => w.isCompleted === 1)
 	return { planned: planned.length, done: done.length }
+})
+
+/**
+ * Adherence and effort for the week so far. The effort half only appears once
+ * there are enough recorded weeks behind it to know what "usual" looks like.
+ */
+const review = computed(() => weekReview({
+	today: today.value,
+	efforts: effortPoints.value,
+	week: workouts.value
+		.filter(w => isWithinInterval(parseISO(w.date), { start: weekStart.value, end: weekEnd.value }))
+		.map(w => ({
+			date: w.date,
+			name: w.name,
+			km: w.distance ?? 0,
+			done: w.isCompleted === 1,
+			actualKm: kmOf(w),
+			isRest: sportOf(w) === 'rest',
+		})),
+}))
+
+/** Where this week's effort sits inside the usual band, as a 0–100 position. */
+const effortBarPct = computed(() => {
+	const r = review.value
+	if (!r.effortRange) return null
+	const [lo, hi] = r.effortRange
+	// The band occupies the middle half of the track, so "below" and "above"
+	// both have somewhere to show.
+	const span = hi - lo || 1
+	return Math.max(0, Math.min(100, 25 + ((r.effort - lo) / span) * 50))
 })
 
 // ─── race hero ────────────────────────────────────────────────────────────────
@@ -524,6 +556,13 @@ watch(completed, () => { if (tab.value === 'today') buildTodayCharts() })
 				</div>
 			</section>
 
+			<RacePlanCard
+				v-if="nextRace && nextRace.distance_km && nextRaceDays !== null"
+				:race="nextRace"
+				:current-vdot="currentVdot"
+				:days-out="nextRaceDays"
+			/>
+
 			<div v-if="recentPRs.length" class="pr-banner">
 				<span class="pr-banner-ico"><n-icon :component="TrophyOutline" /></span>
 				<span v-for="p in recentPRs" :key="p" class="pr-banner-chip">{{ p }}</span>
@@ -540,6 +579,29 @@ watch(completed, () => { if (tab.value === 'today') buildTodayCharts() })
 					<span class="week-count">{{ weekSessions.done }} of {{ weekSessions.planned }} done</span>
 					<router-link to="/schedule" class="text-link">Open schedule →</router-link>
 				</div>
+				<div class="week-review">
+					<div class="wr-stat">
+						<span class="wr-val mono">{{ review.completed.km }}<span class="wr-unit"> / {{ review.planned.km }} km</span></span>
+						<span class="wr-lbl">Distance</span>
+					</div>
+					<div class="wr-stat">
+						<span class="wr-val mono">{{ review.adherencePct ?? '—' }}<span v-if="review.adherencePct !== null" class="wr-unit">%</span></span>
+						<span class="wr-lbl">Sessions done so far</span>
+					</div>
+					<div class="wr-stat wr-effort">
+						<span class="wr-val mono">
+							{{ review.effort || '—' }}
+							<span v-if="review.effortRange" class="wr-unit">usual {{ review.effortRange[0] }}–{{ review.effortRange[1] }}</span>
+						</span>
+						<span class="wr-lbl">Effort this week</span>
+						<div v-if="effortBarPct !== null" class="wr-bar" :title="review.message">
+							<div class="wr-band"></div>
+							<div class="wr-marker" :class="review.effortVerdict" :style="{ left: effortBarPct + '%' }"></div>
+						</div>
+					</div>
+				</div>
+				<p class="wr-message">{{ review.message }}</p>
+
 				<div class="week-strip">
 					<router-link
 						v-for="day in weekDays"
@@ -795,6 +857,69 @@ watch(completed, () => { if (tab.value === 'today') buildTodayCharts() })
 
 /* This week */
 .week-panel { padding: 15px 17px; margin-bottom: 4px; }
+
+/* Weekly review: the plan on the left, the body on the right. */
+.week-review {
+	display: grid;
+	grid-template-columns: auto auto 1fr;
+	gap: 18px;
+	align-items: start;
+	padding-bottom: 13px;
+	margin-bottom: 13px;
+	border-bottom: 1px solid var(--border-subtle);
+}
+.wr-stat { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.wr-val { font-size: 1.05rem; font-weight: 700; line-height: 1.2; white-space: nowrap; }
+.wr-unit { font-size: 0.72rem; font-weight: 500; color: var(--text-muted); }
+.wr-lbl {
+	font-size: 0.66rem;
+	text-transform: uppercase;
+	letter-spacing: 0.05em;
+	color: var(--text-muted);
+}
+.wr-effort { min-width: 130px; }
+/* A track with the usual range marked out, and where this week sits on it. */
+.wr-bar {
+	position: relative;
+	height: 5px;
+	margin-top: 7px;
+	border-radius: 999px;
+	background: var(--surface-2);
+}
+.wr-band {
+	position: absolute;
+	left: 25%;
+	width: 50%;
+	top: 0;
+	bottom: 0;
+	border-radius: 999px;
+	background: var(--border-strong);
+}
+.wr-marker {
+	position: absolute;
+	top: 50%;
+	width: 9px;
+	height: 9px;
+	margin-left: -4.5px;
+	border-radius: 50%;
+	transform: translateY(-50%);
+	background: var(--primary-color);
+	box-shadow: 0 0 0 2px var(--surface-color);
+}
+.wr-marker.above { background: var(--warning-color); }
+.wr-marker.below { background: var(--text-muted); }
+.wr-marker.in-range { background: var(--success-color); }
+.wr-message {
+	margin: 0 0 13px;
+	font-size: 0.78rem;
+	line-height: 1.5;
+	color: var(--text-muted);
+}
+
+@media (max-width: 560px) {
+	.week-review { grid-template-columns: 1fr 1fr; gap: 12px; }
+	.wr-effort { grid-column: 1 / -1; }
+}
 .panel-head { display: flex; align-items: baseline; gap: 12px; margin-bottom: 12px; }
 .panel-head h2 { font-size: 1rem; font-weight: 600; font-family: var(--font-family); margin: 0; }
 .week-count { font-size: 0.76rem; color: var(--text-muted); }

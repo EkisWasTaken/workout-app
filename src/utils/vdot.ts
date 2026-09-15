@@ -181,10 +181,16 @@ export function matchZone(zoneLabel: string): ZoneKey | null {
 	return null
 }
 
-/** "4:48" from 288 seconds. */
+/**
+ * "4:48" from 288 seconds.
+ *
+ * Rounds to whole seconds *before* splitting: rounding the remainder instead
+ * turns 299.6 s into "4:60".
+ */
 export function fmtPace(secPerKm: number): string {
-	const m = Math.floor(secPerKm / 60)
-	const s = Math.round(secPerKm % 60)
+	const total = Math.round(secPerKm)
+	const m = Math.floor(total / 60)
+	const s = total % 60
 	return `${m}:${s.toString().padStart(2, '0')}`
 }
 
@@ -228,11 +234,12 @@ export function parseTime(str: string): number | null {
 	return secs > 0 ? secs : null
 }
 
-/** Seconds to "1:42:00" / "44:30". */
+/** Seconds to "1:42:00" / "44:30". Rounds before splitting, so ":60" can't appear. */
 export function fmtTime(secs: number): string {
-	const h = Math.floor(secs / 3600)
-	const m = Math.floor((secs % 3600) / 60)
-	const s = Math.round(secs % 60)
+	const total = Math.round(secs)
+	const h = Math.floor(total / 3600)
+	const m = Math.floor((total % 3600) / 60)
+	const s = total % 60
 	return h > 0
 		? `${h}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`
 		: `${m}:${s.toString().padStart(2, '0')}`

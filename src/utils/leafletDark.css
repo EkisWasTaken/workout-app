@@ -1,0 +1,40 @@
+/* Leaflet's own chrome, dressed for a dark app.
+ *
+ * Global rather than scoped: every element here is created by Leaflet at
+ * runtime, outside any component's scoped-style tree. Everything is keyed off
+ * `.leaflet-dark`, which `createDarkMap` puts on the container.
+ */
+
+/* @unovis/ts injects global Leaflet overrides for its own map component the
+   moment any chart is imported, and one of them drops .leaflet-overlay-pane to
+   z-index 1 — which puts routes *under* the tiles. This restores Leaflet's own
+   pane order for our maps without fighting over the globals. */
+.leaflet-dark .leaflet-tile-pane { z-index: 200; }
+.leaflet-dark .leaflet-overlay-pane { z-index: 400; }
+.leaflet-dark .leaflet-shadow-pane { z-index: 500; }
+.leaflet-dark .leaflet-marker-pane { z-index: 600; }
+.leaflet-dark .leaflet-tooltip-pane { z-index: 650; }
+.leaflet-dark .leaflet-popup-pane { z-index: 700; }
+
+/* OSM ships one light basemap. Inverting and rotating the hue back gives a
+   muted dark map that keeps water blue and parks green, and it is applied to
+   the tile pane alone so routes on the overlay pane keep their true colour. */
+.leaflet-dark .leaflet-tile-pane {
+	filter: invert(1) hue-rotate(180deg) brightness(0.86) contrast(0.92) saturate(0.55);
+}
+
+.leaflet-dark .leaflet-control-attribution {
+	background: rgba(11, 13, 17, 0.7);
+	color: var(--text-muted);
+	font-size: 0.62rem;
+	padding: 1px 6px;
+}
+.leaflet-dark .leaflet-control-attribution a { color: var(--text-secondary); }
+
+.leaflet-dark .leaflet-bar { border: 1px solid var(--border-color); }
+.leaflet-dark .leaflet-bar a {
+	background: var(--surface-elevated);
+	color: var(--text-secondary);
+	border-bottom-color: var(--border-color);
+}
+.leaflet-dark .leaflet-bar a:hover { background: var(--surface-hover); color: var(--text-color); }

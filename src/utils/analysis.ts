@@ -296,10 +296,13 @@ export function estimateBikePower(activity: any, riderKg: number): number | null
 }
 
 export function fmtSecs(secs: number): string {
-	const h = Math.floor(secs / 3600)
-	const m = Math.floor((secs % 3600) / 60)
-	const s = Math.round(secs % 60)
+	// Round to whole seconds first; rounding the remainder alone yields ":60".
+	const total = Math.round(secs)
+	const h = Math.floor(total / 3600)
+	const m = Math.floor((total % 3600) / 60)
+	const s = total % 60
 	return h > 0
 		? `${h}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`
 		: `${m}:${s.toString().padStart(2, '0')}`
 }
+

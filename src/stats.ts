@@ -19,7 +19,7 @@ import { setActivities, setWorkouts } from './fitness'
 import { parseISO } from 'date-fns'
 import { buildActivityIndex, effectiveDistanceKm, effectiveWorkoutType, resolveActivity } from './utils/workoutSport'
 import { activitySport } from './utils/activityStats'
-import { observedMaxHR } from './utils/analysis'
+import { observedMaxHR, relativeEffort } from './utils/analysis'
 import { isDistanceSport, type SportType } from './utils/workouts'
 import {
 	actDate, bestEffortProgress, bikeProgress, bodyProgress, gymProgress,
@@ -184,6 +184,22 @@ export const load = computed(() =>
 export const bests = computed(() => bestEffortProgress(activities.value, 90, today.value))
 
 export const ramp = computed(() => volumeRamp(runSessions.value, today.value))
+
+/**
+ * Every session's heart-rate load, for the weekly effort comparison.
+ *
+ * Sessions recorded without heart rate contribute nothing rather than a zero —
+ * a missing reading is not an easy week, and averaging it in as one would drag
+ * the whole baseline down.
+ */
+export const effortPoints = computed(() => {
+	const { maxHR, restHR } = hrSettings.value
+	if (!maxHR) return []
+	return activities.value.flatMap(a => {
+		const effort = relativeEffort(a, maxHR, restHR)
+		return effort === null ? [] : [{ date: actDate(a), effort }]
+	})
+})
 
 // ─── which tabs to show ───────────────────────────────────────────────────────
 

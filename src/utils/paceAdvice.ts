@@ -23,12 +23,31 @@ import {
 	paceTable, matchZone, racePaceSecPerKm, fmtPace, fmtPaceRange, type ZoneKey,
 } from './vdot'
 
-/** Split a target-pace string ("Threshold 4:45–4:55/km") into a zone and a value. */
-export function paceParts(workout: Workout): { zone: string; value: string } | null {
+export interface PaceParts {
+	zone: string
+	/** The number written on the session, or null when only a zone was given. */
+	value: string | null
+}
+
+/**
+ * Split a target-pace string into a zone and a value.
+ *
+ * Three shapes, in descending order of preference:
+ *
+ *   "Threshold"               a bare zone. The best form, and what generated
+ *                             plans write: nothing to go stale, the pace is
+ *                             derived from today's fitness every time.
+ *   "Threshold 4:45–4:55/km"  zone plus a number. The zone still drives the
+ *                             derived pace; the number is only a fallback.
+ *   "6:00-6:20 w/ strides"    a whole prescription in the field. Nothing can be
+ *                             derived from it, so it is shown verbatim.
+ */
+export function paceParts(workout: Workout): PaceParts | null {
 	const raw = (workout.targetPace || '').trim()
 	if (!raw) return null
 	const m = raw.match(/^(.+?)\s+([\d:]+(?:[–-][\d:]+)?)\s*\/?\s*km$/)
 	if (m) return { zone: m[1].trim(), value: m[2] }
+	if (!/\d/.test(raw)) return { zone: raw, value: null }
 	return { zone: 'Target', value: raw }
 }
 
@@ -75,12 +94,15 @@ export function sessionPace(workout: Workout, sources: PaceSources): SessionPace
 	const parts = paceParts(workout)
 	if (!parts) return null
 
-	const planned = (): SessionPace => ({
+	// Falling back to what was written only works if something was written. A
+	// bare label we can't place — "Fartlek" — has no pace at all, and inventing
+	// one would be worse than showing none.
+	const planned = (): SessionPace | null => parts.value === null ? null : {
 		zone: parts.zone === 'Target' ? 'Planned' : parts.zone,
 		value: parts.value,
 		basis: 'planned',
 		explain: 'Written on the session. No zone recognised, so nothing is derived.',
-	})
+	}
 
 	const key = matchZone(parts.zone)
 	if (!key) return planned()

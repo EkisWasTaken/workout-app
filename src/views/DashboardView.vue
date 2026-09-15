@@ -21,6 +21,10 @@
             title="Import .fit, .gpx or .tcx files exported from a watch or Strava">
             <n-icon :component="WatchOutline" /> Import watch files
           </button>
+          <button @click="showBuildPlan = true" class="action-button"
+            title="Generate a phased training plan from now to a race on your calendar">
+            <n-icon :component="TrendingUpOutline" /> Build plan
+          </button>
           <button @click="handleImportSys" class="action-button"
             title="Add or update many planned sessions at once from a spreadsheet">
             <n-icon :component="CloudUploadOutline" /> Import plan (CSV)
@@ -470,6 +474,15 @@
       </CustomModal>
 
       <!-- Activity file import (FIT/GPX/TCX) -->
+      <BuildPlanModal
+        v-model:show="showBuildPlan"
+        :races="raceGoals"
+        :existing="workouts"
+        :recent-weekly-km="recentWeeklyKm"
+        :gym-days="usualGymDays"
+        @created="loadWorkouts"
+      />
+
       <ImportActivitiesModal v-model:show="showActivityImport" @imported="onActivitiesImported" />
 
       <!-- Import Editor Modal -->
@@ -494,6 +507,7 @@ import {
   AddOutline, BodyOutline, CloudUploadOutline, CopyOutline, ChevronBackOutline, ChevronForwardOutline,
   FlagOutline, CheckmarkCircle, TrashOutline, CreateOutline, CheckmarkOutline, MapOutline,
   WatchOutline, WalkOutline, BarbellOutline, BicycleOutline, BedOutline, FitnessOutline,
+  TrendingUpOutline,
 } from '@vicons/ionicons5';
 import { db } from '@/db';
 import { isOwner } from '@/owner';
@@ -511,6 +525,7 @@ import {
   subMonths,
   addWeeks,
   subWeeks,
+  getDay,
   parseISO
 } from 'date-fns';
 import { enUS } from 'date-fns/locale';
@@ -520,6 +535,7 @@ import { templatesFromWorkoutRows } from '@/utils/templateDerive';
 import CustomModal from '../components/CustomModal.vue';
 import ImportEditor from '../components/ImportEditor.vue';
 import ImportActivitiesModal from '../components/ImportActivitiesModal.vue';
+import BuildPlanModal from '../components/BuildPlanModal.vue';
 import { activityApi } from '../activities';
 import { parseActivityFile } from '@/import/parseActivityFile';
 import { targetForDate, hydrateSettings } from '@/settings';
@@ -594,6 +610,38 @@ async function onDrop(event: DragEvent, date: Date) {
 
 // == IMPORT LOGIC START ==
 const showImportEditor = ref(false);
+const showBuildPlan = ref(false);
+
+/**
+ * Average weekly running distance over the last eight weeks, ignoring weeks
+ * with nothing in them — a fortnight off shouldn't tell the plan builder the
+ * athlete only runs 10 km a week.
+ */
+const recentWeeklyKm = computed(() => {
+  const since = format(subWeeks(new Date(), 8), 'yyyy-MM-dd');
+  const byWeek = new Map<string, number>();
+  for (const w of workouts.value) {
+    if (w.isCompleted !== 1 || w.date < since || !w.distance) continue;
+    if (getWorkoutType(w) !== 'running') continue;
+    const key = format(startOfWeek(parseISO(w.date), { weekStartsOn: 1 }), 'yyyy-MM-dd');
+    byWeek.set(key, (byWeek.get(key) || 0) + w.distance);
+  }
+  const weeks = [...byWeek.values()].filter(km => km > 0);
+  return weeks.length ? weeks.reduce((a, b) => a + b, 0) / weeks.length : 0;
+});
+
+/** Weekdays with a gym session on them more often than not, over the last eight weeks. */
+const usualGymDays = computed(() => {
+  const since = format(subWeeks(new Date(), 8), 'yyyy-MM-dd');
+  const counts = new Array(7).fill(0);
+  for (const w of workouts.value) {
+    if (w.date < since || getWorkoutType(w) !== 'gym') continue;
+    counts[getDay(parseISO(w.date))]++;
+  }
+  const busiest = Math.max(...counts);
+  if (busiest < 2) return [];
+  return counts.flatMap((n, day) => (n >= busiest * 0.6 ? [day] : []));
+});
 const showActivityImport = ref(false);
 const importRawContent = ref('');
 

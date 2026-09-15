@@ -25,6 +25,11 @@ describe('paceParts', () => {
 	it('is null with no pace', () => {
 		expect(paceParts(w())).toBeNull()
 	})
+	it('reads a bare zone label as a zone with no written number', () => {
+		expect(paceParts(w('Threshold'))).toEqual({ zone: 'Threshold', value: null })
+		expect(paceParts(w('Race pace'))).toEqual({ zone: 'Race pace', value: null })
+		expect(paceParts(w('VO₂ max'))).toEqual({ zone: 'VO₂ max', value: null })
+	})
 })
 
 describe('isRacePaceZone', () => {
@@ -43,6 +48,25 @@ describe('sessionPace — which VDOT drives which zone', () => {
 		expect(p.zone).toBe('Easy')
 		expect(p.value).toBe('5:29–6:08')            // VDOT 44.9, not the sub-20 goal's 49.9
 		expect(p.explain).toMatch(/current fitness/)
+	})
+
+	/** What a generated plan writes: a zone and nothing else. */
+	it('derives a pace from a bare zone label, with no number written down', () => {
+		const p = sessionPace(w('Threshold'), SOURCES)!
+		expect(p.basis).toBe('fitness')
+		expect(p.zone).toBe('Threshold')
+		// Identical to the same session with a stale number written beside it.
+		expect(p.value).toBe(sessionPace(w('Threshold 4:45–4:55/km'), SOURCES)!.value)
+	})
+
+	it('sends a bare race-pace label to the goal, like any other race-pace session', () => {
+		const p = sessionPace(w('Race pace', '2026-09-01'), SOURCES)!
+		expect(p.basis).toBe('goal')
+		expect(p.zone).toBe('Lidingöloppet pace')
+	})
+
+	it('shows no pace for a bare label it cannot place', () => {
+		expect(sessionPace(w('Fartlek'), SOURCES)).toBeNull()
 	})
 
 	it('derives threshold and VO₂ from current fitness too', () => {

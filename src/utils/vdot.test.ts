@@ -13,6 +13,7 @@ import {
 	parsePaceValue,
 	parseTime,
 	fmtTime,
+	fmtPace,
 } from './vdot'
 
 /** The athlete's known benchmark: half marathon in 1:42:00. */
@@ -226,5 +227,15 @@ describe('parseTime / fmtTime', () => {
 	it('round-trips through fmtTime', () => {
 		expect(fmtTime(parseTime('1:42:00')!)).toBe('1:42:00')
 		expect(fmtTime(parseTime('44:30')!)).toBe('44:30')
+	})
+})
+
+describe('second-boundary rounding', () => {
+	it('never renders a :60', () => {
+		// 299.6 s/km is 5:00, not 4:60 — rounding the remainder alone got this wrong.
+		expect(fmtPace(299.6)).toBe('5:00')
+		expect(fmtPace(299.4)).toBe('4:59')
+		expect(fmtTime(3599.7)).toBe('1:00:00')
+		expect(fmtTime(59.6)).toBe('1:00')
 	})
 })
