@@ -7,6 +7,7 @@ import '../styles/app.css'
 import '../styles/stats.css'
 import '../components/charts/charts.css'
 import { naiveTheme, themeOverrides } from '../theme'
+import { encode } from '@mapbox/polyline'
 import { db } from '../db'
 import { auth } from '../auth'
 import router from '../router'
@@ -18,6 +19,23 @@ let seed = 11
 const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647)
 const day = (n: number) => format(addDays(now, -n), 'yyyy-MM-dd')
 const rest = 52
+
+/** A plausible out-and-back through Djurgarden, Stockholm, scaled to distance. */
+function loop(km: number, seedN: number): [number, number][] {
+	const lat0 = 59.3255, lng0 = 18.1035
+	const r = km / 400
+	const n = 160
+	const out: [number, number][] = []
+	for (let i = 0; i < n; i++) {
+		const t = (i / (n - 1)) * Math.PI * 2
+		const wob = 0.18 * Math.sin(t * 5 + seedN)
+		out.push([
+			lat0 + r * 0.55 * Math.sin(t) * (1 + wob),
+			lng0 + r * Math.sin(t * 2) * (1 + wob * 0.5),
+		])
+	}
+	return out
+}
 
 const acts: any[] = []
 const ws: any[] = []
@@ -40,11 +58,13 @@ for (let d = 120; d >= -10; d--) {
 			total_elevation_gain: 60,
 			best_efforts: [{ name: '5 km', distance: 5000, elapsed_time: Math.round(5000 / (speed * 1.18)) }],
 			splits_metric: Array.from({ length: Math.floor(km) }, (_, i) => ({ split: i + 1, distance: 1000, moving_time: 300, elapsed_time: 300, average_speed: speed * (0.95 + rnd() * 0.1), elevation_difference: Math.round((rnd() - 0.5) * 20), average_heartrate: hr + Math.round((rnd() - 0.5) * 8), pace_zone: 0 })),
+			map: { polyline: encode(loop(km, d)) },
 			streams: {
 				time,
 				heartrate: time.map((_, i) => Math.round(hr - 20 * Math.exp(-i / 40) + 6 * Math.sin(i / 30) + (rnd() - 0.5) * 4)),
 				velocity: time.map((_, i) => speed * (1 + 0.08 * Math.sin(i / 25)) + (rnd() - 0.5) * 0.6),
 				cadence: time.map(() => 170 + Math.round((rnd() - 0.5) * 8)),
+				altitude: time.map((_, i) => 12 + 28 * Math.sin((i / n) * Math.PI * 3) + 6 * Math.sin(i / 11)),
 			},
 		}
 		acts.push(a)

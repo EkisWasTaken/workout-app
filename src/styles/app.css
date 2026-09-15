@@ -12,7 +12,7 @@
  * Every text colour here clears WCAG AA on --surface-color.
  */
 
-@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap');
 
 :root {
   /* Surfaces — neutral charcoal, a touch cool */
@@ -56,21 +56,31 @@
   --danger-color: #f87171;
   --danger-soft: rgba(248, 113, 113, 0.12);
 
-  /* Sports */
+  /* Sports. Each hue also gets a --*-soft tint for badges and chip fills, so a
+     sport reads the same whether it's a chart series or a label. */
   --color-running-primary: #38bdf8;
   --color-running-primary-rgb: 56, 189, 248;
+  --color-running-soft: rgba(56, 189, 248, 0.14);
   --color-gym-primary: #f472b6;
   --color-gym-primary-rgb: 244, 114, 182;
+  --color-gym-soft: rgba(244, 114, 182, 0.14);
   --color-bike-primary: #fb923c;
   --color-bike-primary-rgb: 251, 146, 60;
+  --color-bike-soft: rgba(251, 146, 60, 0.14);
   --color-rest-primary: #64748b;
   --color-rest-primary-rgb: 100, 116, 139;
+  --color-rest-soft: rgba(100, 116, 139, 0.16);
   --color-other-primary: #94a3b8;
   --color-other-primary-rgb: 148, 163, 184;
+  --color-other-soft: rgba(148, 163, 184, 0.14);
+
+  /* Personal records — gold, deliberately distinct from the amber warning hue. */
+  --pr-gold: #f0b429;
 
   /* Sensor streams */
   --color-heartrate: #fb7185;
   --color-cadence: #c4b5fd;
+  --color-elevation: #8ba1c0;
 
   /* Shape */
   --radius-sm: 8px;
@@ -189,6 +199,11 @@ a { color: var(--primary-color); text-decoration: none; }
   font-weight: 600;
   letter-spacing: -0.025em;
   line-height: 1.15;
+}
+
+/* One step down on phones, so a long title can't wrap the header. */
+@media (max-width: 768px) {
+  .page-title { font-size: 1.35rem; }
 }
 
 /* Reusable card surface */

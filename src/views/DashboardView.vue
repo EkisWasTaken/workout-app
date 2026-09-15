@@ -3,7 +3,7 @@
     <div class="dashboard-view">
       <div class="page-head">
         <div>
-          <h1>Schedule</h1>
+          <h1 class="page-title">Schedule</h1>
           <p class="sub">Click a day to add a session, click a session to log it, drag to move it. Run paces update as your fitness changes.</p>
         </div>
         <div class="actions-bar">
@@ -1477,7 +1477,6 @@ onActivated(loadAll);
 @media (max-width: 768px) { .dashboard-view { padding: 16px 16px 32px; } }
 
 .page-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; flex-wrap: wrap; margin-bottom: 22px; }
-.page-head h1 { font-size: 1.5rem; font-weight: 700; }
 .sub { margin: 4px 0 0; color: var(--text-secondary); font-size: 0.9rem; }
 
 .actions-bar { display: flex; gap: 10px; flex-wrap: wrap; }
@@ -1755,7 +1754,7 @@ textarea { min-height: 70px; resize: vertical; }
 }
 .sp-item { font-size: 0.9rem; color: var(--text-color); }
 .sp-num { font-family: var(--font-mono); font-weight: 700; font-size: 1.05rem; }
-.sp-note { margin-left: auto; font-size: 0.72rem; color: #fc5100; font-weight: 600; }
+.sp-note { margin-left: auto; font-size: 0.72rem; color: var(--text-muted); font-weight: 600; }
 
 .fit-import-row { display: flex; align-items: center; gap: 10px; margin-top: -4px; }
 .fit-import-hint { font-size: 0.74rem; color: var(--text-muted); }

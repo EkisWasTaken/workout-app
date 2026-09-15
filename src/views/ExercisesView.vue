@@ -73,7 +73,7 @@ onMounted(async () => {
 @media (max-width: 768px) { .exercises-view { padding: 16px 16px 32px; } }
 
 .ex-head { display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; flex-wrap: wrap; margin-bottom: 18px; }
-.page-title { font-size: 1.5rem; font-weight: 400; margin: 0; }
+.page-title { margin: 0; }
 .hint { font-size: 0.82rem; color: var(--text-muted); margin: 6px 0 0; line-height: 1.5; max-width: 560px; }
 .ex-search { width: 240px; }
 @media (max-width: 600px) { .ex-search { width: 100%; } }

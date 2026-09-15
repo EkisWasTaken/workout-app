@@ -24,48 +24,8 @@
 					<span class="detail-date">{{ formatDate(workout.date) }}</span>
 				</div>
 
-				<!-- Route art -->
-				<div v-if="routeData" class="route-art-wrap">
-					<svg :viewBox="`0 0 ${routeData.vw} ${routeData.vh}`"
-						xmlns="http://www.w3.org/2000/svg"
-						class="route-svg"
-						preserveAspectRatio="xMidYMid meet">
-						<defs>
-							<filter id="lineGlow" x="-40%" y="-40%" width="180%" height="180%">
-								<feGaussianBlur in="SourceGraphic" stdDeviation="5" result="blur1"/>
-								<feGaussianBlur in="SourceGraphic" stdDeviation="2" result="blur2"/>
-								<feMerge>
-									<feMergeNode in="blur1"/>
-									<feMergeNode in="blur2"/>
-									<feMergeNode in="SourceGraphic"/>
-								</feMerge>
-							</filter>
-						</defs>
-						<!-- Wide soft halo -->
-						<polyline :points="routeData.points" fill="none"
-							:stroke="sportCol" stroke-width="14" stroke-opacity="0.1"
-							stroke-linecap="round" stroke-linejoin="round"/>
-						<!-- Medium glow -->
-						<polyline :points="routeData.points" fill="none"
-							:stroke="sportCol" stroke-width="6" stroke-opacity="0.2"
-							stroke-linecap="round" stroke-linejoin="round"/>
-						<!-- Sharp line -->
-						<polyline :points="routeData.points" fill="none"
-							:stroke="sportCol" stroke-width="2"
-							stroke-linecap="round" stroke-linejoin="round"
-							filter="url(#lineGlow)"/>
-						<!-- Start marker -->
-						<circle :cx="routeData.start.x" :cy="routeData.start.y" r="7" :fill="sportCol" opacity="0.9"/>
-						<circle :cx="routeData.start.x" :cy="routeData.start.y" r="13" fill="none" :stroke="sportCol" stroke-width="1.5" opacity="0.35"/>
-						<!-- End marker -->
-						<circle :cx="routeData.end.x" :cy="routeData.end.y" r="7" fill="var(--text-secondary)" opacity="0.7"/>
-						<circle :cx="routeData.end.x" :cy="routeData.end.y" r="13" fill="none" stroke="var(--text-secondary)" stroke-width="1.5" opacity="0.25"/>
-					</svg>
-					<div class="route-legend">
-						<span class="legend-dot" :style="{ background: sportCol }"></span> Start
-						<span class="legend-dot" style="background: var(--text-secondary); margin-left: 12px"></span> Finish
-					</div>
-				</div>
+				<!-- Route -->
+				<RouteMap v-if="routePolyline" :polyline="routePolyline" :color="sportCol" />
 
 				<!-- Key stats -->
 				<div v-if="stravaActivity" class="stats-row">
@@ -236,12 +196,12 @@ import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { NIcon, NSpin } from 'naive-ui'
 import { ArrowBackOutline } from '@vicons/ionicons5'
-import { decode } from '@mapbox/polyline'
 import { format, parseISO } from 'date-fns'
 import { db } from '@/db'
 import { activityApi } from '@/activities'
-import { getSportColor, SPORT_LABELS } from '@/utils/workouts'
+import { cssColor, getSportColor, SPORT_LABELS } from '@/utils/workouts'
 import { buildActivityIndex, effectiveWorkoutType, resolveActivity } from '@/utils/workoutSport'
+import RouteMap from '@/components/RouteMap.vue'
 import StreamTracks, { type StreamTrack } from '@/components/charts/StreamTracks.vue'
 import { PULSE_ZONES, getHRSettings, timeInZones, relativeEffort, fmtSecs, gradeAdjustedPace, estimateVO2max, estimateBikePower } from '@/utils/analysis'
 import type { Workout, BestEffort } from '../types'
@@ -269,7 +229,7 @@ const isRun = computed(() => sport.value === 'running')
 const handleBack = () => router.go(-1)
 const formatDate = (d: string) => format(parseISO(d), 'EEEE, d MMMM yyyy')
 
-const sportCol = computed(() => workout.value ? getSportColor(sport.value) : '#9aa7b8')
+const sportCol = computed(() => workout.value ? getSportColor(sport.value) : cssColor('--color-other-primary', '#94a3b8'))
 const sportColSoft = computed(() => {
 	const c = sportCol.value
 	return c.startsWith('#')
@@ -277,46 +237,7 @@ const sportColSoft = computed(() => {
 		: 'rgba(159,168,184,0.13)'
 })
 
-// ─── Route art ────────────────────────────────────────────────────────────────
-const routeData = computed(() => {
-	const poly = stravaActivity.value?.map?.polyline
-	if (!poly) return null
-	const raw: [number, number][] = decode(poly)
-	if (raw.length < 2) return null
-
-	const toMercY = (lat: number) =>
-		-Math.log(Math.tan((lat * Math.PI / 360) + (Math.PI / 4)))
-
-	const pts = raw.map(([lat, lng]) => ({ x: lng, y: toMercY(lat) }))
-
-	let minX = pts[0].x, maxX = pts[0].x, minY = pts[0].y, maxY = pts[0].y
-	for (const p of pts) {
-		if (p.x < minX) minX = p.x
-		if (p.x > maxX) maxX = p.x
-		if (p.y < minY) minY = p.y
-		if (p.y > maxY) maxY = p.y
-	}
-
-	const VW = 900, VH = 480, pad = 56
-	const rangeX = maxX - minX || 0.00001
-	const rangeY = maxY - minY || 0.00001
-	// Scale X and Y independently so the route fills the canvas regardless of orientation
-	const scaleX = (VW - pad * 2) / rangeX
-	const scaleY = (VH - pad * 2) / rangeY
-
-	const svgPts = pts.map(p => ({
-		x: pad + (p.x - minX) * scaleX,
-		y: pad + (p.y - minY) * scaleY,
-	}))
-
-	return {
-		points: svgPts.map(p => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' '),
-		start: svgPts[0],
-		end: svgPts[svgPts.length - 1],
-		vw: VW,
-		vh: VH,
-	}
-})
+const routePolyline = computed(() => stravaActivity.value?.map?.polyline || null)
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 const formatDuration = (s: number) => {
@@ -511,12 +432,25 @@ const streamTracks = computed<StreamTrack[]>(() => {
 	}
 	if (st.heartrate) {
 		const a = avg(st.heartrate)
-		tracks.push({ key: 'hr', label: 'Heart rate', unit: 'bpm', color: '#e5484d', values: st.heartrate, area: true, format: v => String(Math.round(v)), summary: a ? `avg ${Math.round(a)} bpm` : undefined })
+		tracks.push({ key: 'hr', label: 'Heart rate', unit: 'bpm', color: cssColor('--color-heartrate', '#fb7185'), values: st.heartrate, area: true, format: v => String(Math.round(v)), summary: a ? `avg ${Math.round(a)} bpm` : undefined })
+	}
+	// Elevation, but only when there's something to see — a flat loop would add
+	// a strip of noise magnified by the trimmed y-domain.
+	if (st.altitude) {
+		const alt = st.altitude.filter((v: number | null): v is number => v !== null && Number.isFinite(v))
+		if (alt.length > 10 && Math.max(...alt) - Math.min(...alt) >= 10) {
+			const gain = stravaActivity.value?.total_elevation_gain
+			tracks.push({
+				key: 'alt', label: 'Elevation', unit: 'm', color: cssColor('--color-elevation', '#8ba1c0'),
+				values: st.altitude, area: true, format: v => String(Math.round(v)),
+				summary: gain ? `+${Math.round(gain)} m gain` : undefined,
+			})
+		}
 	}
 	if (st.cadence && showCadence.value) {
 		const cad = st.cadence.map((c: number | null) => (c === null || c <= 0 ? null : c))
 		const a = avg(cad)
-		tracks.push({ key: 'cad', label: 'Cadence', unit: isBike.value ? 'rpm' : 'spm', color: '#a06ee1', values: smoothByTime(st.time, cad, 15), format: v => String(Math.round(v)), summary: a ? `avg ${Math.round(a)}` : undefined })
+		tracks.push({ key: 'cad', label: 'Cadence', unit: isBike.value ? 'rpm' : 'spm', color: cssColor('--color-cadence', '#c4b5fd'), values: smoothByTime(st.time, cad, 15), format: v => String(Math.round(v)), summary: a ? `avg ${Math.round(a)}` : undefined })
 	}
 	return tracks
 })
@@ -583,22 +517,6 @@ onMounted(async () => {
 .detail-title-row { margin-bottom: 24px; }
 .detail-title { font-size: 1.8rem; font-weight: 400; font-family: var(--font-serif); margin: 0 0 4px; }
 .detail-date { color: var(--text-muted); font-size: 0.85rem; }
-
-/* Route art */
-.route-art-wrap {
-	background: var(--background-color);
-	border: 1px solid var(--border-color);
-	border-radius: var(--radius);
-	margin-bottom: 20px;
-	overflow: hidden;
-}
-.route-svg { width: 100%; height: auto; display: block; max-height: 420px; }
-.route-legend {
-	display: flex; align-items: center; gap: 6px;
-	padding: 10px 16px; font-size: 0.75rem; color: var(--text-muted);
-	border-top: 1px solid var(--border-color);
-}
-.legend-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
 
 /* Key stats */
 .stats-row {
@@ -669,7 +587,7 @@ onMounted(async () => {
 .pr-chip {
 	display: inline-block; margin-left: 6px; padding: 1px 6px;
 	font-size: 0.62rem; font-weight: 700; letter-spacing: 0.05em;
-	color: #f0b429; border: 1px solid #f0b429; border-radius: 999px;
+	color: var(--pr-gold); border: 1px solid var(--pr-gold); border-radius: 999px;
 }
 .be-time { font-size: 1.15rem; font-weight: 700; }
 .be-pace { font-size: 0.74rem; color: var(--text-secondary); }

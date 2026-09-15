@@ -31,27 +31,30 @@ export function getWorkoutType(workout: Workout): SportType {
 }
 
 /**
- * Read the live CSS variable for a sport color (set from the DB at runtime).
+ * Read a live palette colour out of the stylesheet, so charts drawn in JS use
+ * the same tokens as the CSS rather than a second, drifting copy of the hexes.
  *
  * getComputedStyle forces a style recalc, and this is called once per workout
  * chip inside render loops — so results are memoised. Call `clearSportColorCache`
  * after writing new colors to the document.
  */
-const sportColorCache = new Map<SportType, string>()
+const colorCache = new Map<string, string>()
 
-export function getSportColor(type: SportType): string {
-	const hit = sportColorCache.get(type)
+export function cssColor(name: string, fallback: string): string {
+	const hit = colorCache.get(name)
 	if (hit !== undefined) return hit
 
-	const v = getComputedStyle(document.documentElement)
-		.getPropertyValue(`--color-${type}-primary`)
-		.trim() || '#9aa7b8'
-	sportColorCache.set(type, v)
+	const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim() || fallback
+	colorCache.set(name, v)
 	return v
 }
 
+export function getSportColor(type: SportType): string {
+	return cssColor(`--color-${type}-primary`, '#94a3b8')
+}
+
 export function clearSportColorCache(): void {
-	sportColorCache.clear()
+	colorCache.clear()
 }
 
 export const isDistanceSport = (type: SportType) => type === 'running' || type === 'bike'

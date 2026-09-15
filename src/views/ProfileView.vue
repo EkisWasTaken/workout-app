@@ -595,7 +595,7 @@ onMounted(async () => {
 .profile-content { padding: 24px 28px 40px; max-width: 760px; margin: 0 auto; width: 100%; box-sizing: border-box; }
 @media (max-width: 768px) { .profile-content { padding: 16px 16px 32px; } }
 
-.page-title { font-size: 1.5rem; font-weight: 400; margin-bottom: 20px; }
+.page-title { margin-bottom: 20px; }
 .card-title { font-size: 1rem; font-weight: 600; color: var(--text-color); }
 .card-badge {
 	margin-left: 10px; font-size: 0.72rem; font-weight: 600; color: var(--primary-color);
@@ -607,7 +607,7 @@ onMounted(async () => {
 	.settings-card :deep(.n-card__content),
 	.settings-card :deep(.n-card-header) { padding-left: 14px; padding-right: 14px; }
 	.account-row { flex-direction: column; align-items: stretch; }
-	.page-title { font-size: 1.3rem; margin-bottom: 14px; }
+	.page-title { margin-bottom: 14px; }
 }
 
 .account-row { display: flex; justify-content: space-between; align-items: center; gap: 12px; }

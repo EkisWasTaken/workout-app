@@ -33,7 +33,7 @@
                    wiping your templates is not a feature. -->
               <n-popconfirm v-if="isOwn(template)" @positive-click="deleteTemplate(template.id)" placement="left">
                 <template #trigger>
-                  <n-button size="small" type="error" ghost>Delete</n-button>
+                  <n-button size="small" type="error" quaternary>Delete</n-button>
                 </template>
                 Delete this template?
               </n-popconfirm>
@@ -355,7 +355,7 @@ onMounted(loadTemplates);
 .templates-content { padding: 24px 28px 40px; max-width: 900px; margin: 0 auto; width: 100%; box-sizing: border-box; }
 @media (max-width: 768px) { .templates-content { padding: 16px 16px 32px; } }
 
-.page-title { font-size: 1.5rem; font-weight: 400; margin: 0; }
+.page-title { margin: 0; }
 .hint { font-size: 0.82rem; color: var(--text-muted); margin: 0 0 18px; line-height: 1.5; }
 
 .tpl-kind {
@@ -369,10 +369,12 @@ onMounted(loadTemplates);
   margin-right: 8px;
   vertical-align: middle;
 }
-.kind-gym { background: var(--primary-soft); color: var(--primary-color); }
-.kind-run { background: var(--success-soft); color: var(--success-color); }
-.kind-bike { background: var(--warning-soft, var(--surface-2)); color: var(--warning-color, var(--text-secondary)); }
-.kind-other { background: var(--surface-2); color: var(--text-secondary); }
+/* One hue per sport, matching the charts and the schedule chips. Green and
+   amber stay reserved for the progress verdicts, so they're not used here. */
+.kind-gym { background: var(--color-gym-soft); color: var(--color-gym-primary); }
+.kind-run { background: var(--color-running-soft); color: var(--color-running-primary); }
+.kind-bike { background: var(--color-bike-soft); color: var(--color-bike-primary); }
+.kind-other { background: var(--color-other-soft); color: var(--color-other-primary); }
 .tpl-meta { font-size: 0.8rem; color: var(--text-muted); }
 
 .tpl-shared {

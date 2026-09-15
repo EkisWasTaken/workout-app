@@ -150,12 +150,12 @@ onUnmounted(() => {
 	width: 30px;
 	height: 30px;
 	border-radius: var(--radius-sm);
-	background: linear-gradient(135deg, rgba(79,140,255,0.22) 0%, rgba(79,140,255,0.10) 100%);
-	border: 1px solid rgba(79,140,255,0.25);
+	background: linear-gradient(135deg, var(--primary-soft) 0%, rgba(155, 140, 255, 0.05) 100%);
+	border: 1px solid rgba(155, 140, 255, 0.25);
 	color: var(--primary-color);
 	font-size: 1.05rem;
 	flex-shrink: 0;
-	box-shadow: 0 0 12px rgba(79,140,255,0.15);
+	box-shadow: 0 0 12px rgba(155, 140, 255, 0.15);
 }
 
 .brand-name {
@@ -212,7 +212,7 @@ onUnmounted(() => {
 }
 
 .navigation-link.router-link-active {
-	background-color: rgba(79, 140, 255, 0.10);
+	background-color: var(--primary-soft);
 	color: var(--primary-color);
 }
 
