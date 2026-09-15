@@ -2,29 +2,35 @@
  * Progress metrics — "am I getting better?", answered per sport.
  *
  * The old Home page led with VDOT, which is a *race-readiness* number: a
- * trailing maximum over hard efforts. That is the right model for prescribing
- * paces and the wrong model for showing progress, because it only moves when
- * you race or time-trial. Train consistently for six weeks without pinning on a
- * number and the line is flat — not because nothing improved, but because
- * nothing was measured.
+ * trailing maximum over hard efforts. It only moves when you race, so it can't
+ * show progress. Everything here moves from what you do every week instead:
  *
- * So progress is measured here from what you do every week instead:
+ *   running  pace at a fixed heart rate, volume, longest run, consistency
+ *   gym      load per session, weekly volume, per-split trends, consistency
+ *   bike     estimated power at a fixed heart rate, volume, climbing
+ *   body     trend weight and its rate toward the goal
  *
- *   running  aerobic efficiency (speed per heartbeat), easy pace at a fixed
- *            heart rate, volume, longest run, rolling bests, consistency
- *   gym      tonnage, load per session, per-split trends, consistency
- *   bike     volume, climbing, efficiency, longest ride
- *   body     smoothed weight and its trend toward the goal
+ * Three rules keep the numbers trustworthy:
  *
- * Every one of those moves week to week from ordinary training. VDOT still
- * exists, but it belongs in "race readiness", not on the front page.
+ *  1. **One window, everywhere.** Every headline is a rolling 28 calendar days
+ *     ending today, compared with the 28 days before. The old code mixed rolling
+ *     windows with calendar weeks, so on a Monday "the last four weeks" held
+ *     three weeks and a morning, and volume read as declining every week.
+ *
+ *  2. **The chart is the number.** A metric's trend line is the same rolling
+ *     28-day value evaluated at weekly points — its last point *is* the
+ *     headline, and the point four weeks back *is* the comparison. Nothing on the
+ *     card can disagree with anything else on it.
+ *
+ *  3. **Noise isn't news.** A verdict needs enough samples and a change larger
+ *     than the scatter in them. Too few runs gets "too few to call", not a
+ *     confident arrow in a random direction.
  *
  * Everything in this file is pure: no stores, no localStorage, no `new Date()`
- * except as a default argument. That makes it all testable, and it means the
- * caller decides what "today" means.
+ * except as a default argument.
  */
-import { addDays, endOfWeek, format, startOfWeek, subWeeks } from 'date-fns'
-import { fitnessSeries, gradeAdjustedPace, relativeEffort } from './analysis'
+import { addDays, endOfWeek, format, parseISO, startOfDay, startOfWeek, subWeeks } from 'date-fns'
+import { estimateBikePower, fitnessSeries, gradeAdjustedPace, relativeEffort } from './analysis'
 import { gymSplit } from './workouts'
 import { fmtPace } from './vdot'
 import type { Workout } from '@/types'
@@ -38,7 +44,7 @@ export interface Metric {
 	label: string
 	/** The number itself, or null when we don't have the data to compute it. */
 	value: number | null
-	/** The same measure over the immediately preceding period of equal length. */
+	/** The same measure over the immediately preceding 28 days. */
 	previous: number | null
 	/** value − previous, in the metric's own units. Null without a baseline. */
 	delta: number | null
@@ -47,45 +53,72 @@ export interface Metric {
 	unit: string
 	/** Preformatted for the UI so the template never does arithmetic. */
 	display: string
+	previousDisplay: string | null
 	deltaDisplay: string | null
-	/** Whether a rise is good. Pace and body weight say no. */
+	/** Whether a rise is good. Pace says no; body weight depends on the goal. */
 	higherIsBetter: boolean
-	/** Verdict after accounting for `higherIsBetter` and the dead band. */
+	/** Verdict after accounting for `higherIsBetter`, sample size and noise. */
 	direction: Direction
+	/** Why the direction is unknown, when it is. */
+	unknownReason: 'baseline' | 'thin' | null
 	/** One sentence explaining what the number means for progress. */
 	note: string
-	/** Weekly values normalised to 0–100, oldest first. Empty if not applicable. */
-	spark: number[]
+	/**
+	 * The metric's rolling value at weekly points, oldest first. The last entry is
+	 * `value`; the entry `COMPARE_OFFSET` from the end is `previous`. Null where
+	 * there wasn't enough data in that window.
+	 */
+	trend: (number | null)[]
+	/** `trend`, formatted like `display`, for hover readouts. */
+	trendDisplay: (string | null)[]
+	/** Draw the trend upside down, so that for pace "faster" still reads as up. */
+	invertTrend: boolean
+	/** Twelve-week fitted trend, for session-based metrics. */
+	longTrend: LongTrend | null
+	/** What the number is built from, e.g. "median of 7 runs · 5 in the 28 days before". */
+	basis: string | null
 	/** When `value` is null: why, and what the user can do about it. */
 	missing: string | null
 }
 
-/**
- * Relative change smaller than this reads as "holding", not as progress.
- * Week-to-week noise in pace and body weight is easily 1–2%; calling that an
- * improvement would make the whole page cry wolf.
- */
-const DEAD_BAND = 0.02
-
 /** The comparison window. Four weeks is long enough to survive one bad week. */
 export const PERIOD_DAYS = 28
 
+/** How many weekly points a trend line carries. */
+export const TREND_WEEKS = 12
+
+/** Index offset from the end of a trend to the comparison point (28 days back). */
+export const COMPARE_OFFSET = PERIOD_DAYS / 7
+
+/** Fewer samples than this in either window and a sample metric won't give a verdict. */
+export const MIN_SAMPLES = 3
+
 export interface Period {
 	from: Date
+	/** Exclusive. */
 	to: Date
+}
+
+/** `days` whole calendar days, ending with — and including — the day of `end`. */
+export function windowEnding(end: Date, days = PERIOD_DAYS): Period {
+	const to = addDays(startOfDay(end), 1)
+	return { from: addDays(to, -days), to }
 }
 
 /** The current period and the equal-length one before it. */
 export function periods(today = new Date(), days = PERIOD_DAYS): { current: Period; previous: Period } {
-	const to = today
-	const from = addDays(today, -days)
 	return {
-		current: { from, to },
-		previous: { from: addDays(from, -days), to: from },
+		current: windowEnding(today, days),
+		previous: windowEnding(addDays(today, -days), days),
 	}
 }
 
-const inPeriod = (date: Date, p: Period) => date >= p.from && date < p.to
+export const inPeriod = (date: Date, p: Period) => date >= p.from && date < p.to
+
+/** Trend anchors: today, and every seven days back from it. Oldest first. */
+export function trendAnchors(today = new Date(), weeks = TREND_WEEKS): Date[] {
+	return Array.from({ length: weeks }, (_, i) => addDays(today, -7 * (weeks - 1 - i)))
+}
 
 export interface Week {
 	start: Date
@@ -104,13 +137,6 @@ export function weekWindows(count: number, today = new Date()): Week[] {
 	return out
 }
 
-/** Scale raw weekly values to 0–100 bar heights. All-zero stays all-zero. */
-export function toSpark(values: number[]): number[] {
-	const max = Math.max(0, ...values)
-	if (max <= 0) return values.map(() => 0)
-	return values.map(v => Math.round((v / max) * 100))
-}
-
 const round = (n: number, dp = 1) => {
 	const f = 10 ** dp
 	return Math.round(n * f) / f
@@ -125,6 +151,35 @@ export function median(xs: number[]): number | null {
 	return s.length % 2 ? s[mid] : (s[mid - 1] + s[mid]) / 2
 }
 
+function sd(xs: number[]): number {
+	if (xs.length < 2) return 0
+	const m = mean(xs)!
+	return Math.sqrt(xs.reduce((s, x) => s + (x - m) ** 2, 0) / (xs.length - 1))
+}
+
+/** Standard error of a median, for roughly normal data. */
+const seMedian = (xs: number[]) => (xs.length ? (1.253 * sd(xs)) / Math.sqrt(xs.length) : Infinity)
+
+const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`
+
+// ─── verdicts ─────────────────────────────────────────────────────────────────
+
+/**
+ * How a metric decides whether it moved.
+ *
+ *  samples   a median over individual sessions. Needs `minSamples` in both
+ *            windows, and a change bigger than both 1.5 standard errors and
+ *            `minRel` — so four scattered runs can't manufacture a trend.
+ *  relative  a total (distance, tonnage). Moves when the change exceeds `band`.
+ *  absolute  moves when |change| exceeds `band` in the metric's own units.
+ *  count     sessions. Needs at least `minAbs` more or fewer *and* `band`.
+ */
+export type Verdict =
+	| { kind: 'samples'; current: number[]; previous: number[]; minRel: number; minSamples?: number }
+	| { kind: 'relative'; band: number }
+	| { kind: 'absolute'; band: number }
+	| { kind: 'count'; current: number; previous: number; minAbs: number; band: number }
+
 export interface MetricSpec {
 	key: string
 	label: string
@@ -132,7 +187,10 @@ export interface MetricSpec {
 	current: number | null
 	previous: number | null
 	higherIsBetter?: boolean
-	spark?: number[]
+	trend?: (number | null)[]
+	invertTrend?: boolean
+	longTrend?: LongTrend | null
+	basis?: string | null
 	/** How to render the value. Defaults to one decimal place. */
 	format?: (v: number) => string
 	/** How to render the change. Defaults to `format` of the absolute delta. */
@@ -141,43 +199,67 @@ export interface MetricSpec {
 	note?: (m: Omit<Metric, 'note'>) => string
 	/** Explains a null `current`. */
 	missing?: string | null
-	deadBand?: number
+	/** Defaults to a 2% relative band. */
+	verdict?: Verdict
 }
 
-/**
- * Assemble a metric, working out the direction and a default sentence.
- *
- * The direction is deliberately computed from the *relative* change against a
- * dead band rather than the raw sign, so "0.1 kg heavier than last month" reads
- * as holding steady instead of as a regression.
- */
+/** A sentence explaining that there's too little data to call a direction. */
+export const THIN_NOTE = `Too few sessions in one of the two 28-day windows to call a direction yet.`
+
+function decide(spec: MetricSpec, delta: number | null, deltaPct: number | null): { direction: Direction; unknownReason: Metric['unknownReason'] } {
+	const { current, previous, higherIsBetter = true } = spec
+	const verdict = spec.verdict ?? { kind: 'relative', band: 0.02 }
+	if (current === null) return { direction: 'unknown', unknownReason: null }
+
+	const moved = (): boolean | 'thin' | null => {
+		switch (verdict.kind) {
+			case 'samples': {
+				const need = verdict.minSamples ?? MIN_SAMPLES
+				if (verdict.current.length < need || verdict.previous.length < need) return 'thin'
+				if (delta === null || deltaPct === null) return null
+				const se = Math.sqrt(seMedian(verdict.current) ** 2 + seMedian(verdict.previous) ** 2)
+				return Math.abs(delta) > 1.5 * se && Math.abs(deltaPct) >= verdict.minRel
+			}
+			case 'relative':
+				if (deltaPct === null) return null
+				return Math.abs(deltaPct) >= verdict.band
+			case 'absolute':
+				if (delta === null) return null
+				return Math.abs(delta) >= verdict.band
+			case 'count': {
+				if (previous === null) return null
+				const d = verdict.current - verdict.previous
+				const base = Math.max(1, verdict.previous)
+				return Math.abs(d) >= verdict.minAbs && Math.abs(d) / base >= verdict.band
+			}
+		}
+	}
+
+	const m = moved()
+	// A first period with nothing to compare against isn't progress or
+	// regression — it's a baseline. Say so rather than invent a verdict.
+	if (m === null) return { direction: 'unknown', unknownReason: 'baseline' }
+	if (m === 'thin') return { direction: 'unknown', unknownReason: 'thin' }
+	if (!m) return { direction: 'holding', unknownReason: null }
+	const rising = (delta ?? 0) > 0
+	return { direction: rising === higherIsBetter ? 'improving' : 'declining', unknownReason: null }
+}
+
+/** Assemble a metric, working out the direction and a default sentence. */
 export function buildMetric(spec: MetricSpec): Metric {
 	const {
 		key, label, unit, current, previous,
 		higherIsBetter = true,
-		spark = [],
+		trend = [],
+		basis = null,
 		format: fmt = (v: number) => String(round(v)),
-		deadBand = DEAD_BAND,
 	} = spec
 	const fmtDelta = spec.formatDelta ?? fmt
 
-	const hasBoth = current !== null && previous !== null && Number.isFinite(previous) && previous !== 0
-	const delta = current !== null && previous !== null ? current - previous : null
-	const deltaPct = hasBoth ? (current! - previous!) / Math.abs(previous!) : null
-
-	let direction: Direction = 'unknown'
-	if (current === null) {
-		direction = 'unknown'
-	} else if (deltaPct === null) {
-		// A first period with nothing to compare against isn't progress or
-		// regression — it's a baseline. Say so rather than invent a verdict.
-		direction = 'unknown'
-	} else if (Math.abs(deltaPct) < deadBand) {
-		direction = 'holding'
-	} else {
-		const rising = deltaPct > 0
-		direction = rising === higherIsBetter ? 'improving' : 'declining'
-	}
+	const hasBoth = current !== null && previous !== null && Number.isFinite(previous)
+	const delta = hasBoth ? current! - previous! : null
+	const deltaPct = hasBoth && previous !== 0 ? (current! - previous!) / Math.abs(previous!) : null
+	const { direction, unknownReason } = decide(spec, delta, deltaPct)
 
 	const base: Omit<Metric, 'note'> = {
 		key,
@@ -188,45 +270,73 @@ export function buildMetric(spec: MetricSpec): Metric {
 		deltaPct,
 		unit,
 		display: current === null ? '—' : fmt(current),
+		previousDisplay: previous === null ? null : fmt(previous),
 		deltaDisplay: delta === null || delta === 0 ? null : fmtDelta(Math.abs(delta)),
 		higherIsBetter,
 		direction,
-		spark,
+		unknownReason,
+		trend,
+		trendDisplay: trend.map(v => (v === null ? null : fmt(v))),
+		invertTrend: spec.invertTrend ?? false,
+		longTrend: spec.longTrend ?? null,
+		basis: current === null ? null : basis,
 		missing: current === null ? (spec.missing ?? null) : null,
 	}
 
-	const note = spec.note
-		? spec.note(base)
-		: defaultNote(base)
-
-	return { ...base, note }
+	return { ...base, note: spec.note ? spec.note(base) : defaultNote(base) }
 }
 
 function defaultNote(m: Omit<Metric, 'note'>): string {
 	if (m.value === null) return m.missing ?? 'Not enough data yet.'
-	const window = `last ${PERIOD_DAYS} days`
+	if (m.unknownReason === 'thin') return THIN_NOTE
 	switch (m.direction) {
 		case 'improving':
-			return `Up on the previous ${PERIOD_DAYS} days — ${m.deltaDisplay} ${m.unit} better.`
+			return `Better than the previous ${PERIOD_DAYS} days by ${m.deltaDisplay} ${m.unit}.`
 		case 'declining':
 			return `Down ${m.deltaDisplay} ${m.unit} on the previous ${PERIOD_DAYS} days.`
 		case 'holding':
 			return `Level with the previous ${PERIOD_DAYS} days.`
 		default:
-			return `Your baseline for the ${window}. Keep logging and the trend appears here.`
+			return `Your baseline for the last ${PERIOD_DAYS} days. Keep logging and the trend appears here.`
 	}
 }
 
-// ─── activity helpers ─────────────────────────────────────────────────────────
+/** Evaluate `fn` over the 28-day window ending at each trend anchor. */
+function rollingTrend(today: Date, fn: (p: Period) => number | null): (number | null)[] {
+	return trendAnchors(today).map(anchor => fn(windowEnding(anchor)))
+}
+
+// ─── sessions and activities ──────────────────────────────────────────────────
 
 /** A recorded activity. Deliberately loose — imports vary in what they carry. */
 export type Act = Record<string, any>
 
+/**
+ * When an activity happened, in local time. The parser writes `start_date_local`
+ * without a zone, so `new Date()` reads it as local wall time — which is what we
+ * want for "which day was this".
+ */
 export const actDate = (a: Act): Date => new Date(a.start_date_local || a.start_date || 0)
+
+/** The local calendar day of an activity. Never `toISOString()`, which is UTC. */
+export const actDay = (a: Act): string =>
+	a.start_date_local ? String(a.start_date_local).slice(0, 10) : format(actDate(a), 'yyyy-MM-dd')
+
 export const actSport = (a: Act): string => String(a.sport_type || a.type || '').toLowerCase()
 
 const isRun = (a: Act) => actSport(a) === 'run'
 const isRide = (a: Act) => ['ride', 'virtualride', 'ebikeride'].includes(actSport(a))
+
+/**
+ * One completed session of a distance sport: a logged workout, a recording, or
+ * both. Volume, counts and longest-session come from these so a hand-logged run
+ * and an imported file count exactly once each.
+ */
+export interface DistanceSession {
+	date: Date
+	km: number
+	activity: Act | null
+}
 
 /** Metres per second, from whichever field the import populated. */
 function speedOf(a: Act): number | null {
@@ -235,56 +345,101 @@ function speedOf(a: Act): number | null {
 	return null
 }
 
-// ─── aerobic efficiency ───────────────────────────────────────────────────────
+/** Sum of `value` over sessions in each Monday-started week, oldest first. */
+export function weeklyTotals<T>(items: T[], dateOf: (x: T) => Date, value: (x: T) => number, weeks: number, today = new Date()): number[] {
+	return weekWindows(weeks, today).map(wk =>
+		items.reduce((s, x) => {
+			const d = dateOf(x)
+			return d >= wk.start && d <= wk.end ? s + value(x) : s
+		}, 0))
+}
 
-/** Below this the sample is too short for average HR to mean anything. */
-export const MIN_EF_SECONDS = 15 * 60
+/** Rolling 28-day average of weekly totals, evaluated at the end of each week. */
+export function rollingWeeklyAverage<T>(items: T[], dateOf: (x: T) => Date, value: (x: T) => number, weeks: number, today = new Date()): number[] {
+	return weekWindows(weeks, today).map(wk => {
+		const end = wk.end < today ? wk.end : today
+		const p = windowEnding(end)
+		return round(items.reduce((s, x) => (inPeriod(dateOf(x), p) ? s + value(x) : s), 0) / 4, 2)
+	})
+}
+
+// ─── aerobic fitness at a fixed heart rate ────────────────────────────────────
 
 /**
- * Efficiency factor: metres covered per minute, per heartbeat.
+ * The heart-rate-reserve fraction every session is normalised to. 65% sits in
+ * the middle of an easy aerobic run for almost everyone.
+ */
+export const REF_HRR = 0.65
+
+/** Only sessions averaging inside this HR-reserve band are used. */
+export const HRR_BAND: [number, number] = [0.5, 0.85]
+
+/** Below this the sample is too short for average HR to mean anything. */
+export const MIN_STEADY_SECONDS = 15 * 60
+
+export const hrrFraction = (hr: number, maxHR: number, restHR: number) =>
+	(hr - restHR) / Math.max(1, maxHR - restHR)
+
+/** The bpm the aerobic metrics are quoted at, for this athlete. */
+export const referenceHR = (maxHR: number, restHR: number) =>
+	Math.round(restHR + REF_HRR * (maxHR - restHR))
+
+function steadyFraction(a: Act, maxHR: number | null, restHR: number): number | null {
+	if (!maxHR || maxHR < 140) return null
+	const hr = a.average_heartrate
+	if (!Number.isFinite(hr) || hr <= restHR) return null
+	if (!Number.isFinite(a.moving_time) || a.moving_time < MIN_STEADY_SECONDS) return null
+	const frac = hrrFraction(hr, maxHR, restHR)
+	return frac >= HRR_BAND[0] && frac <= HRR_BAND[1] ? frac : null
+}
+
+/**
+ * A run's speed, rescaled to what it would be at the reference heart rate. m/s.
  *
- * This is the single best "am I getting fitter?" signal available from ordinary
- * training, because it is normalised for effort. Going 3% further per beat at
- * the same heart rate is aerobic adaptation, and it shows up in easy running
- * weeks before it shows up in any race.
+ * ACSM puts the oxygen cost of running above rest in direct proportion to
+ * speed, and %VO₂ reserve tracks %HR reserve. So speed ∝ HR-reserve fraction,
+ * and a run at 5:30/km and 60% HRR says the same thing about your fitness as
+ * one at 5:05/km and 65%. Rescaling first means a week of easy runs and a week
+ * with a tempo in it can be compared honestly — taking a raw median pace over a
+ * heart-rate band, as this used to, let the mix of efforts decide the verdict.
  *
  * Grade-adjusted speed is used when the file carries altitude, so a hilly week
  * doesn't read as a loss of fitness.
  */
-export function efficiencyFactor(a: Act): number | null {
-	const hr = a.average_heartrate
-	if (!Number.isFinite(hr) || hr < 90) return null
-	if (!Number.isFinite(a.moving_time) || a.moving_time < MIN_EF_SECONDS) return null
+export function aerobicSpeed(a: Act, maxHR: number | null, restHR: number): number | null {
+	if (!isRun(a)) return null
+	const frac = steadyFraction(a, maxHR, restHR)
+	if (frac === null) return null
 	const speed = gradeAdjustedPace(a)?.speed ?? speedOf(a)
-	if (speed === null || speed < 1.4) return null
-	return round((speed * 60) / hr, 3)
+	if (speed === null || speed < 1.5 || speed > 7) return null
+	return (speed * REF_HRR) / frac
 }
 
 /**
- * Runs steady enough for efficiency to be comparable between periods.
+ * A ride's estimated power, rescaled to the reference heart rate. Watts.
  *
- * An interval session and a recovery jog have very different efficiency for
- * reasons that have nothing to do with fitness, so hard efforts are excluded
- * when we know max HR. Without max HR we can't tell, and including everything
- * is better than showing nothing.
+ * Power, not speed: on a bike speed is dominated by terrain and air, so speed
+ * per heartbeat mostly measured which route you took. Power tracks oxygen cost
+ * directly, so the same proportional-to-HR-reserve rescaling applies. The power
+ * itself is estimated from speed and gradient, so wind and drafting still add
+ * noise — the verdict's noise gate is what keeps that honest.
  */
-export const STEADY_HR_FRACTION = 0.88
-
-function steadyRuns(acts: Act[], maxHR: number | null): Act[] {
-	return acts.filter(a => {
-		if (!isRun(a)) return false
-		if (efficiencyFactor(a) === null) return false
-		if (maxHR && maxHR >= 140 && a.average_heartrate > maxHR * STEADY_HR_FRACTION) return false
-		return true
-	})
+export function aerobicPower(a: Act, maxHR: number | null, restHR: number, riderKg: number): number | null {
+	if (!isRide(a)) return null
+	const frac = steadyFraction(a, maxHR, restHR)
+	if (frac === null) return null
+	const watts = estimateBikePower(a, riderKg)
+	if (!watts || watts < 40) return null
+	return (watts * REF_HRR) / frac
 }
 
 // ─── running ──────────────────────────────────────────────────────────────────
 
 export interface RunInputs {
+	/** Every completed run: logged workouts and unlinked recordings, once each. */
+	sessions: DistanceSession[]
+	/** Every recorded activity, for the heart-rate metrics. */
 	activities: Act[]
-	/** Completed workouts, used for volume when there is no recording. */
-	runKmByWeek: number[]
 	maxHR: number | null
 	restHR: number
 	today?: Date
@@ -296,155 +451,239 @@ export interface SportProgress {
 	hasData: boolean
 }
 
-/**
- * Progress for running: efficiency first, because it's the one that moves.
- */
-export function runningProgress(input: RunInputs): SportProgress {
-	const { activities, runKmByWeek, maxHR } = input
-	const today = input.today ?? new Date()
+interface Dated { date: Date; v: number }
+
+/** Values inside a period. */
+const within = (xs: Dated[], p: Period) => xs.filter(x => inPeriod(x.date, p)).map(x => x.v)
+
+/** A median-of-sessions metric's value, previous value and trend. */
+function sampleSeries(xs: Dated[], today: Date, fix: (v: number) => number, minForTrend = 2) {
 	const { current, previous } = periods(today)
-
-	const runs = activities.filter(isRun)
-	const inCur = (a: Act) => inPeriod(actDate(a), current)
-	const inPrev = (a: Act) => inPeriod(actDate(a), previous)
-
-	const metrics: Metric[] = []
-
-	// 1. Aerobic efficiency — speed per heartbeat on steady runs.
-	const steady = steadyRuns(runs, maxHR)
-	const efCur = mean(steady.filter(inCur).map(a => efficiencyFactor(a)!))
-	const efPrev = mean(steady.filter(inPrev).map(a => efficiencyFactor(a)!))
-	const efWeeks = weekWindows(8, today).map(w =>
-		mean(steady.filter(a => actDate(a) >= w.start && actDate(a) <= w.end).map(a => efficiencyFactor(a)!)) ?? 0)
-
-	metrics.push(buildMetric({
-		key: 'run-efficiency',
-		label: 'Aerobic efficiency',
-		unit: 'm/beat',
-		current: efCur === null ? null : round(efCur, 2),
-		previous: efPrev === null ? null : round(efPrev, 2),
-		higherIsBetter: true,
-		spark: toSpark(efWeeks),
-		format: v => v.toFixed(2),
-		formatDelta: v => v.toFixed(2),
-		missing: 'Needs runs of 15 minutes or more recorded with a heart rate monitor.',
-		note: m => {
-			if (m.value === null) return m.missing!
-			if (m.direction === 'improving') return `You're covering ${m.deltaDisplay} more metres per heartbeat than last month. That's aerobic fitness, and it shows up here long before it shows up in a race.`
-			if (m.direction === 'declining') return `Down ${m.deltaDisplay} m/beat on last month. Normal during a hard block or a bad-sleep spell — worth watching if it keeps sliding.`
-			if (m.direction === 'holding') return 'Holding steady. Same speed for the same effort as last month.'
-			return 'Your first month of readings. From here you can watch it climb.'
-		},
-	}))
-
-	// 2. Easy pace at aerobic heart rate — the same effort, timed.
-	const aerobic = aerobicPaceSamples(runs, maxHR, input.restHR)
-	const paceCur = median(aerobic.filter(s => inPeriod(s.date, current)).map(s => s.paceSec))
-	const pacePrev = median(aerobic.filter(s => inPeriod(s.date, previous)).map(s => s.paceSec))
-
-	metrics.push(buildMetric({
-		key: 'run-easy-pace',
-		label: 'Easy pace',
-		unit: '/km',
-		current: paceCur === null ? null : Math.round(paceCur),
-		previous: pacePrev === null ? null : Math.round(pacePrev),
-		higherIsBetter: false, // faster is a smaller number
-		format: v => fmtPace(v),
-		formatDelta: v => `${Math.round(v)} s`,
-		missing: maxHR && maxHR >= 140
-			? 'No easy runs in the aerobic heart rate band yet.'
-			: 'Needs a heart rate monitor, or a max HR set in Profile.',
-		note: m => {
-			if (m.value === null) return m.missing!
-			if (m.direction === 'improving') return `${m.deltaDisplay}/km faster than last month at the same heart rate. Free speed — the effort didn't change.`
-			if (m.direction === 'declining') return `${m.deltaDisplay}/km slower at the same heart rate than last month.`
-			if (m.direction === 'holding') return 'Same pace for the same effort as last month.'
-			return 'Your baseline easy pace. Watch this drop while your heart rate stays put.'
-		},
-	}))
-
-	// 3. Volume. Not fitness by itself, but it's the input everything else needs.
-	const kmCur = sumLast(runKmByWeek, 4)
-	const kmPrev = sumLast(runKmByWeek, 8) - kmCur
-	metrics.push(buildMetric({
-		key: 'run-volume',
-		label: 'Volume',
-		unit: 'km',
-		current: runKmByWeek.length ? round(kmCur) : null,
-		previous: runKmByWeek.length >= 8 ? round(kmPrev) : null,
-		spark: toSpark(runKmByWeek.slice(-8)),
-		format: v => String(round(v)),
-		missing: 'No runs logged yet.',
-		note: m => {
-			if (m.value === null) return m.missing!
-			if (m.direction === 'improving') return `${m.deltaDisplay} km more than the previous four weeks. Rising volume is what makes everything else improve.`
-			if (m.direction === 'declining') return `${m.deltaDisplay} km down on the previous four weeks.`
-			if (m.direction === 'holding') return 'Steady volume — the same load as last month.'
-			return 'Your first four weeks of running.'
-		},
-	}))
-
-	// 4. Longest run — the number that actually gates a long-distance race.
-	const longCur = maxOr(runs.filter(inCur).map(a => (a.distance ?? 0) / 1000))
-	const longPrev = maxOr(runs.filter(inPrev).map(a => (a.distance ?? 0) / 1000))
-	metrics.push(buildMetric({
-		key: 'run-longest',
-		label: 'Longest run',
-		unit: 'km',
-		current: longCur === null ? null : round(longCur),
-		previous: longPrev === null ? null : round(longPrev),
-		format: v => String(round(v)),
-		missing: 'No recorded runs yet.',
-		note: m => {
-			if (m.value === null) return m.missing!
-			if (m.direction === 'improving') return `${m.deltaDisplay} km further than your longest run last month.`
-			if (m.direction === 'declining') return 'Shorter than last month\'s longest. Fine in a speed block, not in a marathon build.'
-			if (m.direction === 'holding') return 'Same long run as last month.'
-			return 'Your longest run so far this month.'
-		},
-	}))
-
-	// 5. Consistency. The most predictive number on the page, and the dullest.
-	const sessCur = runs.filter(inCur).length
-	const sessPrev = runs.filter(inPrev).length
-	metrics.push(buildMetric({
-		key: 'run-consistency',
-		label: 'Runs',
-		unit: 'runs',
-		current: sessCur,
-		previous: runs.length ? sessPrev : null,
-		spark: toSpark(weekWindows(8, today).map(w => runs.filter(a => actDate(a) >= w.start && actDate(a) <= w.end).length)),
-		format: v => String(Math.round(v)),
-		formatDelta: v => String(Math.round(v)),
-		note: m => {
-			const perWeek = m.value === null ? 0 : round(m.value / 4)
-			if (!m.value) return 'No runs in the last four weeks.'
-			if (m.direction === 'improving') return `${perWeek} runs a week, up ${m.deltaDisplay} on last month. Consistency beats intensity.`
-			if (m.direction === 'declining') return `${perWeek} runs a week, ${m.deltaDisplay} fewer than last month.`
-			return `${perWeek} runs a week, same as last month.`
-		},
-	}))
-
-	return { metrics, hasData: runs.length > 0 || runKmByWeek.some(v => v > 0) }
+	const cur = within(xs, current)
+	const prev = within(xs, previous)
+	const med = (v: number[]) => (v.length ? fix(median(v)!) : null)
+	return {
+		cur,
+		prev,
+		value: med(cur),
+		previous: med(prev),
+		trend: rollingTrend(today, p => {
+			const v = within(xs, p)
+			return v.length >= minForTrend ? med(v) : null
+		}),
+		long: longTrend(xs, today),
+	}
 }
 
-/** Median pace of runs whose average HR sits in the aerobic band. */
-export function aerobicPaceSamples(
-	activities: Act[],
-	maxHR: number | null,
-	restHR: number,
-): { date: Date; paceSec: number }[] {
-	if (!maxHR || maxHR < 140) return []
-	const reserve = maxHR - restHR
-	const lo = restHR + reserve * 0.55
-	const hi = restHR + reserve * 0.75
+/** The long-trend window: the same twelve weeks the trend line covers. */
+export const LONG_TREND_DAYS = TREND_WEEKS * 7
+
+export interface LongTrend {
+	/** Fitted change per 28 days, relative to the fitted value today. -0.03 is 3% lower. */
+	pctPer4Weeks: number
+	/** True when the slope is at least twice its standard error. */
+	significant: boolean
+	samples: number
+}
+
+/**
+ * A least-squares line through every session of the last twelve weeks.
+ *
+ * Month-versus-month comparison is deliberately strict, and that makes it blind
+ * to slow progress: gaining 3% a month amid 7% session-to-session scatter reads
+ * "steady" every single month, even after three months and +10%. A regression
+ * over all twelve weeks uses three times the data, so it can see a small,
+ * steady slope — and it's only reported as real when the slope is at least
+ * twice its own standard error.
+ */
+export function longTrend(xs: Dated[], today: Date): LongTrend | null {
+	const p = windowEnding(today, LONG_TREND_DAYS)
+	const pts = xs.filter(x => inPeriod(x.date, p))
+	if (pts.length < 6) return null
+	const t0 = p.to.getTime()
+	const x = pts.map(q => (q.date.getTime() - t0) / 86_400_000) // days, ≤ 0
+	if (Math.max(...x) - Math.min(...x) < 28) return null
+	const y = pts.map(q => q.v)
+	const mx = mean(x)!, my = mean(y)!
+	const sxx = x.reduce((s, xi) => s + (xi - mx) ** 2, 0)
+	if (!sxx) return null
+	const slope = x.reduce((s, xi, i) => s + (xi - mx) * (y[i] - my), 0) / sxx
+	const intercept = my - slope * mx // fitted value today (x = 0)
+	if (!intercept) return null
+	const rss = y.reduce((s, yi, i) => s + (yi - (intercept + slope * x[i])) ** 2, 0)
+	const se = Math.sqrt(rss / (pts.length - 2) / sxx)
+	return {
+		pctPer4Weeks: round((slope * 28) / Math.abs(intercept), 4),
+		significant: se === 0 ? slope !== 0 : Math.abs(slope) / se >= 2,
+		samples: pts.length,
+	}
+}
+
+/**
+ * The note for a metric that's level month on month but clearly moving over
+ * twelve weeks — so "steady" is never the last word on real, slow progress.
+ */
+function slowProgress(long: LongTrend | null, higherIsBetter: boolean): string | null {
+	if (!long?.significant || Math.abs(long.pctPer4Weeks) < 0.005) return null
+	const good = (long.pctPer4Weeks > 0) === higherIsBetter
+	const pct = Math.abs(long.pctPer4Weeks * 100).toFixed(1)
+	return good
+		? `Too close to last month to call on its own, but the last 12 weeks show a steady ${pct}% improvement every 4 weeks. That's real progress.`
+		: `Too close to last month to call on its own, but the last 12 weeks show a slow ${pct}% slide every 4 weeks. Worth keeping an eye on.`
+}
+
+function sampleBasis(noun: string, cur: number, prev: number) {
+	return `median of ${plural(cur, noun)} · ${prev} in the 28 days before`
+}
+
+function thinNote(noun: string, cur: number, prev: number, need = MIN_SAMPLES) {
+	return `Based on ${plural(cur, noun)} now and ${prev} before. Needs ${need} in each 28-day window before it calls a direction.`
+}
+
+/** Distance sessions: total km per week, sessions per week, longest. */
+function distanceMetrics(
+	sessions: DistanceSession[],
+	today: Date,
+	noun: { one: string; label: string; key: string; longest: string },
+): Metric[] {
+	const { current, previous } = periods(today)
+	const inCur = sessions.filter(s => inPeriod(s.date, current))
+	const inPrev = sessions.filter(s => inPeriod(s.date, previous))
+	const km = (xs: DistanceSession[]) => xs.reduce((s, x) => s + (x.km || 0), 0)
+	const hasHistory = sessions.some(s => s.date < current.from)
+	const metrics: Metric[] = []
+
+	// Volume, as a weekly average — the unit runners and riders actually think in.
+	metrics.push(buildMetric({
+		key: `${noun.key}-volume`,
+		label: 'Weekly distance',
+		unit: 'km/wk',
+		current: sessions.length ? round(km(inCur) / 4) : null,
+		previous: hasHistory ? round(km(inPrev) / 4) : null,
+		trend: rollingTrend(today, p => round(km(sessions.filter(s => inPeriod(s.date, p))) / 4)),
+		basis: `${round(km(inCur))} km over the last 28 days`,
+		format: v => String(round(v)),
+		verdict: { kind: 'relative', band: 0.1 },
+		missing: `No ${noun.one}s logged yet.`,
+		note: m => {
+			if (m.value === null) return m.missing!
+			if (m.direction === 'improving') return `${m.deltaDisplay} km a week more than the four weeks before. Volume is what makes everything else improve.`
+			if (m.direction === 'declining') return `${m.deltaDisplay} km a week less than the four weeks before.`
+			if (m.direction === 'holding') return 'Within 10% of the four weeks before — a steady load.'
+			return 'Your first four weeks. The comparison appears once there are eight.'
+		},
+	}))
+
+	// Consistency. The most predictive number on the page, and the dullest.
+	metrics.push(buildMetric({
+		key: `${noun.key}-consistency`,
+		label: `${noun.label} per week`,
+		unit: '/wk',
+		current: sessions.length ? inCur.length / 4 : null,
+		previous: hasHistory ? inPrev.length / 4 : null,
+		trend: rollingTrend(today, p => sessions.filter(s => inPeriod(s.date, p)).length / 4),
+		basis: `${plural(inCur.length, noun.one)} in the last 28 days`,
+		format: v => v.toFixed(1).replace(/\.0$/, ''),
+		formatDelta: v => v.toFixed(1).replace(/\.0$/, ''),
+		verdict: { kind: 'count', current: inCur.length, previous: inPrev.length, minAbs: 2, band: 0.15 },
+		missing: `No ${noun.one}s logged yet.`,
+		note: m => {
+			if (m.value === null) return m.missing!
+			if (!inCur.length) return `No ${noun.one}s in the last four weeks.`
+			if (m.direction === 'improving') return `${inCur.length - inPrev.length} more ${noun.one}s than the four weeks before. Consistency beats intensity.`
+			if (m.direction === 'declining') return `${inPrev.length - inCur.length} fewer ${noun.one}s than the four weeks before.`
+			if (m.direction === 'holding') return `About the same as the four weeks before (${inPrev.length}).`
+			return `Your first four weeks.`
+		},
+	}))
+
+	const longest = (xs: DistanceSession[]) => {
+		const v = maxOr(xs.map(s => s.km))
+		return v === null ? null : round(v)
+	}
+	metrics.push(buildMetric({
+		key: `${noun.key}-longest`,
+		label: noun.longest,
+		unit: 'km',
+		current: longest(inCur),
+		previous: longest(inPrev),
+		trend: rollingTrend(today, p => longest(sessions.filter(s => inPeriod(s.date, p)))),
+		format: v => String(round(v)),
+		verdict: { kind: 'relative', band: 0.05 },
+		missing: `No ${noun.one}s with a distance in the last 28 days.`,
+		note: m => {
+			if (m.value === null) return m.missing!
+			if (m.direction === 'improving') return `${m.deltaDisplay} km further than the longest in the four weeks before.`
+			if (m.direction === 'declining') return `${m.deltaDisplay} km shorter than the longest in the four weeks before.`
+			if (m.direction === 'holding') return 'Same long session as the four weeks before.'
+			return 'Your longest in the last four weeks.'
+		},
+	}))
+
+	return metrics
+}
+
+/** Progress for running: aerobic pace first, because it's the one that says "fitter". */
+export function runningProgress(input: RunInputs): SportProgress {
+	const { sessions, activities, maxHR, restHR } = input
+	const today = input.today ?? new Date()
+
+	const samples: Dated[] = activities
+		.map(a => ({ date: actDate(a), speed: aerobicSpeed(a, maxHR, restHR) }))
+		.filter((x): x is { date: Date; speed: number } => x.speed !== null)
+		.map(x => ({ date: x.date, v: 1000 / x.speed }))
+	const s = sampleSeries(samples, today, Math.round)
+	const bpm = maxHR ? referenceHR(maxHR, restHR) : null
+
+	const pace = buildMetric({
+		key: 'run-aerobic-pace',
+		label: bpm ? `Pace at ${bpm} bpm` : 'Aerobic pace',
+		unit: '/km',
+		current: s.value,
+		previous: s.previous,
+		higherIsBetter: false, // faster is a smaller number
+		invertTrend: true, // …but faster should still draw as up, like the pace chart
+		trend: s.trend,
+		longTrend: s.long,
+		basis: sampleBasis('run', s.cur.length, s.prev.length),
+		format: v => fmtPace(v),
+		formatDelta: v => `${Math.round(v)} s`,
+		verdict: { kind: 'samples', current: s.cur, previous: s.prev, minRel: 0.01 },
+		missing: maxHR
+			? 'Needs a steady run of 15 minutes or more with heart rate in the last 28 days.'
+			: 'Needs runs recorded with a heart rate monitor, or a max HR set in Profile.',
+		note: m => {
+			if (m.value === null) return m.missing!
+			if (m.unknownReason === 'thin') return thinNote('run', s.cur.length, s.prev.length)
+			if (m.direction === 'improving') return `${m.deltaDisplay}/km faster than last month for the same heart rate. That's aerobic fitness, and it shows up here long before a race.`
+			if (m.direction === 'declining') return `${m.deltaDisplay}/km slower for the same heart rate. Normal in a hard block, heat or a bad-sleep spell — worth watching if it keeps sliding.`
+			if (m.direction === 'holding') return slowProgress(s.long, false) ?? 'Same pace for the same heart rate as last month — within the normal run-to-run scatter.'
+			return 'Your baseline. Every steady run is rescaled to this heart rate, so easy and harder runs both count.'
+		},
+	})
+
+	return {
+		metrics: [pace, ...distanceMetrics(sessions, today, { one: 'run', label: 'Runs', key: 'run', longest: 'Longest run' })],
+		hasData: sessions.length > 0,
+	}
+}
+
+/** Aerobic-pace points for a chart: one per qualifying run, oldest first. */
+export function aerobicPacePoints(activities: Act[], maxHR: number | null, restHR: number): { date: string; paceSec: number }[] {
 	return activities
-		.filter(a => {
-			if (!isRun(a)) return false
-			const hr = a.average_heartrate
-			return Number.isFinite(hr) && hr >= lo && hr <= hi && (speedOf(a) ?? 0) > 1.5
-		})
-		.map(a => ({ date: actDate(a), paceSec: 1000 / speedOf(a)! }))
+		.map(a => ({ a, speed: aerobicSpeed(a, maxHR, restHR) }))
+		.filter(x => x.speed !== null)
+		.map(x => ({ date: actDay(x.a), paceSec: Math.round(1000 / x.speed!) }))
+		.sort((a, b) => a.date.localeCompare(b.date))
+}
+
+/** The median of `points` in the 28 days up to each point's own date. */
+export function rollingMedianLine<T extends { date: string }>(points: T[], value: (p: T) => number, minSamples = 2): { date: string; value: number | null }[] {
+	return points.map(p => {
+		const w = windowEnding(parseISO(p.date))
+		const vals = points.filter(q => inPeriod(parseISO(q.date), w)).map(value)
+		return { date: p.date, value: vals.length >= minSamples ? median(vals) : null }
+	})
 }
 
 // ─── rolling personal bests ───────────────────────────────────────────────────
@@ -466,20 +705,16 @@ export interface BestEffortProgress {
 export const BEST_EFFORT_NAMES = ['1 km', '5 km', '10 km', 'Half marathon'] as const
 
 /**
- * Best efforts over a rolling window.
- *
- * This is the honest answer to "I can't see progress without racing": every
- * recorded run is scanned for its fastest 1 km, 5 km and so on, so a hard
- * Tuesday counts. A 90-day window means the comparison is against a real
- * training block rather than against one lucky day years ago.
+ * Best efforts over a rolling window. Every recorded run is scanned for its
+ * fastest 1 km, 5 km and so on, so a hard Tuesday counts. A 90-day window means
+ * the comparison is against a real training block rather than one lucky day.
  */
 export function bestEffortProgress(
 	activities: Act[],
 	windowDays = 90,
 	today = new Date(),
 ): BestEffortProgress[] {
-	const curFrom = addDays(today, -windowDays)
-	const prevFrom = addDays(today, -windowDays * 2)
+	const { current: cur, previous: prev } = periods(today, windowDays)
 
 	return BEST_EFFORT_NAMES.map(name => {
 		let current: number | null = null
@@ -496,11 +731,11 @@ export function bestEffortProgress(
 
 			if (allTime === null || t < allTime) {
 				allTime = t
-				allTimeDate = when.toISOString().slice(0, 10)
+				allTimeDate = actDay(a)
 			}
-			if (when >= curFrom) {
+			if (inPeriod(when, cur)) {
 				if (current === null || t < current) current = t
-			} else if (when >= prevFrom) {
+			} else if (inPeriod(when, prev)) {
 				if (previous === null || t < previous) previous = t
 			}
 		}
@@ -529,15 +764,24 @@ export interface TrainingLoad {
 	fitnessPrev: number | null
 	/** Plain-language read on the form number. */
 	formLabel: 'fresh' | 'neutral' | 'building' | 'strained'
+	/**
+	 * True while the history is too short for fitness to have settled. It starts
+	 * from zero at your first recording and takes ~6 weeks to converge, so until
+	 * then it rises whatever you do — which must not be sold as progress.
+	 */
+	warmingUp: boolean
+	/** How many recordings with heart rate fed it. */
+	sessions: number
 }
+
+/** Days of history before the 42-day fitness average means anything. */
+export const LOAD_WARMUP_DAYS = 42
 
 /**
  * Fitness, fatigue and form from heart-rate training load.
  *
  * Fitness is a 42-day weighted average of daily effort, fatigue a 7-day one,
- * and form the difference. Unlike VDOT this moves *every single day you train*,
- * which is exactly the progress signal a training log should lead with. The
- * maths already existed in analysis.ts and was never surfaced.
+ * and form the difference. Unlike VDOT this moves every day you train.
  */
 export function trainingLoad(
 	activities: Act[],
@@ -549,11 +793,14 @@ export function trainingLoad(
 	if (!maxHR || maxHR < 140) return null
 
 	const efforts: Record<string, number> = {}
+	let sessions = 0
 	for (const a of activities) {
 		const load = relativeEffort(a, maxHR, restHR)
 		if (!load) continue
-		const key = actDate(a).toISOString().slice(0, 10)
+		const key = actDay(a)
+		if (parseISO(key) > today) continue
 		efforts[key] = (efforts[key] || 0) + load
+		sessions++
 	}
 	if (!Object.keys(efforts).length) return null
 
@@ -562,7 +809,9 @@ export function trainingLoad(
 
 	const last = series[series.length - 1]
 	const prevIdx = series.length - 1 - PERIOD_DAYS
-	const fitnessPrev = prevIdx >= 0 ? series[prevIdx].fitness : null
+	const first = parseISO(Object.keys(efforts).sort()[0])
+	const warmingUp = first > addDays(today, -(LOAD_WARMUP_DAYS + PERIOD_DAYS))
+	const fitnessPrev = prevIdx >= 0 && !warmingUp ? series[prevIdx].fitness : null
 
 	// Form thresholds follow the usual TSB reading: comfortably positive means
 	// rested, deeply negative means you're digging a hole.
@@ -570,36 +819,7 @@ export function trainingLoad(
 	const formLabel: TrainingLoad['formLabel'] =
 		form > 5 ? 'fresh' : form >= -10 ? 'neutral' : form >= -25 ? 'building' : 'strained'
 
-	return {
-		series,
-		fitness: last.fitness,
-		fatigue: last.fatigue,
-		form,
-		fitnessPrev,
-		formLabel,
-	}
-}
-
-/** The fitness number as a Metric, so it renders like everything else. */
-export function fitnessMetric(load: TrainingLoad | null): Metric {
-	return buildMetric({
-		key: 'training-load',
-		label: 'Fitness',
-		unit: 'pts',
-		current: load ? load.fitness : null,
-		previous: load ? load.fitnessPrev : null,
-		spark: load ? toSpark(sampleEvenly(load.series.map(p => p.fitness), 8)) : [],
-		format: v => String(Math.round(v)),
-		formatDelta: v => String(Math.round(v)),
-		missing: 'Needs heart rate data and a max HR in Profile.',
-		note: m => {
-			if (m.value === null) return m.missing!
-			if (m.direction === 'improving') return `Your accumulated training load is up ${m.deltaDisplay} points on last month. This is the number that moves every time you train.`
-			if (m.direction === 'declining') return `Down ${m.deltaDisplay} points — you've trained less than the month before.`
-			if (m.direction === 'holding') return 'Load is level with last month. Maintaining, not building.'
-			return 'Building your first month of load history.'
-		},
-	})
+	return { series, fitness: last.fitness, fatigue: last.fatigue, form, fitnessPrev, formLabel, warmingUp, sessions }
 }
 
 // ─── gym ──────────────────────────────────────────────────────────────────────
@@ -607,96 +827,129 @@ export function fitnessMetric(load: TrainingLoad | null): Metric {
 export interface GymSplitProgress {
 	split: string
 	sessions: number
-	/** Mean tonnage per session in the current period, tonnes. */
+	/** Median tonnage per session in the current period, tonnes. */
 	loadPerSession: number | null
 	previousLoadPerSession: number | null
 	direction: Direction
-	spark: number[]
+	trend: (number | null)[]
+	/** Sessions with a load in the current / previous window. */
+	counts: [number, number]
+	/** Twelve-week fitted trend. */
+	long: LongTrend | null
 }
 
 export interface GymProgress extends SportProgress {
 	splits: GymSplitProgress[]
 }
 
+const workoutDate = (w: Workout) => parseISO(w.date)
+
 /**
  * Progress for lifting.
  *
- * Total tonnage is the obvious metric and a poor one: it rises when you train
- * more often and falls on a deload, so it says more about your calendar than
- * your strength. Load *per session* is the one that answers "am I lifting more
- * than I was", so it leads here, with total volume and consistency behind it.
+ * Total tonnage mostly tracks how often you turned up. Load *per session* is
+ * the one that answers "am I lifting more than I was", so it leads — as a
+ * median, so one marathon session doesn't pass for a stronger month.
  */
 export function gymProgress(gymWorkouts: Workout[], today = new Date()): GymProgress {
 	const { current, previous } = periods(today)
-	const dateOf = (w: Workout) => new Date(w.date)
 	const tonnes = (w: Workout) => (w.totalWeightLifted || 0) / 1000
+	const loaded: Dated[] = gymWorkouts
+		.filter(w => (w.totalWeightLifted || 0) > 0)
+		.map(w => ({ date: workoutDate(w), v: tonnes(w) }))
 
-	const cur = gymWorkouts.filter(w => inPeriod(dateOf(w), current))
-	const prev = gymWorkouts.filter(w => inPeriod(dateOf(w), previous))
-	const weeks = weekWindows(8, today)
-	const weekTonnage = weeks.map(wk =>
-		gymWorkouts
-			.filter(w => dateOf(w) >= wk.start && dateOf(w) <= wk.end)
-			.reduce((s, w) => s + tonnes(w), 0))
-
-	const loaded = (ws: Workout[]) => ws.filter(w => (w.totalWeightLifted || 0) > 0)
-	const perSession = (ws: Workout[]) => mean(loaded(ws).map(tonnes))
-
+	const cur = gymWorkouts.filter(w => inPeriod(workoutDate(w), current))
+	const prev = gymWorkouts.filter(w => inPeriod(workoutDate(w), previous))
+	const hasHistory = gymWorkouts.some(w => workoutDate(w) < current.from)
 	const metrics: Metric[] = []
+
+	const s = sampleSeries(loaded, today, v => round(v, 2), 1)
+
+	// The long trend is fitted to each session's load relative to its own split's
+	// typical load. Leg days can be 40% heavier than push days, so fitting raw
+	// tonnage across a mix of splits buries a real, steady gain in scatter that
+	// is only "which day was it". A percentage is unit-free, so the adjusted fit
+	// still reads directly as "x% heavier every 4 weeks".
+	const longWindow = windowEnding(today, LONG_TREND_DAYS)
+	const splitTypical = new Map<string, number>()
+	for (const w of gymWorkouts) {
+		const key = gymSplit(w.gymType)
+		if (splitTypical.has(key)) continue
+		const vals = gymWorkouts
+			.filter(x => gymSplit(x.gymType) === key && (x.totalWeightLifted || 0) > 0 && inPeriod(workoutDate(x), longWindow))
+			.map(tonnes)
+		const typical = median(vals)
+		if (typical) splitTypical.set(key, typical)
+	}
+	const adjusted: Dated[] = gymWorkouts
+		.filter(w => (w.totalWeightLifted || 0) > 0 && splitTypical.has(gymSplit(w.gymType)))
+		.map(w => ({ date: workoutDate(w), v: tonnes(w) / splitTypical.get(gymSplit(w.gymType))! }))
+	const longAdjusted = longTrend(adjusted, today)
 
 	metrics.push(buildMetric({
 		key: 'gym-load-per-session',
 		label: 'Load per session',
 		unit: 't',
-		current: perSession(cur) === null ? null : round(perSession(cur)!, 2),
-		previous: perSession(prev) === null ? null : round(perSession(prev)!, 2),
-		spark: toSpark(weeks.map(wk => {
-			const ws = loaded(gymWorkouts.filter(w => dateOf(w) >= wk.start && dateOf(w) <= wk.end))
-			return mean(ws.map(tonnes)) ?? 0
-		})),
+		current: s.value,
+		previous: s.previous,
+		trend: s.trend,
+		longTrend: longAdjusted,
+		basis: sampleBasis('session', s.cur.length, s.prev.length),
 		format: v => v.toFixed(2),
 		formatDelta: v => v.toFixed(2),
-		missing: 'Log the total load lifted when you complete a gym session and this starts tracking.',
+		verdict: { kind: 'samples', current: s.cur, previous: s.prev, minRel: 0.03 },
+		missing: loaded.length
+			? 'No sessions with a load logged in the last 28 days.'
+			: 'Log the total load lifted when you complete a gym session and this starts tracking.',
 		note: m => {
 			if (m.value === null) return m.missing!
-			if (m.direction === 'improving') return `${m.deltaDisplay} t more per session than last month — you're doing more work each time you train, not just training more often.`
+			if (m.unknownReason === 'thin') return thinNote('session', s.cur.length, s.prev.length)
+			if (m.direction === 'improving') return `${m.deltaDisplay} t more per session than last month — more work each time you train, not just training more often.`
 			if (m.direction === 'declining') return `${m.deltaDisplay} t less per session than last month. Expected on a deload.`
-			if (m.direction === 'holding') return 'Same work per session as last month.'
+			if (m.direction === 'holding') return slowProgress(longAdjusted, true) ?? 'Same work per session as last month, within normal session-to-session variation.'
 			return 'Your baseline session load.'
 		},
 	}))
 
+	const total = (ws: Workout[]) => ws.reduce((sum, w) => sum + tonnes(w), 0)
 	metrics.push(buildMetric({
 		key: 'gym-volume',
-		label: 'Total volume',
-		unit: 't',
-		current: round(cur.reduce((s, w) => s + tonnes(w), 0)),
-		previous: gymWorkouts.length ? round(prev.reduce((s, w) => s + tonnes(w), 0)) : null,
-		spark: toSpark(weekTonnage),
+		label: 'Weekly volume',
+		unit: 't/wk',
+		current: loaded.length ? round(total(cur) / 4) : null,
+		previous: loaded.length && hasHistory ? round(total(prev) / 4) : null,
+		trend: rollingTrend(today, p => round(total(gymWorkouts.filter(w => inPeriod(workoutDate(w), p))) / 4)),
+		basis: `${round(total(cur))} t over the last 28 days`,
 		format: v => String(round(v)),
+		verdict: { kind: 'relative', band: 0.1 },
+		missing: 'Log the total load lifted when you complete a gym session.',
 		note: m => {
+			if (m.value === null) return m.missing!
 			if (!m.value) return 'No load logged in the last four weeks.'
-			if (m.direction === 'improving') return `${m.deltaDisplay} t more moved than the previous four weeks.`
-			if (m.direction === 'declining') return `${m.deltaDisplay} t less than the previous four weeks.`
-			return 'Level with the previous four weeks.'
+			if (m.direction === 'improving') return `${m.deltaDisplay} t a week more than the four weeks before.`
+			if (m.direction === 'declining') return `${m.deltaDisplay} t a week less than the four weeks before.`
+			if (m.direction === 'holding') return 'Within 10% of the four weeks before.'
+			return 'Your first four weeks.'
 		},
 	}))
 
 	metrics.push(buildMetric({
 		key: 'gym-sessions',
-		label: 'Sessions',
-		unit: 'sessions',
-		current: cur.length,
-		previous: gymWorkouts.length ? prev.length : null,
-		spark: toSpark(weeks.map(wk => gymWorkouts.filter(w => dateOf(w) >= wk.start && dateOf(w) <= wk.end).length)),
-		format: v => String(Math.round(v)),
-		formatDelta: v => String(Math.round(v)),
+		label: 'Sessions per week',
+		unit: '/wk',
+		current: cur.length / 4,
+		previous: hasHistory ? prev.length / 4 : null,
+		trend: rollingTrend(today, p => gymWorkouts.filter(w => inPeriod(workoutDate(w), p)).length / 4),
+		basis: `${plural(cur.length, 'session')} in the last 28 days`,
+		format: v => v.toFixed(1).replace(/\.0$/, ''),
+		formatDelta: v => v.toFixed(1).replace(/\.0$/, ''),
+		verdict: { kind: 'count', current: cur.length, previous: prev.length, minAbs: 2, band: 0.15 },
 		note: m => {
-			if (!m.value) return 'No gym sessions in the last four weeks.'
-			const perWeek = round(m.value / 4)
-			if (m.direction === 'improving') return `${perWeek} a week, up ${m.deltaDisplay} on last month.`
-			if (m.direction === 'declining') return `${perWeek} a week, ${m.deltaDisplay} fewer than last month.`
-			return `${perWeek} a week, same as last month.`
+			if (!cur.length) return 'No gym sessions in the last four weeks.'
+			if (m.direction === 'improving') return `${cur.length - prev.length} more sessions than the four weeks before.`
+			if (m.direction === 'declining') return `${prev.length - cur.length} fewer sessions than the four weeks before.`
+			if (m.direction === 'holding') return `About the same as the four weeks before (${prev.length}).`
+			return 'Your first four weeks.'
 		},
 	}))
 
@@ -710,23 +963,25 @@ export function gymProgress(gymWorkouts: Workout[], today = new Date()): GymProg
 	}
 
 	const splits: GymSplitProgress[] = [...groups.entries()].map(([split, ws]) => {
-		const c = perSession(ws.filter(w => inPeriod(dateOf(w), current)))
-		const p = perSession(ws.filter(w => inPeriod(dateOf(w), previous)))
+		const pts: Dated[] = ws.filter(w => (w.totalWeightLifted || 0) > 0).map(w => ({ date: workoutDate(w), v: tonnes(w) }))
+		const ss = sampleSeries(pts, today, v => round(v, 2), 1)
+		// A split is trained maybe once a week, so two sessions per window is
+		// the most we can ask for — the noise gate still applies.
 		const m = buildMetric({
 			key: `split-${split}`, label: split, unit: 't',
-			current: c === null ? null : round(c, 2),
-			previous: p === null ? null : round(p, 2),
+			current: ss.value,
+			previous: ss.previous,
+			verdict: { kind: 'samples', current: ss.cur, previous: ss.prev, minRel: 0.03, minSamples: 2 },
 		})
 		return {
 			split,
 			sessions: ws.length,
-			loadPerSession: c === null ? null : round(c, 2),
-			previousLoadPerSession: p === null ? null : round(p, 2),
+			loadPerSession: m.value,
+			previousLoadPerSession: m.previous,
 			direction: m.direction,
-			spark: toSpark(weeks.map(wk => {
-				const inWk = loaded(ws.filter(w => dateOf(w) >= wk.start && dateOf(w) <= wk.end))
-				return mean(inWk.map(tonnes)) ?? 0
-			})),
+			trend: ss.trend,
+			counts: [ss.cur.length, ss.prev.length] as [number, number],
+			long: ss.long,
 		}
 	}).sort((a, b) => b.sessions - a.sessions)
 
@@ -735,73 +990,76 @@ export function gymProgress(gymWorkouts: Workout[], today = new Date()): GymProg
 
 // ─── bike ─────────────────────────────────────────────────────────────────────
 
-export function bikeProgress(activities: Act[], bikeKmByWeek: number[], maxHR: number | null, today = new Date()): SportProgress {
+export interface BikeInputs {
+	sessions: DistanceSession[]
+	activities: Act[]
+	maxHR: number | null
+	restHR: number
+	/** Used for the power estimate. One weight for every ride keeps the trend fair. */
+	riderKg: number
+	today?: Date
+}
+
+export function bikeProgress(input: BikeInputs): SportProgress {
+	const { sessions, activities, maxHR, restHR, riderKg } = input
+	const today = input.today ?? new Date()
 	const { current, previous } = periods(today)
-	const rides = activities.filter(isRide)
-	const inCur = (a: Act) => inPeriod(actDate(a), current)
-	const inPrev = (a: Act) => inPeriod(actDate(a), previous)
 
-	const metrics: Metric[] = []
+	const samples: Dated[] = activities
+		.map(a => ({ date: actDate(a), w: aerobicPower(a, maxHR, restHR, riderKg) }))
+		.filter((x): x is { date: Date; w: number } => x.w !== null)
+		.map(x => ({ date: x.date, v: x.w }))
+	const s = sampleSeries(samples, today, Math.round)
+	const bpm = maxHR ? referenceHR(maxHR, restHR) : null
 
-	const kmCur = sumLast(bikeKmByWeek, 4)
-	const kmPrev = sumLast(bikeKmByWeek, 8) - kmCur
-	metrics.push(buildMetric({
-		key: 'bike-volume',
-		label: 'Volume',
-		unit: 'km',
-		current: bikeKmByWeek.length ? round(kmCur) : null,
-		previous: bikeKmByWeek.length >= 8 ? round(kmPrev) : null,
-		spark: toSpark(bikeKmByWeek.slice(-8)),
-		format: v => String(round(v)),
-		missing: 'No rides logged yet.',
-	}))
-
-	const steady = rides.filter(a => efficiencyFactor(a) !== null &&
-		(!maxHR || maxHR < 140 || a.average_heartrate <= maxHR * STEADY_HR_FRACTION))
-	const efCur = mean(steady.filter(inCur).map(a => efficiencyFactor(a)!))
-	const efPrev = mean(steady.filter(inPrev).map(a => efficiencyFactor(a)!))
-	metrics.push(buildMetric({
-		key: 'bike-efficiency',
-		label: 'Aerobic efficiency',
-		unit: 'm/beat',
-		current: efCur === null ? null : round(efCur, 2),
-		previous: efPrev === null ? null : round(efPrev, 2),
-		format: v => v.toFixed(2),
-		formatDelta: v => v.toFixed(2),
-		missing: 'Needs rides recorded with a heart rate monitor.',
-		note: m => m.value === null ? m.missing!
-			: m.direction === 'improving' ? `${m.deltaDisplay} more metres per heartbeat than last month.`
-			: m.direction === 'declining' ? `Down ${m.deltaDisplay} m/beat on last month.`
-			: m.direction === 'holding' ? 'Same speed for the same effort as last month.'
-			: 'Your first month of readings.',
-	}))
-
-	const climbCur = rides.filter(inCur).reduce((s, a) => s + (a.total_elevation_gain || 0), 0)
-	const climbPrev = rides.filter(inPrev).reduce((s, a) => s + (a.total_elevation_gain || 0), 0)
-	metrics.push(buildMetric({
-		key: 'bike-climb',
-		label: 'Climbing',
-		unit: 'm',
-		current: rides.length ? Math.round(climbCur) : null,
-		previous: rides.length ? Math.round(climbPrev) : null,
+	const power = buildMetric({
+		key: 'bike-aerobic-power',
+		label: bpm ? `Power at ${bpm} bpm` : 'Aerobic power',
+		unit: 'W',
+		current: s.value,
+		previous: s.previous,
+		trend: s.trend,
+		longTrend: s.long,
+		basis: `estimated · ${sampleBasis('ride', s.cur.length, s.prev.length)}`,
 		format: v => String(Math.round(v)),
 		formatDelta: v => String(Math.round(v)),
-		missing: 'No recorded rides yet.',
-	}))
+		verdict: { kind: 'samples', current: s.cur, previous: s.prev, minRel: 0.02 },
+		missing: maxHR
+			? 'Needs a steady ride of 15 minutes or more, imported from a file with speed and heart rate, in the last 28 days.'
+			: 'Needs rides recorded with a heart rate monitor, or a max HR set in Profile.',
+		note: m => {
+			if (m.value === null) return m.missing!
+			if (m.unknownReason === 'thin') return thinNote('ride', s.cur.length, s.prev.length)
+			if (m.direction === 'improving') return `${m.deltaDisplay} W more for the same heart rate than last month.`
+			if (m.direction === 'declining') return `${m.deltaDisplay} W less for the same heart rate than last month.`
+			if (m.direction === 'holding') return slowProgress(s.long, true) ?? 'Same power for the same heart rate — within the scatter wind and terrain add.'
+			return 'Your baseline. Power is estimated from speed and gradient, so read the trend rather than the watts.'
+		},
+	})
 
-	const longCur = maxOr(rides.filter(inCur).map(a => (a.distance ?? 0) / 1000))
-	const longPrev = maxOr(rides.filter(inPrev).map(a => (a.distance ?? 0) / 1000))
-	metrics.push(buildMetric({
-		key: 'bike-longest',
-		label: 'Longest ride',
-		unit: 'km',
-		current: longCur === null ? null : round(longCur),
-		previous: longPrev === null ? null : round(longPrev),
-		format: v => String(round(v)),
+	const rides = sessions.filter(x => x.activity)
+	const climb = (p: Period) => rides.filter(x => inPeriod(x.date, p)).reduce((sum, x) => sum + (x.activity!.total_elevation_gain || 0), 0)
+	const climbing = buildMetric({
+		key: 'bike-climb',
+		label: 'Weekly climbing',
+		unit: 'm/wk',
+		current: rides.length ? Math.round(climb(current) / 4) : null,
+		previous: rides.some(x => x.date < current.from) ? Math.round(climb(previous) / 4) : null,
+		trend: rollingTrend(today, p => Math.round(climb(p) / 4)),
+		format: v => String(Math.round(v)),
+		formatDelta: v => String(Math.round(v)),
+		verdict: { kind: 'relative', band: 0.15 },
 		missing: 'No recorded rides yet.',
-	}))
+	})
 
-	return { metrics, hasData: rides.length > 0 || bikeKmByWeek.some(v => v > 0) }
+	return {
+		metrics: [
+			...distanceMetrics(sessions, today, { one: 'ride', label: 'Rides', key: 'bike', longest: 'Longest ride' }),
+			power,
+			climbing,
+		],
+		hasData: sessions.length > 0,
+	}
 }
 
 // ─── body weight ──────────────────────────────────────────────────────────────
@@ -812,88 +1070,180 @@ export interface WeighIn {
 }
 
 export interface BodyProgress extends SportProgress {
-	/** Smoothed series for the chart: date plus 7-day trailing mean. */
+	/** Trend weight at every weigh-in, for the chart. */
 	smoothed: { date: string; weight: number }[]
+	/** Least-squares kg per week over the last 28 days. Null with too few readings. */
+	ratePerWeek: number | null
 	/** Weeks until the goal at the current rate, null when not applicable. */
 	weeksToGoal: number | null
 	atGoal: boolean
+	/** Days since the last weigh-in. */
+	daysSinceLast: number | null
+}
+
+/** Time constant of the trend weight, days. */
+export const WEIGHT_TAU_DAYS = 7
+
+/** A trend value is only trusted this many days past its last weigh-in. */
+const WEIGHT_STALE_DAYS = 10
+
+/** Under this much change over four weeks, weight is holding (0.1 kg a week). */
+export const WEIGHT_BAND_KG = 0.4
+
+const dayGap = (a: string, b: string) => (parseISO(b).getTime() - parseISO(a).getTime()) / 86_400_000
+
+/**
+ * Trend weight: an exponential moving average that respects the gaps between
+ * weigh-ins.
+ *
+ * The old version averaged the last seven *readings*, so someone who weighs in
+ * twice a week got a month-long average and someone who weighs in daily got a
+ * week. Here each reading pulls the trend by an amount set by how many days
+ * passed since the last one, so the trend means the same thing however often
+ * you step on the scale.
+ */
+export function weightTrend(sorted: WeighIn[]): { date: string; weight: number }[] {
+	const out: { date: string; weight: number }[] = []
+	let trend: number | null = null
+	let last: string | null = null
+	for (const w of sorted) {
+		if (trend === null || last === null) {
+			trend = w.weight
+		} else {
+			const alpha = 1 - Math.exp(-Math.max(0, dayGap(last, w.date)) / WEIGHT_TAU_DAYS)
+			// Same-day duplicates still count, as a small nudge rather than nothing.
+			trend += Math.max(alpha, 0.15) * (w.weight - trend)
+		}
+		last = w.date
+		out.push({ date: w.date, weight: round(trend, 2) })
+	}
+	return out
+}
+
+/** Least-squares slope in kg per week. */
+function slopePerWeek(points: WeighIn[]): number | null {
+	if (points.length < 2) return null
+	const x0 = parseISO(points[0].date).getTime()
+	const xs = points.map(p => (parseISO(p.date).getTime() - x0) / (7 * 86_400_000))
+	const mx = mean(xs)!
+	const my = mean(points.map(p => p.weight))!
+	const den = xs.reduce((s, x) => s + (x - mx) ** 2, 0)
+	if (!den) return null
+	return xs.reduce((s, x, i) => s + (x - mx) * (points[i].weight - my), 0) / den
 }
 
 /**
- * Progress for body weight, on a 7-day trailing mean.
+ * Progress for body weight.
  *
- * A single morning reading swings a kilo on hydration alone, so comparing "last
- * weigh-in" to "the one four weeks ago" mostly measures noise. Smoothing first
- * means the direction shown is the direction that's real.
+ * A single morning reading swings a kilo on hydration alone, so the headline
+ * is the trend weight, and the rate is fitted through every reading of the last
+ * four weeks rather than taken from two endpoints.
  */
 export function bodyProgress(weights: WeighIn[], goalWeight: number | null, today = new Date()): BodyProgress {
-	const sorted = [...weights].sort((a, b) => a.date.localeCompare(b.date))
+	const sorted = [...weights]
+		.filter(w => Number.isFinite(w.weight) && w.weight > 0)
+		.sort((a, b) => a.date.localeCompare(b.date))
+	const smoothed = weightTrend(sorted)
+	const todayStr = format(today, 'yyyy-MM-dd')
 
-	const smoothed = sorted.map((w, i) => {
-		const from = addDays(new Date(w.date), -6)
-		const window = sorted.slice(0, i + 1).filter(x => new Date(x.date) >= from)
-		return { date: w.date, weight: round(mean(window.map(x => x.weight))!, 2) }
-	})
-
+	/** Trend weight as of a day — only if there was a weigh-in shortly before it. */
 	const at = (when: Date): number | null => {
-		const cutoff = when.toISOString().slice(0, 10)
+		const cutoff = format(when, 'yyyy-MM-dd')
 		const upto = smoothed.filter(s => s.date <= cutoff)
-		return upto.length ? upto[upto.length - 1].weight : null
+		const lastPt = upto[upto.length - 1]
+		if (!lastPt || dayGap(lastPt.date, cutoff) > WEIGHT_STALE_DAYS) return null
+		return lastPt.weight
 	}
 
-	const curr = smoothed.length ? smoothed[smoothed.length - 1].weight : null
+	const lastPt = smoothed[smoothed.length - 1] ?? null
+	const daysSinceLast = lastPt ? Math.round(dayGap(lastPt.date, todayStr)) : null
+	const curr = lastPt ? lastPt.weight : null
 	const prev = at(addDays(today, -PERIOD_DAYS))
+
+	const recent = sorted.filter(w => inPeriod(parseISO(w.date), windowEnding(today)))
+	const span = recent.length ? dayGap(recent[0].date, recent[recent.length - 1].date) : 0
+	const rawRate = recent.length >= 3 && span >= 10 ? slopePerWeek(recent) : null
+	const ratePerWeek = rawRate === null ? null : round(rawRate, 2)
 
 	// Direction depends on which way the goal lies. Without a goal, "no change"
 	// is the neutral reading — we must not assume everyone wants to lose weight.
 	const losing = goalWeight !== null && curr !== null ? goalWeight < curr : null
 	const higherIsBetter = losing === null ? true : !losing
+	const away = goalWeight !== null && curr !== null ? round(Math.abs(curr - goalWeight)) : null
+	const atGoal = away !== null && away <= 0.5
 
 	const metrics: Metric[] = []
 	metrics.push(buildMetric({
 		key: 'body-weight',
-		label: 'Body weight',
+		label: 'Trend weight',
 		unit: 'kg',
 		current: curr,
 		previous: prev,
 		higherIsBetter,
-		spark: toSpark(weekWindows(8, today).map(wk => {
-			const inWk = smoothed.filter(s => new Date(s.date) >= wk.start && new Date(s.date) <= wk.end)
-			return inWk.length ? inWk[inWk.length - 1].weight : 0
-		})),
+		trend: trendAnchors(today).map(at),
+		basis: `${plural(recent.length, 'weigh-in')} in the last 28 days`,
 		format: v => v.toFixed(1),
 		formatDelta: v => v.toFixed(1),
+		verdict: { kind: 'absolute', band: WEIGHT_BAND_KG },
 		missing: 'Log your weight from the schedule page to start tracking.',
 		note: m => {
 			if (m.value === null) return m.missing!
+			const stale = daysSinceLast !== null && daysSinceLast > WEIGHT_STALE_DAYS
+				? ` Last weigh-in was ${daysSinceLast} days ago.`
+				: ''
 			if (goalWeight === null) {
-				if (m.direction === 'holding') return '7-day average, level with last month. Set a goal weight in Profile to track a target.'
-				return `7-day average, ${m.delta! > 0 ? 'up' : 'down'} ${m.deltaDisplay} kg on last month. Set a goal weight in Profile to track a target.`
+				if (m.direction === 'holding') return `Level with last month.${stale} Set a goal weight in Profile to track a target.`
+				if (m.direction === 'unknown') return `Your baseline.${stale} Set a goal weight in Profile to track a target.`
+				return `${m.delta! > 0 ? 'Up' : 'Down'} ${m.deltaDisplay} kg on last month.${stale} Set a goal weight in Profile to track a target.`
 			}
-			const away = round(Math.abs(m.value - goalWeight))
-			if (away <= 0.3) return 'At your goal weight. Nice.'
-			if (m.direction === 'improving') return `${m.deltaDisplay} kg closer to your goal than last month — ${away} kg to go.`
-			if (m.direction === 'declining') return `Moving away from your goal — ${away} kg to go.`
-			return `Holding steady, ${away} kg from your goal.`
+			if (atGoal) return `At your goal weight.${stale}`
+			if (m.direction === 'improving') return `${m.deltaDisplay} kg closer to your goal than last month — ${away} kg to go.${stale}`
+			if (m.direction === 'declining') return `${m.deltaDisplay} kg further from your goal than last month — ${away} kg to go.${stale}`
+			if (m.direction === 'holding') return `Holding steady, ${away} kg from your goal.${stale}`
+			return `${away} kg from your goal.${stale}`
 		},
 	}))
 
-	// Rate of change per week, from the smoothed series over the period.
-	const ratePerWeek = curr !== null && prev !== null ? ((curr - prev) / PERIOD_DAYS) * 7 : null
+	// Rate — the number that says whether the current approach is working.
+	const rateGood = ratePerWeek === null || goalWeight === null || atGoal
+		? null
+		: Math.abs(ratePerWeek) < 0.1 ? null : (ratePerWeek < 0) === (losing === true)
+	const rateMetric = buildMetric({
+		key: 'body-rate',
+		label: 'Rate',
+		unit: 'kg/wk',
+		current: ratePerWeek,
+		previous: null,
+		trend: trendAnchors(today).map(anchor => {
+			const w = windowEnding(anchor)
+			const pts = sorted.filter(x => inPeriod(parseISO(x.date), w))
+			const sp = pts.length ? dayGap(pts[0].date, pts[pts.length - 1].date) : 0
+			const r = pts.length >= 3 && sp >= 10 ? slopePerWeek(pts) : null
+			return r === null ? null : round(r, 2)
+		}),
+		basis: ratePerWeek === null ? null : `fitted through ${plural(recent.length, 'weigh-in')}`,
+		format: v => `${v > 0 ? '+' : v < 0 ? '−' : ''}${Math.abs(v).toFixed(2)}`,
+		missing: 'Needs three weigh-ins spread over at least ten days in the last four weeks.',
+		note: m => {
+			if (m.value === null) return m.missing!
+			if (Math.abs(m.value) < 0.1) return 'Essentially stable — under 0.1 kg a week either way.'
+			const pct = curr ? Math.abs((m.value / curr) * 100) : 0
+			const pace = pct > 1 ? ' That\'s over 1% of body weight a week — faster than is usually sustainable.' : ''
+			if (rateGood === true) return `Heading toward your goal.${pace}`
+			if (rateGood === false) return `Heading away from your goal.`
+			return `${m.value > 0 ? 'Gaining' : 'Losing'} about ${Math.abs(m.value).toFixed(2)} kg a week.${pace}`
+		},
+	})
+	metrics.push({ ...rateMetric, direction: rateGood === null ? (ratePerWeek !== null && Math.abs(ratePerWeek) < 0.1 ? 'holding' : 'unknown') : rateGood ? 'improving' : 'declining', unknownReason: null })
+
 	let weeksToGoal: number | null = null
-	if (goalWeight !== null && curr !== null && ratePerWeek !== null && Math.abs(ratePerWeek) > 0.01) {
+	if (goalWeight !== null && curr !== null && ratePerWeek !== null && !atGoal && Math.abs(ratePerWeek) >= 0.05) {
 		const need = goalWeight - curr
 		// Only meaningful when the trend is pointing at the goal.
 		if (Math.sign(need) === Math.sign(ratePerWeek)) weeksToGoal = Math.ceil(need / ratePerWeek)
 	}
 
-	return {
-		metrics,
-		smoothed,
-		weeksToGoal,
-		atGoal: goalWeight !== null && curr !== null && Math.abs(curr - goalWeight) <= 0.3,
-		hasData: sorted.length > 0,
-	}
+	return { metrics, smoothed, ratePerWeek, weeksToGoal, atGoal, daysSinceLast, hasData: sorted.length > 0 }
 }
 
 // ─── load ramp guardrail ──────────────────────────────────────────────────────
@@ -901,7 +1251,7 @@ export function bodyProgress(weights: WeighIn[], goalWeight: number | null, toda
 export type RampVerdict = 'ok' | 'sharp' | 'detraining' | 'unknown'
 
 export interface Ramp {
-	/** This week's distance against the trailing 4-week mean. 1.0 is steady. */
+	/** The last 7 days' distance against the weekly average of the 28 days before. */
 	ratio: number | null
 	verdict: RampVerdict
 	message: string
@@ -910,45 +1260,38 @@ export interface Ramp {
 /**
  * Acute-to-chronic workload, in kilometres.
  *
- * Ramping volume faster than roughly 1.5× your recent average is the single
- * most reliable way to get injured, and the app already had every number needed
- * to warn about it. Progress that lands you injured isn't progress.
+ * Compares the last seven days against the four weeks before them. It used to
+ * compare the *calendar* week so far against full weeks, so every Monday
+ * morning reported you as detraining.
  */
-export function volumeRamp(kmByWeek: number[]): Ramp {
-	if (kmByWeek.length < 5) {
+export function volumeRamp(sessions: { date: Date; km: number }[], today = new Date()): Ramp {
+	const acuteP = windowEnding(today, 7)
+	const chronicP = windowEnding(addDays(today, -7), 28)
+	if (!sessions.some(s => s.date < addDays(chronicP.from, 7))) {
 		return { ratio: null, verdict: 'unknown', message: 'Not enough weeks logged to judge your ramp rate yet.' }
 	}
-	const thisWeek = kmByWeek[kmByWeek.length - 1]
-	const priorFour = kmByWeek.slice(-5, -1)
-	const chronic = mean(priorFour)!
+	const sum = (p: Period) => sessions.reduce((s, x) => (inPeriod(x.date, p) ? s + (x.km || 0) : s), 0)
+	const acute = sum(acuteP)
+	const chronic = sum(chronicP) / 4
 	if (chronic <= 0) {
-		return { ratio: null, verdict: 'unknown', message: 'No recent volume to compare this week against.' }
+		return { ratio: null, verdict: 'unknown', message: 'No recent volume to compare the last seven days against.' }
 	}
-	const ratio = round(thisWeek / chronic, 2)
+	const ratio = round(acute / chronic, 2)
 	if (ratio > 1.5) {
-		return { ratio, verdict: 'sharp', message: `This week is ${Math.round((ratio - 1) * 100)}% above your four-week average. That's the ramp rate that gets people injured — consider easing off.` }
+		return { ratio, verdict: 'sharp', message: `The last 7 days are ${Math.round((ratio - 1) * 100)}% above your weekly average for the month before. That's the ramp rate that gets people injured — consider easing off.` }
 	}
 	if (ratio < 0.6) {
-		return { ratio, verdict: 'detraining', message: `This week is well below your four-week average. Fine for a deload or a taper; a habit if it repeats.` }
+		return { ratio, verdict: 'detraining', message: 'The last 7 days are well below your recent weekly average. Fine for a deload or a taper; a habit if it repeats.' }
 	}
-	return { ratio, verdict: 'ok', message: `This week sits at ${ratio}× your four-week average — a sustainable rate of build.` }
+	if (ratio < 0.9) {
+		return { ratio, verdict: 'ok', message: `The last 7 days sit at ${ratio}× your weekly average for the month before — a lighter week, well within a safe range.` }
+	}
+	return { ratio, verdict: 'ok', message: `The last 7 days sit at ${ratio}× your weekly average for the month before — a sustainable rate of build.` }
 }
 
 // ─── small helpers ────────────────────────────────────────────────────────────
 
-function sumLast(xs: number[], n: number): number {
-	return xs.slice(-n).reduce((s, x) => s + x, 0)
-}
-
 function maxOr(xs: number[]): number | null {
 	const valid = xs.filter(x => Number.isFinite(x) && x > 0)
 	return valid.length ? Math.max(...valid) : null
-}
-
-/** Take `n` roughly evenly spaced values, keeping the first and last. */
-export function sampleEvenly(xs: number[], n: number): number[] {
-	if (xs.length <= n) return xs
-	const out: number[] = []
-	for (let i = 0; i < n; i++) out.push(xs[Math.round((i * (xs.length - 1)) / (n - 1))])
-	return out
 }

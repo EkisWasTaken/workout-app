@@ -339,9 +339,15 @@ const paceBarWidth = (split: any) => {
 }
 
 // ─── Premium analysis (imported activities carry raw streams) ────────────────
+/**
+ * Max HR from *every* recording, not just this one. Reading it from this
+ * activity alone meant an easy run's own peak became "max", so its zones,
+ * effort score and VO₂ were all computed against the wrong ceiling — and
+ * disagreed with the same run's numbers on Home.
+ */
 const hrSettings = computed(() => {
 	const a = stravaActivity.value
-	return getHRSettings(a ? [a] : [])
+	return getHRSettings(allActivities.value.length ? allActivities.value : a ? [a] : [])
 })
 
 const effortScore = computed(() => {
@@ -399,7 +405,7 @@ const avgCadence = computed(() => {
 
 const vo2maxEstimate = computed(() => {
 	if (!isRun.value || !stravaActivity.value || !hrSettings.value.maxHR) return null
-	return estimateVO2max(stravaActivity.value, hrSettings.value.maxHR)
+	return estimateVO2max(stravaActivity.value, hrSettings.value.maxHR, hrSettings.value.restHR)
 })
 
 const estPower = computed(() => {

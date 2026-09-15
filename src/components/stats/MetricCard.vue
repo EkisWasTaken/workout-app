@@ -3,56 +3,87 @@
  * One headline number, rendered the same way everywhere.
  *
  * Every sport tab is built from these, so "am I improving?" is answered in the
- * same visual language whether you run, lift or ride: the value, how it moved
- * against the previous four weeks, and a sentence saying what that means.
+ * same visual language whether you run, lift or ride: the value, what it's being
+ * compared with, a trend line of that same value over twelve weeks, and a
+ * sentence saying what it means.
  *
- * A metric with no data is still rendered. Hiding it would leave the user
- * wondering where the section went; showing it with its `missing` reason tells
- * them exactly what to do to switch it on.
+ * Trust comes from showing the working. The comparison value is printed, not
+ * just the delta; the line ends on the headline and rings the comparison point;
+ * and the footer says what the number was built from, so "median of 2 runs" is
+ * never mistaken for a settled fact.
+ *
+ * A metric with no data is still rendered, with its `missing` reason telling the
+ * user exactly what to do to switch it on.
  */
-import type { Metric } from '@/utils/progress'
+import { computed } from 'vue'
+import TrendSpark from './TrendSpark.vue'
+import LongTrendLine from './LongTrendLine.vue'
+import { COMPARE_OFFSET, type Metric } from '@/utils/progress'
 
-defineProps<{
+const props = defineProps<{
 	metric: Metric
-	/** Render at half height without the sentence, for dense secondary rows. */
+	/** Render without the sentence, for dense secondary rows. */
 	compact?: boolean
 }>()
 
-const ARROWS: Record<string, string> = {
-	improving: '▲',
-	declining: '▼',
-	holding: '=',
-	unknown: '',
-}
+const chip = computed(() => {
+	const m = props.metric
+	if (m.value === null) return null
+	if (m.unknownReason === 'thin') return { cls: 'baseline', text: 'too few to call' }
+	if (m.direction === 'unknown') return m.previous === null ? { cls: 'baseline', text: 'baseline' } : null
+	if (m.direction === 'holding') return { cls: 'holding', text: 'steady' }
+	if (!m.deltaDisplay) return null
+	// The sign says which way the number moved; the colour says whether that's
+	// good. An arrow can't do both — "▼ 15 s" in green reads like a loss.
+	return { cls: m.direction, text: `${(m.delta ?? 0) > 0 ? '+' : '−'}${m.deltaDisplay}` }
+})
+
+const compareIndex = computed(() => {
+	const n = props.metric.trend.length
+	return props.metric.previous !== null && n > COMPARE_OFFSET ? n - 1 - COMPARE_OFFSET : null
+})
 </script>
 
 <template>
 	<div class="metric-card" :class="[metric.direction, { compact, empty: metric.value === null }]">
 		<div class="mc-top">
 			<span class="mc-label">{{ metric.label }}</span>
-			<span v-if="metric.deltaDisplay" class="mc-chip" :class="metric.direction">
-				{{ ARROWS[metric.direction] }} {{ metric.deltaDisplay }}
+			<span
+				v-if="chip"
+				class="mc-chip"
+				:class="chip.cls"
+				:title="metric.direction === 'improving' ? 'Improving' : metric.direction === 'declining' ? 'Worse' : ''"
+			>{{ chip.text }}</span>
+		</div>
+
+		<div class="mc-value-row">
+			<span class="mc-value mono">
+				{{ metric.display }}<span v-if="metric.value !== null" class="mc-unit"> {{ metric.unit }}</span>
 			</span>
-			<span v-else-if="metric.value !== null && metric.direction === 'unknown'" class="mc-chip baseline">
-				baseline
+			<span v-if="metric.value !== null && metric.previousDisplay !== null" class="mc-prev">
+				was <span class="mono">{{ metric.previousDisplay }}</span>
 			</span>
 		</div>
 
-		<div class="mc-value mono">
-			{{ metric.display }}<span v-if="metric.value !== null" class="mc-unit"> {{ metric.unit }}</span>
-		</div>
+		<TrendSpark
+			v-if="metric.value !== null && metric.trend.length"
+			:values="metric.trend"
+			:labels="metric.trendDisplay"
+			:direction="metric.direction"
+			:compare-index="compareIndex"
+			:invert="metric.invertTrend"
+			:height="compact ? 24 : 34"
+		/>
 
-		<div v-if="metric.spark.length && metric.value !== null" class="mc-spark" aria-hidden="true">
-			<div
-				v-for="(h, i) in metric.spark"
-				:key="i"
-				class="mc-bar"
-				:class="{ last: i === metric.spark.length - 1 }"
-				:style="{ height: Math.max(6, h) + '%' }"
-			></div>
-		</div>
+		<LongTrendLine
+			v-if="metric.value !== null"
+			:trend="metric.longTrend"
+			:higher-is-better="metric.higherIsBetter"
+			:words="metric.invertTrend ? ['faster', 'slower'] : undefined"
+		/>
 
 		<p v-if="!compact" class="mc-note">{{ metric.note }}</p>
+		<p v-if="metric.basis" class="mc-basis">{{ metric.basis }}</p>
 	</div>
 </template>
 
@@ -61,13 +92,14 @@ const ARROWS: Record<string, string> = {
 	background: var(--surface-color);
 	border: 1px solid var(--border-color);
 	border-radius: var(--radius);
-	padding: 14px 16px 15px;
+	padding: 14px 16px 13px;
 	display: flex;
 	flex-direction: column;
 	gap: 7px;
 	box-shadow: inset 0 1px 0 var(--border-subtle);
 	/* A hairline in the direction colour: readable at a glance down a column. */
 	border-left: 2px solid var(--border-color);
+	min-width: 0;
 }
 .metric-card.improving { border-left-color: var(--success-color); }
 .metric-card.declining { border-left-color: var(--warning-color); }
@@ -99,8 +131,16 @@ const ARROWS: Record<string, string> = {
 }
 .mc-chip.improving { color: var(--success-color); background: var(--success-soft); }
 .mc-chip.declining { color: var(--warning-color); background: var(--warning-soft); }
-.mc-chip.holding   { color: var(--text-muted);    background: var(--surface-2); }
+.mc-chip.holding   { color: var(--text-secondary); background: var(--surface-2); font-family: inherit; }
 .mc-chip.baseline  { color: var(--text-muted);    background: var(--surface-2); font-family: inherit; }
+
+.mc-value-row {
+	display: flex;
+	align-items: baseline;
+	justify-content: space-between;
+	gap: 8px;
+	flex-wrap: wrap;
+}
 
 .mc-value {
 	font-size: 1.6rem;
@@ -116,22 +156,11 @@ const ARROWS: Record<string, string> = {
 	color: var(--text-muted);
 }
 
-.mc-spark {
-	display: flex;
-	align-items: flex-end;
-	gap: 3px;
-	height: 26px;
-	margin-top: 1px;
+.mc-prev {
+	font-size: 0.72rem;
+	color: var(--text-muted);
+	white-space: nowrap;
 }
-.mc-bar {
-	flex: 1;
-	min-width: 3px;
-	border-radius: 2px 2px 0 0;
-	background: var(--surface-hover);
-}
-.mc-bar.last { background: var(--primary-color); }
-.metric-card.improving .mc-bar.last { background: var(--success-color); }
-.metric-card.declining .mc-bar.last { background: var(--warning-color); }
 
 .mc-note {
 	margin: 2px 0 0;
@@ -141,7 +170,14 @@ const ARROWS: Record<string, string> = {
 }
 .metric-card.empty .mc-note { color: var(--text-muted); }
 
+.mc-basis {
+	margin: auto 0 0;
+	padding-top: 6px;
+	border-top: 1px solid var(--border-subtle, var(--border-color));
+	font-size: 0.68rem;
+	color: var(--text-muted);
+}
+
 .metric-card.compact { padding: 11px 13px; gap: 5px; }
 .metric-card.compact .mc-value { font-size: 1.15rem; }
-.metric-card.compact .mc-spark { height: 18px; }
 </style>

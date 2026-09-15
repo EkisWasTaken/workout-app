@@ -2,21 +2,21 @@
 /**
  * Bike progress.
  *
- * Same shape as running — efficiency, volume, climbing, longest ride — because
- * the question is the same and the answer should look the same. Cycling was
- * previously counted into the "distance this week" headline and then ignored by
- * every other statistic on the page.
+ * Same shape as running — volume, consistency, longest, and fitness at a fixed
+ * heart rate — because the question is the same and the answer should look the
+ * same. Fitness is estimated power rather than speed per heartbeat: on a bike,
+ * speed mostly reflects the route and the wind.
  */
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
-import Chart from 'chart.js/auto'
 import { BicycleOutline } from '@vicons/ionicons5'
 import MetricCard from '@/components/stats/MetricCard.vue'
 import EmptyState from '@/components/stats/EmptyState.vue'
 import SectionHead from '@/components/stats/SectionHead.vue'
-import { baseOpts, useCharts } from '@/utils/chartTheme'
+import { useCharts } from '@/utils/chartTheme'
+import { weeklyVolumeChart } from '@/utils/weeklyChart'
 import { getSportColor } from '@/utils/workouts'
-import { bike, bikeKmByWeek, hrSettings, today } from '@/stats'
-import { weekWindows } from '@/utils/progress'
+import { bike, bikeKmByWeek, bikeSessions, hrSettings, today } from '@/stats'
+import { rollingWeeklyAverage, weekWindows } from '@/utils/progress'
 
 const { add, destroy } = useCharts()
 const volumeCanvas = ref<HTMLCanvasElement | null>(null)
@@ -25,20 +25,12 @@ const noHR = computed(() => hrSettings.value.maxHR === null)
 
 function buildVolume() {
 	if (!volumeCanvas.value) return
-	const weeks = weekWindows(12, today.value)
-	add(new Chart(volumeCanvas.value, {
-		type: 'bar',
-		data: {
-			labels: weeks.map(w => w.label),
-			datasets: [{
-				label: 'Bike',
-				data: bikeKmByWeek.value,
-				backgroundColor: getSportColor('bike'),
-				borderRadius: 4,
-				maxBarThickness: 18,
-			}],
-		},
-		options: baseOpts('km'),
+	add(weeklyVolumeChart(volumeCanvas.value, {
+		weeks: weekWindows(12, today.value),
+		totals: bikeKmByWeek.value,
+		rolling: rollingWeeklyAverage(bikeSessions.value, s => s.date, s => s.km, 12, today.value),
+		color: getSportColor('bike'),
+		unit: 'km',
 	}))
 }
 
@@ -71,9 +63,9 @@ watch(bike, buildAll)
 
 			<div v-if="noHR" class="stat-banner info">
 				<span>
-					Record rides with a heart rate monitor, or set your max HR in Profile, and aerobic
-					efficiency starts tracking — that's the ride metric that shows fitness improving
-					without needing a race or a test.
+					Record rides with a heart rate monitor, or set your max HR in Profile, and power at a
+					fixed heart rate starts tracking — the ride metric that shows fitness improving without
+					needing a race or a test.
 				</span>
 			</div>
 

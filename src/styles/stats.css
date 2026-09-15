@@ -118,6 +118,9 @@
 }
 .stat-link-btn:hover { text-decoration: underline; }
 
+.stat-inline-link { color: var(--primary-color); }
+.stat-inline-link:hover { text-decoration: underline; }
+
 .stat-muted { color: var(--text-muted); }
 .stat-good { color: var(--success-color); }
 .stat-off { color: var(--warning-color); }

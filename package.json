@@ -12,6 +12,8 @@
   "dependencies": {
     "@mapbox/polyline": "^1.2.1",
     "@supabase/supabase-js": "^2.99.2",
+    "@unovis/ts": "^1.7.0",
+    "@unovis/vue": "^1.7.0",
     "@vicons/fa": "0.13.0",
     "@vicons/ionicons5": "^0.13.0",
     "@vueuse/core": "^14.1.0",

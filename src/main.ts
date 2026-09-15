@@ -2,6 +2,7 @@ import { createApp } from 'vue'
 import './style.css'
 import './styles/app.css'
 import './styles/stats.css'
+import './components/charts/charts.css'
 import App from './App.vue'
 import router from './router'
 

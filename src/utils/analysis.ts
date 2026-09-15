@@ -1,3 +1,4 @@
+import { addDays, format, parseISO, startOfDay } from 'date-fns'
 import type { ActivityStreams } from '@/types'
 
 /**
@@ -18,10 +19,33 @@ export const PULSE_ZONES = [
 
 export interface HRSettings { maxHR: number; restHR: number }
 
-/** Max HR: profile override if set, else highest ever observed. Rest HR from profile. */
+/**
+ * The highest max HR you've genuinely reached, across every recording.
+ *
+ * Taking the plain maximum lets one sensor glitch rule everything: an optical
+ * strap reading 228 bpm for two seconds would shift every zone, every training
+ * load and every aerobic-pace number in the app. So a peak standing more than
+ * 15 bpm clear of the next-highest recording is treated as an artefact. A single
+ * hard race a few beats above your training still counts. With fewer than three
+ * recordings there's nothing to judge against, so the maximum is taken as is.
+ */
+export const MAX_HR_OUTLIER_GAP = 15
+
+export function observedMaxHR(activities: any[]): number {
+	const peaks = activities
+		.map((a: any) => Number(a?.max_heartrate))
+		.filter(v => Number.isFinite(v) && v > 100 && v < 240)
+		.sort((a, b) => b - a)
+	if (!peaks.length) return 0
+	let i = 0
+	while (peaks.length - i >= 3 && peaks[i] - peaks[i + 1] > MAX_HR_OUTLIER_GAP) i++
+	return peaks[i]
+}
+
+/** Max HR: profile override if set, else the confirmed observed peak. Rest HR from profile. */
 export function getHRSettings(activities: any[]): HRSettings {
 	const override = parseInt(localStorage.getItem('maxHR') || '0', 10)
-	const observed = Math.max(0, ...activities.map((a: any) => a.max_heartrate || 0))
+	const observed = observedMaxHR(activities)
 	return {
 		maxHR: override > 100 ? override : observed,
 		restHR: parseInt(localStorage.getItem('restingHR') || '60', 10),
@@ -119,14 +143,15 @@ export function fitnessSeries(
 	const dates = Object.keys(efforts).sort()
 	if (!dates.length) return []
 
-	const start = new Date(dates[0])
+	// Walk local calendar days. The old loop mixed local `setDate` with UTC
+	// `toISOString` keys, which only lined up by accident of the time zone.
 	const out: FitnessPoint[] = []
 	let ctl = 0, atl = 0
-	const cutoff = new Date(today)
-	cutoff.setDate(cutoff.getDate() - days)
+	const last = startOfDay(today)
+	const cutoff = addDays(last, -days)
 
-	for (let d = new Date(start); d <= today; d.setDate(d.getDate() + 1)) {
-		const key = d.toISOString().slice(0, 10)
+	for (let d = parseISO(dates[0]); d <= last; d = addDays(d, 1)) {
+		const key = format(d, 'yyyy-MM-dd')
 		const load = efforts[key] || 0
 		ctl += (load - ctl) / 42
 		atl += (load - atl) / 7
@@ -210,22 +235,29 @@ export function gradeAdjustedPace(activity: any): GapResult | null {
 // ─── VO₂ max estimate (per activity) ─────────────────────────────────────────
 
 /**
- * Device-free VO₂ max estimate for one run: ACSM oxygen cost at the
- * grade-adjusted speed, scaled up by the %VO₂max implied by %HRmax
- * (Swain et al. 1994) — the same approach as the Home trend chart, but
- * per-activity and terrain-corrected.
+ * Device-free VO₂ max estimate for one run.
+ *
+ * ACSM gives the oxygen cost of running above rest as 0.2 ml/kg per metre per
+ * minute, and %VO₂ reserve tracks %HR reserve almost one-to-one (Swain &
+ * Leutholtz, the basis of ACSM's Karvonen guidance). So:
+ *
+ *   VO₂max = 3.5 + 0.2 · speed(m/min) / %HRR
+ *
+ * This replaced a %HRmax version that divided the *whole* oxygen cost, resting
+ * component included, by an intensity fraction — which inflated easy runs and
+ * disagreed with the aerobic-pace number built on HR reserve. Both now use the
+ * same model, so they can't tell different stories about the same run.
  */
-export function estimateVO2max(activity: any, maxHR: number): number | null {
+export function estimateVO2max(activity: any, maxHR: number, restHR = 60): number | null {
 	if (!maxHR || maxHR < 140) return null
 	if (!activity.average_heartrate || !activity.moving_time || activity.moving_time < 600) return null
 	const speed = gradeAdjustedPace(activity)?.speed ?? activity.average_speed
 	if (!speed || speed < 1.4) return null
 
-	const vo2AtEffort = 3.5 + speed * 60 * 0.2
-	const vo2Frac = 1.537 * (activity.average_heartrate / maxHR) - 0.537
-	if (vo2Frac < 0.25) return null // too easy to extrapolate from
-	const val = Math.round((vo2AtEffort / vo2Frac) * 10) / 10
-	return val >= 22 && val <= 82 ? val : null
+	const frac = (activity.average_heartrate - restHR) / Math.max(1, maxHR - restHR)
+	if (frac < 0.5 || frac > 0.95) return null // outside the range the model holds
+	const val = Math.round((3.5 + (speed * 60 * 0.2) / frac) * 10) / 10
+	return val >= 22 && val <= 85 ? val : null
 }
 
 // ─── Estimated cycling power ──────────────────────────────────────────────────

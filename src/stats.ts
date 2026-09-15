@@ -16,11 +16,14 @@ import { db } from './db'
 import { activityApi } from './activities'
 import { settings } from './settings'
 import { setActivities, setWorkouts } from './fitness'
-import { buildActivityIndex, effectiveDistanceKm, effectiveWorkoutType } from './utils/workoutSport'
+import { parseISO } from 'date-fns'
+import { buildActivityIndex, effectiveDistanceKm, effectiveWorkoutType, resolveActivity } from './utils/workoutSport'
+import { activitySport } from './utils/activityStats'
+import { observedMaxHR } from './utils/analysis'
 import { isDistanceSport, type SportType } from './utils/workouts'
 import {
-	bestEffortProgress, bikeProgress, bodyProgress, gymProgress,
-	runningProgress, trainingLoad, volumeRamp, weekWindows, type Act,
+	actDate, bestEffortProgress, bikeProgress, bodyProgress, gymProgress,
+	runningProgress, trainingLoad, volumeRamp, weeklyTotals, type Act, type DistanceSession,
 } from './utils/progress'
 import type { DailyWeight, RaceGoal, Workout } from './types'
 
@@ -91,42 +94,86 @@ export const kmOf = (w: Workout): number | undefined => effectiveDistanceKm(w, a
 
 export const completed = computed(() => workouts.value.filter(w => w.isCompleted === 1))
 
+/**
+ * Max and resting HR, shared by every heart-rate number in the app — Home and
+ * the workout page must never disagree about which zone a run was in.
+ */
 export const hrSettings = computed(() => {
-	const observed = Math.max(0, ...activities.value.map(a => a.max_heartrate || 0))
 	const override = settings.maxHR
-	const maxHR = override && override > 100 ? override : observed
-	return { maxHR: maxHR >= 140 ? maxHR : null, restHR: settings.restingHR || 60 }
+	const maxHR = override && override > 100 ? override : observedMaxHR(activities.value)
+	return {
+		maxHR: maxHR >= 140 ? maxHR : null,
+		restHR: settings.restingHR || 60,
+		/** True when max HR was inferred from recordings rather than set in Profile. */
+		inferred: !(override && override > 100),
+	}
 })
 
-/** Weekly kilometres for one sport, oldest first, ending with the current week. */
-function kmByWeek(sport: SportType, weeks: number): number[] {
-	return weekWindows(weeks, today.value).map(wk =>
-		completed.value
-			.filter(w => {
-				const d = new Date(w.date)
-				return d >= wk.start && d <= wk.end && sportOf(w) === sport
-			})
-			.reduce((sum, w) => sum + (kmOf(w) || 0), 0))
+/**
+ * Every completed session of a distance sport, counted exactly once.
+ *
+ * A logged workout with a recording behind it takes the recording's date and
+ * distance; a logged workout without one keeps its typed distance; and a
+ * recording imported without a workout still counts. Volume used to come from
+ * workouts while run counts came from recordings, so the two could disagree
+ * about how many runs you'd done.
+ */
+function distanceSessions(sport: 'running' | 'bike'): DistanceSession[] {
+	const want = sport === 'running' ? 'run' : 'ride'
+	const used = new Set<string>()
+	const out: DistanceSession[] = []
+	for (const w of completed.value) {
+		if (sportOf(w) !== sport) continue
+		const a = resolveActivity(w, activityIndex.value)
+		const linked = a && activitySport(a) === want && !used.has(String(a.id)) ? a : null
+		if (linked) used.add(String(linked.id))
+		const km = linked && linked.distance > 0 ? linked.distance / 1000 : (w.distance ?? 0)
+		out.push({ date: linked ? actDate(linked) : parseISO(w.date), km, activity: linked })
+	}
+	for (const a of activities.value) {
+		if (activitySport(a) !== want || used.has(String(a.id))) continue
+		out.push({ date: actDate(a), km: (a.distance || 0) / 1000, activity: a })
+	}
+	return out
 }
 
-export const runKmByWeek = computed(() => kmByWeek('running', 12))
-export const bikeKmByWeek = computed(() => kmByWeek('bike', 12))
+export const runSessions = computed(() => distanceSessions('running'))
+export const bikeSessions = computed(() => distanceSessions('bike'))
+
+const kmByWeek = (sessions: DistanceSession[], weeks: number) =>
+	weeklyTotals(sessions, s => s.date, s => s.km, weeks, today.value)
+
+export const runKmByWeek = computed(() => kmByWeek(runSessions.value, 12))
+export const bikeKmByWeek = computed(() => kmByWeek(bikeSessions.value, 12))
+
+export const gymSessions = computed(() => completed.value.filter(w => sportOf(w) === 'gym'))
+
+/** The latest weigh-in, for the bike power estimate. 75 kg when there is none. */
+const riderKg = computed(() => {
+	const latest = [...dailyWeights.value].sort((a, b) => b.date.localeCompare(a.date))[0]
+	return latest?.weight > 0 ? latest.weight : 75
+})
 
 // ─── per-sport progress ───────────────────────────────────────────────────────
 
 export const running = computed(() => runningProgress({
+	sessions: runSessions.value,
 	activities: activities.value,
-	runKmByWeek: runKmByWeek.value,
 	maxHR: hrSettings.value.maxHR,
 	restHR: hrSettings.value.restHR,
 	today: today.value,
 }))
 
-export const gym = computed(() =>
-	gymProgress(completed.value.filter(w => sportOf(w) === 'gym'), today.value))
+export const gym = computed(() => gymProgress(gymSessions.value, today.value))
 
-export const bike = computed(() =>
-	bikeProgress(activities.value, bikeKmByWeek.value, hrSettings.value.maxHR, today.value))
+export const bike = computed(() => bikeProgress({
+	sessions: bikeSessions.value,
+	activities: activities.value,
+	maxHR: hrSettings.value.maxHR,
+	restHR: hrSettings.value.restHR,
+	riderKg: riderKg.value,
+	today: today.value,
+}))
 
 export const body = computed(() =>
 	bodyProgress(dailyWeights.value, settings.goalWeight, today.value))
@@ -136,7 +183,7 @@ export const load = computed(() =>
 
 export const bests = computed(() => bestEffortProgress(activities.value, 90, today.value))
 
-export const ramp = computed(() => volumeRamp(runKmByWeek.value))
+export const ramp = computed(() => volumeRamp(runSessions.value, today.value))
 
 // ─── which tabs to show ───────────────────────────────────────────────────────
 
@@ -154,11 +201,10 @@ export interface SportTab {
  * do, so the sport you care about is the one next to Today.
  */
 export const sportTabs = computed<SportTab[]>(() => {
-	const count = (s: SportType) => completed.value.filter(w => sportOf(w) === s).length
 	const candidates: SportTab[] = [
-		{ key: 'running', label: 'Running', sessions: count('running') },
-		{ key: 'gym', label: 'Gym', sessions: count('gym') },
-		{ key: 'bike', label: 'Bike', sessions: count('bike') },
+		{ key: 'running', label: 'Running', sessions: runSessions.value.length },
+		{ key: 'gym', label: 'Gym', sessions: gymSessions.value.length },
+		{ key: 'bike', label: 'Bike', sessions: bikeSessions.value.length },
 	]
 	return candidates.filter(t => t.sessions > 0).sort((a, b) => b.sessions - a.sessions)
 })

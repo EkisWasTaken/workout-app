@@ -5,43 +5,40 @@
  * Ordered by how much each number tells you about whether you're improving,
  * which is close to the reverse of how the old page was ordered:
  *
- *   1. the five metrics that move from ordinary training
- *   2. fitness & form — the load model, which moves every single day
- *   3. volume and the ramp guardrail
- *   4. rolling bests — PBs found inside training runs, no race required
- *   5. heart-rate zones and VO₂, when a monitor is worn
- *   6. race readiness (VDOT, goal tracker, projection) — folded away, because
+ *   1. the metrics that move from ordinary training
+ *   2. aerobic pace over time — every steady run, rescaled to one heart rate
+ *   3. fitness & form — the load model, which moves every single day
+ *   4. volume and the ramp guardrail
+ *   5. rolling bests — PBs found inside training runs, no race required
+ *   6. heart-rate zones, when a monitor is worn
+ *   7. race readiness (VDOT, goal tracker, projection) — folded away, because
  *      it only moves when you race and can't answer "did this week count?"
  */
-import { computed, nextTick, onMounted, ref, watch } from 'vue'
+import { computed, ref } from 'vue'
 import { NIcon } from 'naive-ui'
-import Chart from 'chart.js/auto'
-import 'chartjs-adapter-date-fns'
-import { format, parseISO } from 'date-fns'
+import { parseISO } from 'date-fns'
 import MetricCard from '@/components/stats/MetricCard.vue'
 import EmptyState from '@/components/stats/EmptyState.vue'
 import SectionHead from '@/components/stats/SectionHead.vue'
-import { WalkOutline, TrophyOutline, WarningOutline, TrendingUpOutline } from '@vicons/ionicons5'
-import { baseOpts, css, legend, useCharts } from '@/utils/chartTheme'
-import { getSportColor } from '@/utils/workouts'
-import { PULSE_ZONES, estimateVO2max, timeInZones } from '@/utils/analysis'
-import { bests, hrSettings, load, ramp, running, runKmByWeek, activities, today } from '@/stats'
-import { weekWindows, actDate, actSport } from '@/utils/progress'
+import TimeSeriesChart, { type ChartSeries, type GoalLine } from '@/components/charts/TimeSeriesChart.vue'
+import WeeklyBarsChart from '@/components/charts/WeeklyBarsChart.vue'
+import StackedShareChart from '@/components/charts/StackedShareChart.vue'
+import { WalkOutline, TrophyOutline, WarningOutline, TrendingUpOutline, PulseOutline } from '@vicons/ionicons5'
+import { PULSE_ZONES, timeInZones } from '@/utils/analysis'
+import { bests, hrSettings, load, ramp, running, runKmByWeek, runSessions, activities, today } from '@/stats'
+import {
+	weekWindows, actDate, actSport, aerobicPacePoints, rollingMedianLine, rollingWeeklyAverage,
+	referenceHR, REF_HRR, periods, inPeriod, median,
+} from '@/utils/progress'
 import { currentFitness, currentVdot, fitnessLine, trackedTargets, vdotSamples, vdotTrend } from '@/fitness'
 import { distanceGoals } from '@/settings'
 import {
 	DISTANCES, DISTANCE_LABELS, equivalentTimes, fmtTime, type DistanceKey,
 } from '@/utils/vdot'
 
-const { add, destroy } = useCharts()
-
-const loadCanvas = ref<HTMLCanvasElement | null>(null)
-const volumeCanvas = ref<HTMLCanvasElement | null>(null)
-const zoneCanvas = ref<HTMLCanvasElement | null>(null)
-const vo2Canvas = ref<HTMLCanvasElement | null>(null)
-const vdotCanvas = ref<HTMLCanvasElement | null>(null)
-
-const runColor = () => getSportColor('running')
+// Colours are CSS variables, not resolved values: the SVG reads them live, so
+// the charts follow the theme without being rebuilt.
+const RUN = 'var(--color-running-primary)'
 const showRaceDetail = ref(false)
 
 // ─── rolling bests ────────────────────────────────────────────────────────────
@@ -77,31 +74,41 @@ const zoneWeeks = computed(() => {
 			z.forEach((secs, i) => { totals[i] += secs })
 		}
 		const sum = totals.reduce((s, v) => s + v, 0)
-		return { label: wk.label, pct: sum ? totals.map(v => Math.round((v / sum) * 100)) : totals }
+		return { label: wk.label, minutes: Math.round(sum / 60), pct: sum ? totals.map(v => (v / sum) * 100) : totals }
 	})
 })
 
+const zoneCategories = PULSE_ZONES.map(z => ({ label: z.name, color: z.color }))
+const zoneNote = (i: number) => {
+	const m = zoneWeeks.value[i]?.minutes ?? 0
+	return m ? `${m} min of running with heart rate` : null
+}
+
 const zonesHaveData = computed(() => zoneWeeks.value.some(w => w.pct.some(v => v > 0)))
 
-// ─── VO₂ ──────────────────────────────────────────────────────────────────────
+// ─── aerobic pace over time ───────────────────────────────────────────────────
 
-const vo2Points = computed(() => {
-	const { maxHR } = hrSettings.value
-	if (!maxHR) return []
-	return activities.value
-		.filter(a => actSport(a) === 'run')
-		.map(a => {
-			const v = estimateVO2max(a, maxHR)
-			return v === null ? null : { date: actDate(a).toISOString().slice(0, 10), vo2: v }
-		})
-		.filter((p): p is { date: string; vo2: number } => p !== null)
-		.sort((a, b) => a.date.localeCompare(b.date))
-})
+const refBpm = computed(() =>
+	hrSettings.value.maxHR ? referenceHR(hrSettings.value.maxHR, hrSettings.value.restHR) : null)
 
+/** Every steady run, rescaled to the reference heart rate. Same numbers as the headline card. */
+const pacePoints = computed(() =>
+	aerobicPacePoints(activities.value, hrSettings.value.maxHR, hrSettings.value.restHR))
+
+const paceLine = computed(() => rollingMedianLine(pacePoints.value, p => p.paceSec))
+
+/**
+ * VO₂max implied by the current aerobic pace. It's the same model rearranged —
+ * speed at a known fraction of HR reserve — so it can never disagree with the
+ * pace card, unlike the separate per-run average this replaced.
+ */
 const vo2Current = computed(() => {
-	const pts = vo2Points.value.slice(-8)
-	if (!pts.length) return null
-	return Math.round((pts.reduce((s, p) => s + p.vo2, 0) / pts.length) * 10) / 10
+	const cur = periods(today.value).current
+	const recent = pacePoints.value.filter(p => inPeriod(parseISO(p.date), cur)).map(p => p.paceSec)
+	const pace = median(recent)
+	if (pace === null || recent.length < 3) return null
+	const speedMpm = (1000 / pace) * 60
+	return Math.round((3.5 + (0.2 * speedMpm) / REF_HRR) * 10) / 10
 })
 
 /**
@@ -141,187 +148,52 @@ const equivalents = computed(() => {
 const vdotHasData = computed(() => vdotSamples.value.length >= 3)
 
 // ─── charts ───────────────────────────────────────────────────────────────────
+// Each chart is plain reactive data. The components re-render and animate when
+// it changes, so there's no build/destroy lifecycle to keep in step any more.
 
-function buildLoad() {
-	if (!loadCanvas.value || !load.value) return
-	const series = load.value.series
-	add(new Chart(loadCanvas.value, {
-		type: 'line',
-		data: {
-			labels: series.map(p => p.date),
-			datasets: [
-				{
-					label: 'Fitness', data: series.map(p => p.fitness),
-					borderColor: css('--primary-color'), backgroundColor: 'transparent',
-					borderWidth: 2, pointRadius: 0, tension: 0.3,
-				},
-				{
-					label: 'Fatigue', data: series.map(p => p.fatigue),
-					borderColor: css('--warning-color'), backgroundColor: 'transparent',
-					borderWidth: 1.5, pointRadius: 0, tension: 0.3, borderDash: [4, 4],
-				},
-				{
-					label: 'Form', data: series.map(p => p.form),
-					borderColor: css('--text-muted'), backgroundColor: 'transparent',
-					borderWidth: 1, pointRadius: 0, tension: 0.3,
-				},
-			],
-		},
-		options: {
-			...baseOpts(),
-			plugins: { ...baseOpts().plugins, legend: legend() },
-			scales: {
-				...baseOpts().scales,
-				x: {
-					...baseOpts().scales.x,
-					ticks: { color: css('--text-muted'), font: { size: 10 }, maxTicksLimit: 6, maxRotation: 0 },
-				},
-			},
-		},
-	}))
-}
+const t = (d: string) => parseISO(d).getTime()
 
-function buildVolume() {
-	if (!volumeCanvas.value) return
-	const weeks = weekWindows(12, today.value)
-	add(new Chart(volumeCanvas.value, {
-		type: 'bar',
-		data: {
-			labels: weeks.map(w => w.label),
-			datasets: [{
-				label: 'Running', data: runKmByWeek.value,
-				backgroundColor: runColor(), borderRadius: 4, maxBarThickness: 18,
-			}],
-		},
-		options: baseOpts('km'),
-	}))
-}
+const loadSeries = computed<ChartSeries[]>(() => {
+	const s = load.value?.series ?? []
+	return [
+		{ key: 'fitness', label: 'Fitness', kind: 'line', color: 'var(--primary-color)', width: 2.5, points: s.map(p => ({ x: t(p.date), y: p.fitness })) },
+		{ key: 'fatigue', label: 'Fatigue', kind: 'line', color: 'var(--warning-color)', width: 1.5, dash: [4, 4], points: s.map(p => ({ x: t(p.date), y: p.fatigue })) },
+		{ key: 'form', label: 'Form', kind: 'line', color: 'var(--text-muted)', width: 1.25, points: s.map(p => ({ x: t(p.date), y: p.form })) },
+	]
+})
 
-function buildZones() {
-	if (!zoneCanvas.value || !zonesHaveData.value) return
-	const weeks = zoneWeeks.value
-	add(new Chart(zoneCanvas.value, {
-		type: 'bar',
-		data: {
-			labels: weeks.map(w => w.label),
-			datasets: PULSE_ZONES.map((z, i) => ({
-				label: z.name,
-				data: weeks.map(w => w.pct[i]),
-				backgroundColor: z.color,
-				borderRadius: 2,
-				maxBarThickness: 18,
-			})),
-		},
-		options: {
-			...baseOpts('% of run time'),
-			plugins: {
-				...baseOpts().plugins,
-				legend: legend(),
-				tooltip: {
-					...baseOpts().plugins.tooltip,
-					callbacks: { label: (ctx: any) => ` ${ctx.dataset.label}: ${ctx.raw}%` },
-				},
-			},
-			scales: {
-				x: { ...baseOpts().scales.x, stacked: true },
-				y: { ...baseOpts().scales.y, stacked: true, max: 100 },
-			},
-		},
-	}))
-}
+const volumeWeeks = computed(() => weekWindows(12, today.value))
+const volumeAverage = computed(() =>
+	rollingWeeklyAverage(runSessions.value, s => s.date, s => s.km, 12, today.value))
 
-function buildVO2() {
-	if (!vo2Canvas.value || vo2Points.value.length < 3) return
-	const pts = vo2Points.value
-	add(new Chart(vo2Canvas.value, {
-		type: 'line',
-		data: {
-			labels: pts.map(p => format(parseISO(p.date), 'd/M')),
-			datasets: [{
-				label: 'VO₂ max', data: pts.map(p => p.vo2),
-				borderColor: runColor(), backgroundColor: 'transparent',
-				borderWidth: 2, tension: 0.3, pointRadius: 2,
-			}],
-		},
-		options: baseOpts('ml/kg/min'),
-	}))
-}
+const paceSeries = computed<ChartSeries[]>(() => [
+	{
+		key: 'run', label: 'Each steady run', kind: 'dots', color: 'var(--text-muted)', size: 5,
+		points: pacePoints.value.map(p => ({ x: t(p.date), y: p.paceSec })),
+	},
+	{
+		key: 'median', label: '28-day median', kind: 'line', color: RUN, width: 2.5, connectGaps: true,
+		points: paceLine.value.map(p => ({ x: t(p.date), y: p.value })),
+	},
+])
+const fmtPaceTick = (v: number) => fmtTime(Math.round(v))
 
-function buildVdot() {
-	if (!vdotCanvas.value || !vdotHasData.value) return
-	const samples = vdotSamples.value
-	const points = samples.map(s => ({ x: parseISO(s.date).getTime(), y: s.vdot, sample: s }))
-	const isRace = (i: number) => samples[i].source === 'race'
-	const goalLines = trackedTargets.value.slice(0, 3).map((t, i) => ({
-		label: `${t.name} needs ${t.neededVdot}`,
-		data: [
-			{ x: points[0].x, y: t.neededVdot },
-			{ x: points[points.length - 1].x, y: t.neededVdot },
-		],
-		borderColor: [css('--success-color'), css('--warning-color'), css('--text-muted')][i],
-		borderWidth: 1.5, borderDash: [5, 5], pointRadius: 0, fill: false,
-	}))
+const vdotSeries = computed<ChartSeries[]>(() => [
+	{
+		key: 'sample', label: 'Each run (races ringed)', kind: 'dots', color: RUN, size: 5,
+		points: vdotSamples.value.map(s => ({
+			x: t(s.date), y: s.vdot, note: s.label, emphasis: s.source === 'race',
+		})),
+	},
+	{
+		key: 'line', label: 'Fitness (best of last 90 days)', kind: 'line', color: 'var(--primary-color)', width: 2.25, connectGaps: true,
+		points: fitnessLine.value.map(p => ({ x: t(p.date), y: p.vdot })),
+	},
+])
 
-	add(new Chart(vdotCanvas.value, {
-		type: 'line',
-		data: {
-			datasets: [
-				{
-					label: 'Fitness (best of last 90 days)',
-					data: fitnessLine.value.map(p => ({ x: parseISO(p.date).getTime(), y: p.vdot })),
-					borderColor: css('--primary-color'), backgroundColor: 'transparent',
-					borderWidth: 2, tension: 0.2, pointRadius: 0,
-				},
-				{
-					label: 'Each run', data: points,
-					borderColor: 'transparent', backgroundColor: runColor(), showLine: false,
-					pointRadius: (ctx: any) => (isRace(ctx.dataIndex) ? 6 : 3),
-					pointBorderColor: (ctx: any) => (isRace(ctx.dataIndex) ? css('--text-color') : runColor()),
-					pointBorderWidth: (ctx: any) => (isRace(ctx.dataIndex) ? 2 : 0),
-				},
-				...goalLines,
-			],
-		},
-		options: {
-			...baseOpts('VDOT'),
-			plugins: {
-				...baseOpts().plugins,
-				legend: legend(),
-				tooltip: {
-					...baseOpts().plugins.tooltip,
-					callbacks: {
-						title: (items: any[]) => format(new Date(items[0].parsed.x), 'd MMM yyyy'),
-						label: (ctx: any) => {
-							const s = ctx.raw?.sample
-							return s ? ` VDOT ${s.vdot} — ${s.label}` : ` ${ctx.dataset.label}`
-						},
-					},
-				},
-			},
-			scales: {
-				x: {
-					type: 'time', time: { unit: 'month' },
-					grid: { display: false }, border: { display: false },
-					ticks: { color: css('--text-muted'), font: { size: 10 }, maxRotation: 0 },
-				},
-				y: baseOpts('VDOT').scales.y,
-			},
-		},
-	}))
-}
-
-async function buildAll() {
-	destroy()
-	await nextTick()
-	buildLoad()
-	buildVolume()
-	buildZones()
-	buildVO2()
-	if (showRaceDetail.value) buildVdot()
-}
-
-onMounted(buildAll)
-watch([running, load, showRaceDetail], buildAll)
+const GOAL_COLORS = ['var(--success-color)', 'var(--warning-color)', 'var(--text-secondary)']
+const vdotGoals = computed<GoalLine[]>(() =>
+	trackedTargets.value.slice(0, 3).map((g, i) => ({ label: `${g.name} · ${g.neededVdot}`, value: g.neededVdot, color: GOAL_COLORS[i] })))
 </script>
 
 <template>
@@ -341,11 +213,56 @@ watch([running, load, showRaceDetail], buildAll)
 				<MetricCard v-for="m in running.metrics" :key="m.key" :metric="m" />
 			</section>
 
+			<p v-if="hrSettings.maxHR && hrSettings.inferred" class="stat-note">
+				Heart-rate figures use a max HR of {{ hrSettings.maxHR }} bpm, taken from your recordings.
+				If you know your real max, set it in <router-link to="/profile" class="stat-inline-link">Profile</router-link>
+				— zones, training load and pace-at-heart-rate all depend on it.
+			</p>
+
 			<!-- Ramp guardrail: progress that gets you injured isn't progress. -->
 			<div v-if="ramp.verdict === 'sharp'" class="stat-banner warn">
 				<n-icon :component="WarningOutline" />
 				<span>{{ ramp.message }}</span>
 			</div>
+
+			<SectionHead
+				title="Aerobic pace"
+				:note="refBpm ? `every steady run, rescaled to ${refBpm} bpm` : 'pace for the same heart rate'"
+			/>
+			<section v-if="pacePoints.length >= 2" class="stat-panel stat-card">
+				<div class="stat-head">
+					<h3>Pace at {{ refBpm }} bpm</h3>
+					<span
+						v-if="vo2Current"
+						class="stat-badge"
+						title="Estimated from the same pace and heart-rate model — read it as a trend, not a lab result"
+					>
+						<span class="b-lbl">VO₂max est.</span>
+						<span class="mono">{{ vo2Current }}</span>
+						<span class="b-lbl">{{ vo2Band(vo2Current) }}</span>
+					</span>
+				</div>
+				<TimeSeriesChart
+					:series="paceSeries"
+					:y-format="fmtPaceTick"
+					:y-label="`min/km at ${refBpm} bpm`"
+					reverse-y
+					date-format="EEE d MMM yyyy"
+				/>
+				<p class="stat-note">
+					Each dot is a steady run of 15+ minutes, its pace rescaled to what it would have been at
+					{{ refBpm }} bpm — so an easy jog and a steadier long run land on the same scale. The line is
+					the median of the 28 days up to each point, and it rising means you're faster for the same
+					effort. Hard sessions and very short runs are left out.
+				</p>
+			</section>
+			<EmptyState
+				v-else
+				bare
+				:icon="PulseOutline"
+				title="Needs runs with heart rate"
+				body="Import runs recorded with a heart rate monitor. Every steady run of 15 minutes or more adds a point, and the line shows whether you're getting faster for the same effort."
+			/>
 
 			<SectionHead
 				title="Fitness &amp; form"
@@ -362,8 +279,16 @@ watch([running, load, showRaceDetail], buildAll)
 						</span>
 					</div>
 				</div>
-				<div class="stat-chart"><canvas ref="loadCanvas"></canvas></div>
+				<TimeSeriesChart :series="loadSeries" :y-format="(v: number) => String(Math.round(v))" date-format="EEE d MMM" />
+				<div v-if="load.warmingUp" class="stat-banner info">
+					<span>
+						Fitness starts from zero at your first recording and takes about six weeks to settle, so
+						for now it rises whatever you do. Read the trend once you have two months of history.
+					</span>
+				</div>
 				<p class="stat-note">
+					Built from {{ load.sessions }} recording{{ load.sessions === 1 ? '' : 's' }} with heart
+					rate; sessions without one add no load.
 					Fitness is the training you've banked over six weeks; fatigue is the last week of it.
 					Form is what's left over.
 					<template v-if="load.formLabel === 'fresh'">You're rested — a good week to test yourself.</template>
@@ -381,10 +306,16 @@ watch([running, load, showRaceDetail], buildAll)
 				action-to="/profile"
 			/>
 
-			<SectionHead title="Volume" :note="ramp.ratio ? `this week is ${ramp.ratio}× your 4-week average` : 'last 12 weeks'" />
+			<SectionHead title="Volume" note="last 12 weeks" />
 			<section class="stat-panel stat-card">
 				<div class="stat-head"><h3>Weekly distance</h3><span class="hint">km</span></div>
-				<div class="stat-chart"><canvas ref="volumeCanvas"></canvas></div>
+				<WeeklyBarsChart
+					:labels="volumeWeeks.map(w => w.label)"
+					:totals="runKmByWeek"
+					:average="volumeAverage"
+					:color="RUN"
+					unit="km"
+				/>
 				<p class="stat-note">{{ ramp.message }}</p>
 			</section>
 
@@ -412,28 +343,16 @@ watch([running, load, showRaceDetail], buildAll)
 			<template v-if="zonesHaveData">
 				<SectionHead title="Effort distribution" note="% of run time by heart-rate zone · 12 weeks" />
 				<section class="stat-panel stat-card">
-					<div class="stat-chart"><canvas ref="zoneCanvas"></canvas></div>
+					<StackedShareChart
+						:labels="zoneWeeks.map(w => w.label)"
+						:categories="zoneCategories"
+						:values="zoneWeeks.map(w => w.pct)"
+						:period-note="zoneNote"
+					/>
 					<p class="stat-note">
 						Most weeks should be dominated by the easy zones. If Z3 is your biggest band week
 						after week, you're training in the middle ground that's too hard to recover from
 						and too easy to drive adaptation.
-					</p>
-				</section>
-			</template>
-
-			<template v-if="vo2Points.length >= 3">
-				<SectionHead title="Aerobic capacity" note="VO₂ max estimated from pace and heart rate" />
-				<section class="stat-panel stat-card">
-					<div class="stat-head">
-						<h3>VO₂ max</h3>
-						<span v-if="vo2Current" class="stat-badge">
-							<span class="mono">{{ vo2Current }}</span>
-							<span class="b-lbl">ml/kg/min · {{ vo2Band(vo2Current) }}</span>
-						</span>
-					</div>
-					<div class="stat-chart"><canvas ref="vo2Canvas"></canvas></div>
-					<p class="stat-note">
-						An estimate, not a lab test — useful as a trend line, not as an absolute score.
 					</p>
 				</section>
 			</template>
@@ -500,9 +419,14 @@ watch([running, load, showRaceDetail], buildAll)
 					</div>
 				</section>
 
-				<section v-if="vdotHasData" class="stat-panel stat-card">
+				<section v-if="vdotHasData" class="stat-panel stat-card vdot-card">
 					<div class="stat-head"><h3>VDOT over time</h3><span class="hint">races ringed</span></div>
-					<div class="stat-chart"><canvas ref="vdotCanvas"></canvas></div>
+					<TimeSeriesChart
+						:series="vdotSeries"
+						:goals="vdotGoals"
+						:y-format="(v: number) => (Math.round(v * 10) / 10).toString()"
+						y-label="VDOT"
+					/>
 				</section>
 			</template>
 		</template>
@@ -531,6 +455,8 @@ watch([running, load, showRaceDetail], buildAll)
 .best-sub { font-size: 0.7rem; color: var(--text-muted); }
 .best-delta { font-size: 0.74rem; color: var(--text-muted); margin-top: 3px; }
 .best-delta.good { color: var(--success-color); }
+
+.vdot-card { margin-top: 12px; }
 
 /* Race readiness */
 .readiness { padding: 15px 17px; }

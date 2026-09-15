@@ -9,50 +9,39 @@
  * consistency behind it.
  */
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
-import Chart from 'chart.js/auto'
 import { BarbellOutline } from '@vicons/ionicons5'
 import MetricCard from '@/components/stats/MetricCard.vue'
+import TrendSpark from '@/components/stats/TrendSpark.vue'
+import LongTrendLine from '@/components/stats/LongTrendLine.vue'
 import EmptyState from '@/components/stats/EmptyState.vue'
 import SectionHead from '@/components/stats/SectionHead.vue'
-import { baseOpts, useCharts } from '@/utils/chartTheme'
+import { useCharts } from '@/utils/chartTheme'
+import { weeklyVolumeChart } from '@/utils/weeklyChart'
 import { getSportColor } from '@/utils/workouts'
-import { completed, gym, sportOf, today } from '@/stats'
-import { weekWindows } from '@/utils/progress'
+import { gym, gymSessions, today } from '@/stats'
+import { COMPARE_OFFSET, rollingWeeklyAverage, weeklyTotals, weekWindows } from '@/utils/progress'
+import { parseISO } from 'date-fns'
+import type { Workout } from '@/types'
 
 const { add, destroy } = useCharts()
 const tonnageCanvas = ref<HTMLCanvasElement | null>(null)
-
-const gymSessions = computed(() => completed.value.filter(w => sportOf(w) === 'gym'))
 
 /** True when sessions exist but nobody has typed in a load. */
 const missingLoad = computed(() =>
 	gymSessions.value.length > 0 && gymSessions.value.every(w => !w.totalWeightLifted))
 
-const weeklyTonnage = computed(() =>
-	weekWindows(12, today.value).map(wk =>
-		gymSessions.value
-			.filter(w => {
-				const d = new Date(w.date)
-				return d >= wk.start && d <= wk.end
-			})
-			.reduce((s, w) => s + (w.totalWeightLifted || 0), 0) / 1000))
+const dateOf = (w: Workout) => parseISO(w.date)
+const tonnes = (w: Workout) => (w.totalWeightLifted || 0) / 1000
 
 function buildTonnage() {
 	if (!tonnageCanvas.value) return
-	const weeks = weekWindows(12, today.value)
-	add(new Chart(tonnageCanvas.value, {
-		type: 'bar',
-		data: {
-			labels: weeks.map(w => w.label),
-			datasets: [{
-				label: 'Tonnage',
-				data: weeklyTonnage.value,
-				backgroundColor: getSportColor('gym'),
-				borderRadius: 4,
-				maxBarThickness: 18,
-			}],
-		},
-		options: baseOpts('tonnes'),
+	add(weeklyVolumeChart(tonnageCanvas.value, {
+		weeks: weekWindows(12, today.value),
+		totals: weeklyTotals(gymSessions.value, dateOf, tonnes, 12, today.value),
+		rolling: rollingWeeklyAverage(gymSessions.value, dateOf, tonnes, 12, today.value),
+		color: getSportColor('gym'),
+		unit: 't',
+		dp: 2,
 	}))
 }
 
@@ -61,6 +50,9 @@ async function buildAll() {
 	await nextTick()
 	buildTonnage()
 }
+
+const splitCompare = (trend: (number | null)[]) => (trend.length > COMPARE_OFFSET ? trend.length - 1 - COMPARE_OFFSET : null)
+const fmtT = (v: number | null) => (v === null ? null : `${v.toFixed(2)} t`)
 
 onMounted(buildAll)
 watch(gym, buildAll)
@@ -102,7 +94,7 @@ watch(gym, buildAll)
 			</section>
 
 			<template v-if="gym.splits.length">
-				<SectionHead title="By split" note="work per session, and which way it's going" />
+				<SectionHead title="By split" note="median load per session, and which way it's going" />
 				<section class="split-grid">
 					<div v-for="s in gym.splits" :key="s.split" class="stat-panel split-card" :class="s.direction">
 						<div class="split-top">
@@ -115,23 +107,26 @@ watch(gym, buildAll)
 						</div>
 						<div v-if="s.loadPerSession !== null && s.previousLoadPerSession !== null" class="split-sub" :class="s.direction">
 							<template v-if="s.direction === 'improving'">
-								▲ {{ (s.loadPerSession - s.previousLoadPerSession).toFixed(2) }} t more per session than last month
+								▲ {{ (s.loadPerSession - s.previousLoadPerSession).toFixed(2) }} t more per session than the 28 days before
 							</template>
 							<template v-else-if="s.direction === 'declining'">
-								▼ {{ (s.previousLoadPerSession - s.loadPerSession).toFixed(2) }} t less per session than last month
+								▼ {{ (s.previousLoadPerSession - s.loadPerSession).toFixed(2) }} t less per session than the 28 days before
 							</template>
-							<template v-else>Level with last month</template>
+							<template v-else-if="s.direction === 'holding'">Steady — was {{ s.previousLoadPerSession.toFixed(2) }} t</template>
+							<template v-else>
+								{{ s.counts[0] }} session{{ s.counts[0] === 1 ? '' : 's' }} now vs {{ s.counts[1] }} before — needs 2 of each to call it
+							</template>
 						</div>
-						<div v-else class="split-sub stat-muted">Not trained in both periods yet</div>
-						<div class="split-spark">
-							<div
-								v-for="(h, i) in s.spark"
-								:key="i"
-								class="ss-bar"
-								:class="{ last: i === s.spark.length - 1 }"
-								:style="{ height: Math.max(6, h) + '%' }"
-							></div>
-						</div>
+						<div v-else class="split-sub stat-muted">Not trained in both 28-day windows yet</div>
+						<LongTrendLine :trend="s.long" :higher-is-better="true" :words="['heavier', 'lighter']" />
+						<TrendSpark
+							class="split-spark"
+							:values="s.trend"
+							:labels="s.trend.map(fmtT)"
+							:direction="s.direction"
+							:compare-index="s.previousLoadPerSession !== null ? splitCompare(s.trend) : null"
+							:height="26"
+						/>
 					</div>
 				</section>
 			</template>
@@ -168,9 +163,7 @@ watch(gym, buildAll)
 .split-sub.improving { color: var(--success-color); }
 .split-sub.declining { color: var(--warning-color); }
 
-.split-spark { display: flex; align-items: flex-end; gap: 3px; height: 24px; margin-top: 4px; }
-.ss-bar { flex: 1; min-width: 3px; border-radius: 2px 2px 0 0; background: var(--surface-hover); }
-.ss-bar.last { background: var(--color-gym-primary); }
+.split-spark { margin-top: 6px; }
 
 .footnote { margin-top: 20px; font-style: italic; }
 </style>

@@ -1,0 +1,72 @@
+/*
+ * Unovis, dressed in the app's design tokens.
+ *
+ * Unovis draws SVG styled through CSS custom properties, so the charts inherit
+ * the theme directly — no reading colours in JavaScript and rebuilding the chart
+ * when they change, which is what Chart.js's canvas required. The `--vis-dark-*`
+ * set is mapped too, so Unovis's own dark mode can never override the tokens.
+ */
+/* `:root:root` outranks the defaults Unovis injects on plain :root at runtime. */
+:root:root,
+html[data-theme] {
+	--vis-font-family: var(--font-family);
+	--vis-color-main: var(--primary-color);
+	--vis-color-grey: var(--text-muted);
+
+	--vis-axis-font-family: var(--font-family);
+	--vis-axis-tick-label-color: var(--text-muted);
+	--vis-axis-tick-label-font-size: 10.5px;
+	--vis-axis-label-color: var(--text-muted);
+	--vis-axis-label-font-size: 11px;
+	--vis-axis-label-weight: 500;
+	--vis-axis-grid-color: var(--border-color);
+	--vis-axis-grid-line-width: 1px;
+	--vis-axis-tick-color: transparent;
+	--vis-axis-domain-color: transparent;
+
+	--vis-dark-axis-tick-label-color: var(--text-muted);
+	--vis-axis-tick-label-weight: 400;
+	--vis-dark-axis-label-color: var(--text-muted);
+	--vis-dark-axis-grid-color: var(--border-color);
+	--vis-dark-axis-tick-color: transparent;
+	--vis-dark-axis-domain-color: transparent;
+
+	--vis-tooltip-background-color: var(--surface-elevated);
+	--vis-tooltip-border-color: var(--border-strong);
+	--vis-tooltip-text-color: var(--text-color);
+	--vis-tooltip-border-radius: 9px;
+	--vis-tooltip-padding: 9px 11px;
+	--vis-tooltip-box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+	--vis-tooltip-transition-duration: 120ms;
+	--vis-dark-tooltip-background-color: var(--surface-elevated);
+	--vis-dark-tooltip-border-color: var(--border-strong);
+	--vis-dark-tooltip-text-color: var(--text-color);
+
+	--vis-crosshair-line-stroke-color: var(--text-muted);
+	--vis-crosshair-line-stroke-dasharray: 3 3;
+	--vis-crosshair-line-stroke-opacity: 0.8;
+	--vis-crosshair-circle-stroke-color: var(--surface-color);
+	--vis-crosshair-circle-stroke-width: 2px;
+
+	--vis-plotline-label-font-size: 10.5px;
+	--vis-plotline-width: 1.5px;
+	--vis-dark-plotline-label-color: var(--text-secondary);
+
+	/* A gap bridged on purpose (connectGaps) should look like the rest of the line. */
+	--vis-line-gapfill-stroke-dasharray: none;
+	--vis-line-gapfill-stroke-opacity: 1;
+
+	--vis-scatter-stroke-color: var(--surface-color);
+	--vis-scatter-stroke-width: 0;
+	--vis-scatter-hover-stroke-width: 2px;
+	--vis-dark-stacked-bar-stroke-color: transparent;
+}
+
+/* Tooltip body, rendered from chartTooltip() in charts.ts. */
+.vc-tip { font-size: 0.74rem; line-height: 1.45; min-width: 130px; }
+.vc-tip-title { font-weight: 600; color: var(--text-color); margin-bottom: 4px; }
+.vc-tip-row { display: flex; align-items: center; gap: 7px; color: var(--text-secondary); }
+.vc-tip-swatch { width: 8px; height: 8px; border-radius: 2px; flex-shrink: 0; }
+.vc-tip-label { flex: 1; }
+.vc-tip-value { font-family: var(--font-mono); color: var(--text-color); margin-left: 10px; }
+.vc-tip-note { color: var(--text-muted); font-size: 0.7rem; margin-top: 3px; max-width: 240px; }

@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest'
 import {
 	PULSE_ZONES,
 	getHRSettings,
+	observedMaxHR,
 	zoneAbsBpm,
 	timeInZones,
 	relativeEffort,
@@ -42,6 +43,20 @@ describe('getHRSettings', () => {
 	it('falls back to highest observed max HR and default rest HR', () => {
 		const s = getHRSettings([{ max_heartrate: 172 }, { max_heartrate: 191 }, {}])
 		expect(s).toEqual({ maxHR: 191, restHR: 60 })
+	})
+})
+
+describe('observedMaxHR', () => {
+	it('ignores a single sensor spike far above everything else', () => {
+		expect(observedMaxHR([{ max_heartrate: 228 }, { max_heartrate: 188 }, { max_heartrate: 185 }, { max_heartrate: 176 }])).toBe(188)
+	})
+
+	it('keeps a genuine race peak a few beats above training', () => {
+		expect(observedMaxHR([{ max_heartrate: 194 }, { max_heartrate: 186 }, { max_heartrate: 181 }])).toBe(194)
+	})
+
+	it('is zero with no heart-rate data', () => {
+		expect(observedMaxHR([{}, { max_heartrate: 0 }])).toBe(0)
 	})
 })
 
@@ -164,14 +179,19 @@ describe('gradeAdjustedPace', () => {
 })
 
 describe('estimateVO2max', () => {
-	it('matches ACSM + Swain closed form for a steady flat run', () => {
-		// 5:00/km (3.333 m/s) at 90% HRmax for 40 min
-		const activity = { average_speed: 10 / 3, average_heartrate: 180, moving_time: 2400 }
-		const vo2AtEffort = 3.5 + (10 / 3) * 60 * 0.2
-		const vo2Frac = 1.537 * 0.9 - 0.537
-		const expected = Math.round((vo2AtEffort / vo2Frac) * 10) / 10
-		expect(estimateVO2max(activity, MAX_HR)).toBe(expected)
-		expect(expected).toBeGreaterThan(40) // sanity: this is a plausible VO₂max
+	it('matches the ACSM heart-rate-reserve closed form for a steady flat run', () => {
+		// 5:00/km (3.333 m/s) at 172 bpm = 80% of HR reserve (60 + 0.8 × 140)
+		const activity = { average_speed: 10 / 3, average_heartrate: 172, moving_time: 2400 }
+		const expected = Math.round((3.5 + ((10 / 3) * 60 * 0.2) / 0.8) * 10) / 10
+		expect(estimateVO2max(activity, MAX_HR, REST_HR)).toBe(expected)
+		expect(expected).toBeGreaterThan(50) // sanity: 5:00/km at 80% HRR is a trained runner
+	})
+
+	it('gives the same answer for the same fitness at different intensities', () => {
+		// Speed proportional to HR reserve is exactly what "same fitness" means here.
+		const easy = estimateVO2max({ average_speed: 2.5, average_heartrate: 60 + 0.6 * 140, moving_time: 2400 }, MAX_HR, REST_HR)
+		const hard = estimateVO2max({ average_speed: 2.5 * (0.8 / 0.6), average_heartrate: 60 + 0.8 * 140, moving_time: 2400 }, MAX_HR, REST_HR)
+		expect(easy).toBeCloseTo(hard!, 0)
 	})
 
 	it('rejects walks, short efforts and missing HR', () => {
