@@ -1,75 +1,102 @@
-/* src/styles/app.css — modern sports dashboard design system */
+/* src/styles/app.css — Trainlog design tokens and global surfaces
+ *
+ * Colour roles, and why they're separate:
+ *
+ *   primary     interactive things and neutral data lines (links, active nav,
+ *               the fitness line). Violet, so it never reads as good or bad.
+ *   success /   the progress verdicts. Green and amber are reserved for "better"
+ *   warning     and "worse" — nothing decorative uses them.
+ *   sport       one hue per sport, all chosen away from green/amber/red so a
+ *               running chart can't be mistaken for a verdict.
+ *
+ * Every text colour here clears WCAG AA on --surface-color.
+ */
 
-@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&display=swap');
-@import url('https://fonts.googleapis.com/css2?family=Young+Serif&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&display=swap');
 
 :root {
-  /* Surfaces */
-  --background-color: #0c0f17;
-  --surface-color: #131b26;
-  --card-background-color: #131b26;
-  --surface-2: #192334;
-  --surface-hover: #1e2c3e;
-  --surface-elevated: #1a2535;
+  /* Surfaces — neutral charcoal, a touch cool */
+  --background-color: #0b0d11;
+  --surface-color: #12151b;
+  --card-background-color: #12151b;
+  --surface-2: #191d24;
+  --surface-hover: #20252e;
+  --surface-elevated: #1b1f27;
 
-  /* Sidebar — its own surface so a light theme can override it independently */
-  --sidebar-bg-top: #141e2e;
-  --sidebar-bg-bottom: #101620;
+  /* Sidebar — its own tokens so a light theme can override it independently */
+  --sidebar-bg-top: #0f1116;
+  --sidebar-bg-bottom: #0d0f13;
 
   /* Borders */
-  --border-color: #1f2d3f;
-  --border-strong: #2c3f56;
-  --border-subtle: rgba(255,255,255,0.04);
+  --border-color: #232830;
+  --border-strong: #333a45;
+  --border-subtle: rgba(255, 255, 255, 0.05);
 
   /* Text */
-  --text-color: #e7edf5;
-  --text-secondary: #9aa7b8;
-  --text-muted: #5e6b7d;
+  --text-color: #eef0f4;
+  --text-secondary: #a4abb8;
+  --text-muted: #747c8b;
   --color-text-light: #ffffff;
 
-  /* Brand / accent */
-  --primary-color: #4f8cff;
-  --accent-color: #4f8cff;
-  --primary-soft: rgba(79, 140, 255, 0.14);
-  --primary-strong: #2f6fe6;
-  --glow-color: rgba(79, 140, 255, 0.35);
+  /* Brand / interactive */
+  --primary-color: #9b8cff;          /* text, lines, focus rings on dark */
+  --primary-fill: #6c5ce7;           /* filled buttons — white text is AA on this */
+  --primary-fill-hover: #7b6cf0;
+  --on-primary: #ffffff;
+  --accent-color: var(--primary-color);
+  --primary-soft: rgba(155, 140, 255, 0.13);
+  --primary-strong: #7b6cf0;
+  --glow-color: rgba(155, 140, 255, 0.3);
 
-  /* Semantic */
-  --success-color: #22c55e;
-  --success-soft: rgba(34, 197, 94, 0.14);
-  --danger-color: #ef4444;
-  --danger-soft: rgba(239, 68, 68, 0.14);
-  --warning-color: #f59e0b;
-  --warning-soft: rgba(245, 158, 11, 0.14);
+  /* Verdicts and states */
+  --success-color: #4ade80;
+  --success-soft: rgba(74, 222, 128, 0.12);
+  --warning-color: #fbbf24;
+  --warning-soft: rgba(251, 191, 36, 0.12);
+  --danger-color: #f87171;
+  --danger-soft: rgba(248, 113, 113, 0.12);
 
-  /* Sport colors */
-  --color-running-primary: #34d399;
-  --color-running-primary-rgb: 52, 211, 153;
-  --color-gym-primary: #818cf8;
-  --color-gym-primary-rgb: 129, 140, 248;
-  --color-bike-primary: #f97316;
-  --color-bike-primary-rgb: 249, 115, 22;
+  /* Sports */
+  --color-running-primary: #38bdf8;
+  --color-running-primary-rgb: 56, 189, 248;
+  --color-gym-primary: #f472b6;
+  --color-gym-primary-rgb: 244, 114, 182;
+  --color-bike-primary: #fb923c;
+  --color-bike-primary-rgb: 251, 146, 60;
   --color-rest-primary: #64748b;
   --color-rest-primary-rgb: 100, 116, 139;
   --color-other-primary: #94a3b8;
   --color-other-primary-rgb: 148, 163, 184;
 
-  /* Shape & type */
-  --radius-sm: 6px;
-  --radius: 10px;
-  --radius-lg: 16px;
+  /* Sensor streams */
+  --color-heartrate: #fb7185;
+  --color-cadence: #c4b5fd;
+
+  /* Shape */
+  --radius-sm: 8px;
+  --radius: 14px;
+  --radius-lg: 20px;
+  --shadow-card: 0 1px 0 rgba(255, 255, 255, 0.04) inset, 0 1px 2px rgba(0, 0, 0, 0.3);
+  --shadow-pop: 0 12px 32px rgba(0, 0, 0, 0.45);
+
+  /* Type
+   * Inter for reading, Space Grotesk for headings and every number that matters.
+   * --font-mono is the numeric face (tabular figures), not a code font — nothing
+   * in the app shows code to users. --font-serif is kept as an alias so older
+   * rules still resolve. */
   --font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
-  --font-serif: 'Young Serif', Georgia, serif;
-  --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, monospace;
+  --font-display: 'Space Grotesk', 'Inter', system-ui, sans-serif;
+  --font-mono: 'Space Grotesk', 'Inter', system-ui, sans-serif;
+  --font-serif: var(--font-display);
 
   /* Layout */
-  --sidebar-width: 212px;
-  --sidebar-collapsed-width: 64px;
-  --nav-icon-size: 22px;
+  --sidebar-width: 220px;
+  --sidebar-collapsed-width: 68px;
+  --nav-icon-size: 20px;
 
   /* Bottom nav: the bar is nav-height tall plus the phone's home-indicator inset.
      Anything that must clear it should offset by --mobile-nav-total. */
-  --mobile-nav-height: 60px;
+  --mobile-nav-height: 62px;
   --mobile-nav-total: calc(var(--mobile-nav-height) + env(safe-area-inset-bottom, 0px));
 
   /* Stacking order. Keep every z-index in the app on this scale — chrome must
@@ -106,10 +133,11 @@ body {
   #app { flex-direction: column; }
 }
 
-/* Numeric values look best in mono */
+/* Numbers: display face, tabular so columns of figures line up. */
 .mono, .stat-value {
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
 }
 
 /* iOS Safari zooms the whole page in whenever a focused field's text is under
@@ -137,40 +165,50 @@ body {
   border-radius: 8px;
   border: 2px solid var(--background-color);
 }
-::-webkit-scrollbar-thumb:hover { background: #41506600; background: #415066; }
+::-webkit-scrollbar-thumb:hover { background: #46505e; }
 
 /* Headings */
 h1, h2, h3, h4 {
   color: var(--text-color);
-  font-family: var(--font-serif);
-  font-weight: 400;
-  letter-spacing: -0.01em;
+  font-family: var(--font-display);
+  font-weight: 600;
+  letter-spacing: -0.02em;
   margin: 0;
 }
 
 a { color: var(--primary-color); text-decoration: none; }
+
+::selection { background: rgba(155, 140, 255, 0.35); }
+
+:focus-visible { outline: 2px solid var(--primary-color); outline-offset: 2px; }
+
+/* One page header, shared by every top-level view. */
+.page-title {
+  font-family: var(--font-display);
+  font-size: 1.65rem;
+  font-weight: 600;
+  letter-spacing: -0.025em;
+  line-height: 1.15;
+}
 
 /* Reusable card surface */
 .card {
   background-color: var(--surface-color);
   border: 1px solid var(--border-color);
   border-radius: var(--radius);
+  box-shadow: var(--shadow-card);
 }
 
-/* Naive UI light-touch overrides (theme handles most colors) */
+/* Naive UI light-touch overrides (theme.ts handles most colours) */
 .n-card {
   background-color: var(--surface-color) !important;
   border: 1px solid var(--border-color) !important;
   border-radius: var(--radius) !important;
-  box-shadow: inset 0 1px 0 var(--border-subtle) !important;
+  box-shadow: var(--shadow-card) !important;
 }
+.n-card-header__main { font-family: var(--font-display); letter-spacing: -0.01em; }
 
-/* Global card rim-light — applies depth to all surface cards */
-.card {
-  box-shadow: inset 0 1px 0 var(--border-subtle);
-}
-
-/* Subtle inline loading indicator (replaces ascii spinner) */
+/* Subtle inline loading indicator */
 .ascii-spinner::after {
   content: "";
   display: inline-block;
@@ -190,3 +228,7 @@ a { color: var(--primary-color); text-decoration: none; }
 
 .fade-enter-active, .fade-leave-active { transition: opacity 0.18s ease; }
 .fade-enter-from, .fade-leave-to { opacity: 0; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+}
