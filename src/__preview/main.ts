@@ -101,6 +101,77 @@ d.getExercises = async () => [
 ]
 d.getProfile = async () => ({ user_name: 'Elias', goal_weight: 78, resting_hr: rest, max_hr: null, vdot_override: null })
 d.getDistanceGoals = async () => []
+
+// Progress photos: drawn silhouettes that slim down over five months, each
+// framed slightly differently so the alignment tool has something to fix.
+function fakePhoto(i: number, n: number, pose: string): Promise<string> {
+	const c = document.createElement('canvas')
+	c.width = 900
+	c.height = 1200
+	const g = c.getContext('2d')!
+	const wall = g.createLinearGradient(0, 0, 0, 1200)
+	wall.addColorStop(0, '#d9d2c5')
+	wall.addColorStop(1, '#b9b0a0')
+	g.fillStyle = wall
+	g.fillRect(0, 0, 900, 1200)
+	g.fillStyle = '#8a7f6e'
+	g.fillRect(0, 1020, 900, 180)
+	const t = i / Math.max(1, n - 1)
+	const shift = (rnd() - 0.5) * 90
+	const zoom = 0.9 + rnd() * 0.2
+	g.translate(450 + shift, 600)
+	g.scale(zoom, zoom)
+	g.fillStyle = '#c98f6f'
+	const waist = (pose === 'side' ? 95 : 150) - 38 * t
+	const chest = (pose === 'side' ? 110 : 185) - 10 * t
+	g.beginPath(); g.arc(0, -330, 62, 0, Math.PI * 2); g.fill()                 // head
+	g.beginPath()
+	g.moveTo(-chest, -230); g.lineTo(chest, -230)                              // shoulders
+	g.quadraticCurveTo(waist + 20, -20, waist, 120)
+	g.lineTo(-waist, 120)
+	g.quadraticCurveTo(-waist - 20, -20, -chest, -230)
+	g.fill()
+	g.fillStyle = '#2c3e66'
+	g.fillRect(-waist - 6, 110, (waist + 6) * 2, 120)                           // shorts
+	g.fillStyle = '#c98f6f'
+	g.fillRect(-waist + 10, 230, 60, 190); g.fillRect(waist - 70, 230, 60, 190) // legs
+	if (pose !== 'side') {
+		g.fillRect(-chest - 40, -220, 42, 300); g.fillRect(chest - 2, -220, 42, 300) // arms
+	}
+	return new Promise(res => c.toBlob(b => res(URL.createObjectURL(b!)), 'image/jpeg', 0.85))
+}
+
+const photoUrls: Record<string, string> = {}
+const photoRows: any[] = []
+let photoId = 1
+async function seedPhotos() {
+	const plan = [
+		...Array.from({ length: 11 }, (_, i) => ({ pose: 'front', i, n: 11, days: 150 - i * 14 })),
+		...Array.from({ length: 3 }, (_, i) => ({ pose: 'side', i, n: 3, days: 150 - i * 70 })),
+	]
+	for (const p of plan) {
+		const path = `me/${photoId}.jpg`
+		photoUrls[path] = await fakePhoto(p.i, p.n, p.pose)
+		photoRows.push({
+			id: photoId++, taken_on: day(p.days), pose: p.pose, path, width: 900, height: 1200,
+			weight_kg: Math.round((86.5 - (150 - p.days) * 0.03) * 10) / 10,
+			note: p.i === 0 ? 'Start of the block' : null,
+			align_scale: 1, align_x: 0, align_y: 0, created_at: `${day(p.days)}T07:00:00Z`,
+		})
+	}
+}
+const photosReady = seedPhotos()
+d.getProgressPhotos = async () => { await photosReady; return [...photoRows] }
+d.signProgressPhotos = async (paths: string[]) => { await photosReady; return Object.fromEntries(paths.filter(p => photoUrls[p]).map(p => [p, photoUrls[p]])) }
+d.addProgressPhoto = async (blob: Blob, size: any, meta: any) => {
+	const path = `me/${photoId}.jpg`
+	photoUrls[path] = URL.createObjectURL(blob)
+	const row = { id: photoId++, path, width: size.width, height: size.height, created_at: new Date().toISOString(), ...meta }
+	photoRows.push(row)
+	return row
+}
+d.updateProgressPhoto = async (id: number, patch: any) => { Object.assign(photoRows.find(r => r.id === id), patch) }
+d.deleteProgressPhoto = async (ph: any) => { photoRows.splice(photoRows.findIndex(r => r.id === ph.id), 1) }
 ;(auth as any).user = { id: 'me', email: 'preview@example.com' }
 ;(auth as any).ready = true
 

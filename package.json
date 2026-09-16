@@ -20,6 +20,7 @@
     "axios": "^1.13.2",
     "date-fns": "^4.1.0",
     "fit-file-parser": "^3.0.2",
+    "gifenc": "^1.0.3",
     "leaflet": "^1.9.4",
     "leaflet-polylinedecorator": "^1.6.0",
     "naive-ui": "^2.43.2",

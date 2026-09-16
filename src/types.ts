@@ -211,3 +211,24 @@ export interface Target {
 	terrainFactor: number;
 	kind: 'race' | 'distance';
 }
+
+export type PhotoPose = 'front' | 'side' | 'back';
+
+/** A body-progress photo. The image itself lives in the private storage bucket. */
+export interface ProgressPhoto {
+	id: number;
+	taken_on: string;
+	pose: PhotoPose;
+	/** Object key in the `progress-photos` bucket: "<user_id>/<uuid>.jpg". */
+	path: string;
+	width?: number | null;
+	height?: number | null;
+	weight_kg?: number | null;
+	note?: string | null;
+	align_scale: number;
+	align_x: number;
+	align_y: number;
+	created_at?: string;
+}
+
+export type ProgressPhotoMeta = Pick<ProgressPhoto, 'taken_on' | 'pose' | 'weight_kg' | 'note' | 'align_scale' | 'align_x' | 'align_y'>;

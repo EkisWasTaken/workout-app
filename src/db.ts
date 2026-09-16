@@ -1,6 +1,6 @@
 import { supabase } from './supabase'
 import { currentUserId } from './auth'
-import type { Workout, DailyWeight, WorkoutTemplate, WorkoutTemplateExercise, Exercise, RaceGoal, AddRaceGoalPayload, DistanceGoal, Profile } from './types'
+import type { Workout, DailyWeight, WorkoutTemplate, WorkoutTemplateExercise, Exercise, RaceGoal, AddRaceGoalPayload, DistanceGoal, Profile, ProgressPhoto, ProgressPhotoMeta } from './types'
 
 /** Thrown when supabase_goals.sql hasn't been run yet. */
 export const MISSING_GOALS_TABLES = 'MISSING_GOALS_TABLES'
@@ -8,6 +8,17 @@ export const MISSING_GOALS_TABLES = 'MISSING_GOALS_TABLES'
 export const MISSING_GOALS_COLUMNS = 'MISSING_GOALS_COLUMNS'
 /** Thrown when trying to delete a template belonging to another account. */
 export const NOT_YOUR_TEMPLATE = 'NOT_YOUR_TEMPLATE'
+/** Thrown when supabase_progress_photos.sql hasn't been run yet. */
+export const MISSING_PHOTOS = 'MISSING_PHOTOS'
+
+/** The private bucket progress photos live in. Never made public. */
+export const PHOTO_BUCKET = 'progress-photos'
+
+/** Storage has no error codes worth the name; a missing bucket is a 404 with this message. */
+const isMissingBucket = (error: { message?: string; statusCode?: string | number } | null) =>
+  !!error && (/bucket not found/i.test(error.message || '') || String(error.statusCode) === '404')
+
+const PHOTO_COLUMNS = 'id, taken_on, pose, path, width, height, weight_kg, note, align_scale, align_x, align_y, created_at'
 
 /**
  * A table that doesn't exist. PostgREST answers PGRST205 ("not found in the
@@ -444,6 +455,90 @@ export const db = {
       throw error
     }
     return { id: data[0].id, duplicate: false }
+  },
+
+  // PROGRESS PHOTOS — rows are per-user; the images sit in a private bucket
+  // under a folder named after the user, and are only ever read through
+  // short-lived signed URLs.
+  getProgressPhotos: async (): Promise<ProgressPhoto[]> => {
+    const { data, error } = await supabase
+      .from('progress_photos')
+      .select(PHOTO_COLUMNS)
+      .order('taken_on', { ascending: true })
+    if (error) {
+      if (isMissingTable(error)) throw new Error(MISSING_PHOTOS)
+      throw error
+    }
+    return (data ?? []) as ProgressPhoto[]
+  },
+
+  /**
+   * Upload an already re-encoded JPEG and record it. If the row can't be
+   * written the file is removed again, so a failed save never leaves an
+   * invisible photo sitting in storage.
+   */
+  addProgressPhoto: async (
+    image: Blob,
+    size: { width: number; height: number },
+    meta: ProgressPhotoMeta,
+  ): Promise<ProgressPhoto> => {
+    const uid = currentUserId()
+    if (!uid) throw new Error('Not signed in')
+    const path = `${uid}/${crypto.randomUUID()}.jpg`
+
+    const up = await supabase.storage.from(PHOTO_BUCKET).upload(path, image, {
+      contentType: 'image/jpeg',
+      upsert: false,
+      cacheControl: '31536000',
+    })
+    if (up.error) {
+      if (isMissingBucket(up.error)) throw new Error(MISSING_PHOTOS)
+      throw up.error
+    }
+
+    const { data, error } = await supabase
+      .from('progress_photos')
+      .insert([{ ...meta, path, width: size.width, height: size.height, user_id: uid }])
+      .select(PHOTO_COLUMNS)
+      .single()
+    if (error) {
+      await supabase.storage.from(PHOTO_BUCKET).remove([path])
+      if (isMissingTable(error)) throw new Error(MISSING_PHOTOS)
+      throw error
+    }
+    return data as ProgressPhoto
+  },
+
+  updateProgressPhoto: async (id: number, patch: Partial<ProgressPhotoMeta>): Promise<void> => {
+    const { error } = await supabase.from('progress_photos').update(patch).eq('id', id)
+    if (error) throw error
+  },
+
+  /**
+   * Row first, then the file. If the file removal fails the photo is already
+   * gone from the app; an orphaned file is invisible, a row pointing at a
+   * missing file is a broken image.
+   */
+  deleteProgressPhoto: async (photo: Pick<ProgressPhoto, 'id' | 'path'>): Promise<void> => {
+    const { error } = await supabase.from('progress_photos').delete().eq('id', photo.id)
+    if (error) throw error
+    const rm = await supabase.storage.from(PHOTO_BUCKET).remove([photo.path])
+    if (rm.error) console.warn('Photo row deleted but its file could not be removed', photo.path, rm.error)
+  },
+
+  /** Signed URLs for a batch of photos, keyed by path. Missing entries failed to sign. */
+  signProgressPhotos: async (paths: string[], expiresInSecs = 3600): Promise<Record<string, string>> => {
+    if (!paths.length) return {}
+    const { data, error } = await supabase.storage.from(PHOTO_BUCKET).createSignedUrls(paths, expiresInSecs)
+    if (error) {
+      if (isMissingBucket(error)) throw new Error(MISSING_PHOTOS)
+      throw error
+    }
+    const out: Record<string, string> = {}
+    for (const row of data ?? []) {
+      if (row.path && row.signedUrl && !row.error) out[row.path] = row.signedUrl
+    }
+    return out
   },
 
   deleteImportedActivity: async (id: number): Promise<number> => {
