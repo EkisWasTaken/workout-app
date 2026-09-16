@@ -86,6 +86,7 @@ const races = [{ id: 1, name: 'Stockholm Half', date: format(addDays(now, 40), '
 const d = db as any
 d.getWorkouts = async () => ws
 d.getDailyWeights = async () => weights
+d.addDailyWeight = async (w: any) => { const id = 10000 + weights.length; weights.push({ id, ...w }); return id }
 d.getRaceGoals = async () => races
 d.getImportedActivities = async () => acts
 d.getImportedActivityById = async (i: number) => acts.find(a => a.id === i) ?? null

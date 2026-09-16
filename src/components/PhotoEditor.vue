@@ -31,6 +31,13 @@ const props = defineProps<{
 	weights: WeighInLike[]
 	/** Pose to start a new photo in — whichever tab was open. */
 	defaultPose: Pose
+	/**
+	 * Date and weight for a new photo, when it's being added straight after a
+	 * weigh-in. Both were just chosen on purpose, so neither is second-guessed
+	 * from the file or the weigh-in history.
+	 */
+	initialDate?: string | null
+	initialWeight?: number | null
 }>()
 
 const emit = defineEmits<{
@@ -85,9 +92,10 @@ watch(() => props.show, async open => {
 			loadError.value = (e as Error).message
 		}
 	} else {
-		form.date = format(new Date(), 'yyyy-MM-dd')
+		form.date = props.initialDate || format(new Date(), 'yyyy-MM-dd')
 		form.pose = props.defaultPose
-		form.weight = nearestWeight(props.weights, form.date)
+		form.weight = props.initialWeight ?? nearestWeight(props.weights, form.date)
+		weightTouched.value = props.initialWeight != null
 		form.note = ''
 		alignment.value = { ...NO_ALIGNMENT }
 	}
@@ -136,7 +144,7 @@ async function onPicked(e: Event) {
 		// The file's own date is the best guess at when it was taken — but never
 		// a future date, and never something implausibly old.
 		const modified = new Date(f.lastModified)
-		if (f.lastModified && !isAfter(modified, new Date()) && modified.getFullYear() >= 2000) {
+		if (!props.initialDate && f.lastModified && !isAfter(modified, new Date()) && modified.getFullYear() >= 2000) {
 			form.date = format(modified, 'yyyy-MM-dd')
 		}
 		await nextTick()

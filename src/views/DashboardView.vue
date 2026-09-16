@@ -228,8 +228,17 @@
             <label for="weight-date">Date</label>
             <input type="date" id="weight-date" v-model="newWeight.date" />
           </div>
+          <!-- Weigh-in and progress photo are the same morning routine, so offer one straight after the other. -->
+          <label v-if="photosAvailable" class="photo-option" :class="{ on: addPhotoAfter }">
+            <input type="checkbox" v-model="addPhotoAfter" />
+            <n-icon :component="CameraOutline" class="photo-option-icon" />
+            <span class="photo-option-text">
+              <strong>Add a progress photo too</strong>
+              <span :class="{ due: photoDueNow }">{{ photoDueText }}</span>
+            </span>
+          </label>
           <button @click="saveNewWeight" class="action-button primary save-button" :disabled="isActionLoading">
-            <span v-if="!isActionLoading">Save weight</span>
+            <span v-if="!isActionLoading">{{ addPhotoAfter && photosAvailable ? 'Save & add photo' : 'Save weight' }}</span>
             <span v-else class="ascii-spinner">Saving</span>
           </button>
         </div>
@@ -483,6 +492,16 @@
         @created="loadWorkouts"
       />
 
+      <PhotoEditor
+        v-model:show="showPhotoAfterWeight"
+        :photo="null"
+        :photos="photos"
+        :weights="dailyWeights"
+        :default-pose="usualPose"
+        :initial-date="photoAfterWeight.date"
+        :initial-weight="photoAfterWeight.weight"
+      />
+
       <ImportActivitiesModal v-model:show="showActivityImport" @imported="onActivitiesImported" />
 
       <!-- Import Editor Modal -->
@@ -507,7 +526,7 @@ import {
   AddOutline, BodyOutline, CloudUploadOutline, CopyOutline, ChevronBackOutline, ChevronForwardOutline,
   FlagOutline, CheckmarkCircle, TrashOutline, CreateOutline, CheckmarkOutline, MapOutline,
   WatchOutline, WalkOutline, BarbellOutline, BicycleOutline, BedOutline, FitnessOutline,
-  TrendingUpOutline,
+  TrendingUpOutline, CameraOutline,
 } from '@vicons/ionicons5';
 import { db } from '@/db';
 import { isOwner } from '@/owner';
@@ -536,6 +555,9 @@ import CustomModal from '../components/CustomModal.vue';
 import ImportEditor from '../components/ImportEditor.vue';
 import ImportActivitiesModal from '../components/ImportActivitiesModal.vue';
 import BuildPlanModal from '../components/BuildPlanModal.vue';
+import PhotoEditor from '../components/PhotoEditor.vue';
+import { loadPhotos, photos, photosError } from '@/photos';
+import { dueLabel, framesFor, nextPhotoDue, POSES, type Pose } from '@/utils/progressPhotos';
 import { activityApi } from '../activities';
 import { parseActivityFile } from '@/import/parseActivityFile';
 import { targetForDate, hydrateSettings } from '@/settings';
@@ -1199,11 +1221,41 @@ async function copyLastWeek() {
   }
 }
 
+// ── progress photo after a weigh-in ──
+const addPhotoAfter = ref(false);
+const showPhotoAfterWeight = ref(false);
+const photoAfterWeight = ref<{ date: string | null; weight: number | null }>({ date: null, weight: null });
+
+/** Hidden until the photos migration has been run — there'd be nowhere to save it. */
+const photosAvailable = computed(() => !photosError.value);
+
+/** Poses are usually taken together, so "due" counts from the latest photo of any pose. */
+const photoDue = computed(() => nextPhotoDue(photos.value));
+const photoDueNow = computed(() => !photoDue.value || photoDue.value.inDays <= 0);
+const photoDueText = computed(() =>
+  photoDue.value ? dueLabel(photoDue.value) : 'Start your progress timelapse — same time as your weigh-in is ideal');
+
+/** Open the photo dialog on whichever pose you take most. */
+const usualPose = computed<Pose>(() => {
+  let best: Pose = 'front';
+  let most = 0;
+  for (const p of POSES) {
+    const n = framesFor(photos.value, p.key).length;
+    if (n > most) { most = n; best = p.key; }
+  }
+  return best;
+});
+
 /** Start from the last weigh-in rather than an arbitrary 70 kg. */
-watch(showLogWeightModal, open => {
+watch(showLogWeightModal, async open => {
   if (!open) return;
   const last = [...dailyWeights.value].sort((a, b) => b.date.localeCompare(a.date))[0];
   newWeight.value = { weight: last?.weight ?? newWeight.value.weight, date: format(new Date(), 'yyyy-MM-dd') };
+  addPhotoAfter.value = false;
+  await loadPhotos();
+  // Ticked by default only when a photo is actually due, so a daily weigher
+  // isn't nagged every morning.
+  addPhotoAfter.value = photosAvailable.value && photoDueNow.value;
 });
 
 async function saveNewWeight() {
@@ -1220,6 +1272,10 @@ async function saveNewWeight() {
     message.success('Weight logged.');
     showLogWeightModal.value = false;
     await loadDailyWeights();
+    if (addPhotoAfter.value && photosAvailable.value) {
+      photoAfterWeight.value = { date: newWeight.value.date, weight: Number(newWeight.value.weight) };
+      showPhotoAfterWeight.value = true;
+    }
     // Reset date after successful save
     newWeight.value.date = format(new Date(), 'yyyy-MM-dd');
   } catch (error) {
@@ -1774,6 +1830,23 @@ onActivated(loadAll);
 /* Forms */
 .form-container { display: flex; flex-direction: column; gap: 16px; padding: 6px 0; }
 .form-group { display: flex; flex-direction: column; gap: 6px; }
+
+.photo-option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  cursor: pointer;
+}
+.photo-option.on { border-color: var(--primary-color); background: var(--primary-soft); }
+.photo-option input { width: auto; margin: 0; accent-color: var(--primary-color); }
+.photo-option-icon { font-size: 1.2rem; color: var(--primary-color); flex-shrink: 0; }
+.photo-option-text { display: flex; flex-direction: column; gap: 2px; font-size: 0.8rem; color: var(--text-muted); }
+.photo-option-text strong { font-size: 0.86rem; color: var(--text-color); font-weight: 600; }
+.photo-option-text .due { color: var(--primary-color); }
 
 /* Two short fields side by side; stacks on a phone. */
 .form-row { display: flex; gap: 12px; }
