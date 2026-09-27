@@ -31,6 +31,21 @@ export function getWorkoutType(workout: Workout): SportType {
 }
 
 /**
+ * The workout's `type` as the forms spell it — "Gym", not "gym".
+ *
+ * `type` is free text in the database and has been written in several casings:
+ * the Add-session form writes "Gym", a template writes "gym", an old CSV import
+ * wrote whatever the spreadsheet said. `getWorkoutType` has always been
+ * case-insensitive so the stats never noticed — but the edit dialog's
+ * `<select>` matches its options exactly, so a session stored as "gym" opened
+ * with *Running* selected and its Split field hidden, and saving from there
+ * quietly turned a gym session into a run.
+ */
+export function canonicalWorkoutType(workout: Workout): string {
+	return SPORT_LABELS[getWorkoutType(workout)]
+}
+
+/**
  * Read a live palette colour out of the stylesheet, so charts drawn in JS use
  * the same tokens as the CSS rather than a second, drifting copy of the hexes.
  *

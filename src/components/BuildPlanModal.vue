@@ -15,10 +15,11 @@ import { addDays, format, parseISO, startOfWeek } from 'date-fns'
 import CustomModal from './CustomModal.vue'
 import { db } from '@/db'
 import {
-	buildPlan, planProblems, planSessions, PHASE_LABELS, WEEKDAYS, dayOfWeek,
+	buildPlan, placeGymSessions, planProblems, planSessions, PHASE_LABELS, WEEKDAYS, dayOfWeek,
 	type PlanInput,
 } from '@/utils/planBuilder'
-import type { RaceGoal, Workout } from '@/types'
+import { buildWorkoutFromTemplate } from '@/utils/templateSession'
+import type { AddWorkoutPayload, RaceGoal, Workout, WorkoutTemplate } from '@/types'
 
 const props = defineProps<{
 	show: boolean
@@ -28,6 +29,8 @@ const props = defineProps<{
 	recentWeeklyKm: number
 	/** Weekdays the athlete usually lifts on, prefilled from their own history. */
 	gymDays: number[]
+	/** The gym templates available to rotate through. */
+	templates: WorkoutTemplate[]
 }>()
 
 const emit = defineEmits<{
@@ -48,6 +51,28 @@ const startKm = ref(30)
 const peakKm = ref(45)
 const longRunDay = ref(6)
 const easyOnlyDays = ref<number[]>([])
+
+// ─── gym half of the schedule ────────────────────────────────────────────────
+/**
+ * The running plan has never written a gym session — lifting days are the
+ * athlete's own and it only keeps hard running off them. That is right for a
+ * *running plan*, but building a whole schedule then means adding three
+ * sessions a week by hand for sixteen weeks. So the same dialog can deal your
+ * own gym templates across the plan's weeks, in rotation.
+ */
+const includeGym = ref(false)
+const gymDays = ref<number[]>([])
+const gymRotation = ref<number[]>([])
+
+const gymTemplates = computed(() => props.templates.filter(t => (t.kind ?? 'gym') === 'gym'))
+const gymTemplateOptions = computed(() =>
+	gymTemplates.value.map(t => ({ label: t.workout_type ? `${t.name} · ${t.workout_type}` : t.name, value: t.id })))
+
+/** The chosen templates, in the order they will be cycled through. */
+const rotationTemplates = computed(() =>
+	gymRotation.value
+		.map(id => gymTemplates.value.find(t => t.id === id))
+		.filter((t): t is WorkoutTemplate => !!t))
 
 /** Only races ahead of us can be trained for. */
 const raceOptions = computed(() =>
@@ -79,6 +104,11 @@ watch(() => props.show, open => {
 	raceId.value = raceOptions.value[0]?.value ?? null
 	startTs.value = Date.now()
 	easyOnlyDays.value = [...props.gymDays]
+	gymDays.value = [...props.gymDays]
+	// Default to the whole library in its own order, which for a Push/Pull/Legs
+	// split is already the order you would want to run it in.
+	gymRotation.value = gymTemplates.value.map(t => t.id)
+	includeGym.value = false
 	const base = Math.round(props.recentWeeklyKm)
 	if (base > 0) {
 		startKm.value = base
@@ -120,6 +150,45 @@ const clashes = computed(() => {
 	return props.existing.filter(w => w.date >= from && w.date <= plan.value!.raceDate).length
 })
 
+/**
+ * Gym sessions this plan would add, as dates paired with a template.
+ *
+ * Only the long run's day is kept clear. Lifting on a day you also run is
+ * normal — it is what the "keep hard running off these days" setting above
+ * exists to accommodate — so skipping every day with a run in it, as this first
+ * did, left almost nothing scheduled: on a four-run week with three lift days,
+ * two of the three collided and were dropped. A 25 km long run plus a legs day
+ * is the one pairing that genuinely doesn't work.
+ */
+const gymPlacements = computed(() => {
+	if (!includeGym.value || !plan.value || !rotationTemplates.value.length) return []
+	const longRunDates = sessions.value.filter(x => x.kind === 'long' || x.kind === 'race').map(x => x.date)
+	return placeGymSessions(plan.value, gymDays.value, rotationTemplates.value.length, longRunDates)
+		.map(p => ({ date: p.date, template: rotationTemplates.value[p.slot] }))
+})
+
+/** Everything in one week, runs and gym interleaved by date, for the preview. */
+function weekPreview(week: { startDate: string; sessions: typeof sessions.value }) {
+	const end = format(addDays(parseISO(week.startDate), 6), 'yyyy-MM-dd')
+	const rows = [
+		...week.sessions.map(s => ({
+			date: s.date, name: s.name, tag: s.zone, meta: `${s.distanceKm} km`, gym: false,
+		})),
+		...gymPlacements.value
+			.filter(g => g.date >= week.startDate && g.date <= end)
+			.map(g => ({
+				date: g.date,
+				name: g.template.name,
+				tag: 'Gym',
+				meta: g.template.duration ? `${g.template.duration} min` : '',
+				gym: true,
+			})),
+	]
+	return rows.sort((a, b) => a.date.localeCompare(b.date) || Number(a.gym) - Number(b.gym))
+}
+
+const totalToAdd = computed(() => sessions.value.length + gymPlacements.value.length)
+
 const weekLabel = (startDate: string) =>
 	`${format(parseISO(startDate), 'd MMM')} – ${format(addDays(parseISO(startDate), 6), 'd MMM')}`
 
@@ -127,32 +196,45 @@ const dayLabel = (date: string) => format(parseISO(date), 'EEE d')
 
 // ─── saving ───────────────────────────────────────────────────────────────────
 
+/**
+ * Write the plan.
+ *
+ * One insert for the lot. This used to be a `for` loop of individual inserts —
+ * sixty-odd round trips for a normal plan, slow enough to sit and watch, and
+ * not atomic: a connection dropping in the middle left half a plan on the
+ * calendar and an error message asking you to go and clean it up by hand. Now
+ * it either all lands or none of it does.
+ */
 async function create() {
 	if (!plan.value || saving.value) return
 	saving.value = true
-	let added = 0
 	try {
-		for (const s of sessions.value) {
-			await db.addWorkout({
-				date: s.date,
-				name: s.name,
-				type: s.type,
-				// The zone, not a pace: the number is derived from fitness at render time.
-				targetPace: s.zone,
-				distance: s.distanceKm,
-				notes: s.notes ?? '',
-				isCompleted: 0,
-			} as Omit<Workout, 'id'>)
-			added++
+		const rows: AddWorkoutPayload[] = sessions.value.map(s => ({
+			date: s.date,
+			name: s.name,
+			type: s.type,
+			// The zone, not a pace: the number is derived from fitness at render time.
+			targetPace: s.zone,
+			distance: s.distanceKm,
+			notes: s.notes ?? '',
+			isCompleted: 0,
+		}))
+
+		// Gym rows go through the same builder the Templates page uses, so a
+		// scheduled push day carries its exercise list exactly as it would if
+		// you had added it yourself.
+		for (const g of gymPlacements.value) {
+			rows.push(await buildWorkoutFromTemplate(g.template, g.date))
 		}
-		message.success(`Plan created — ${added} sessions added.`)
+		rows.sort((a, b) => a.date.localeCompare(b.date))
+
+		await db.addWorkouts(rows)
+		message.success(`Plan created — ${rows.length} sessions added.`)
 		emit('created')
 		emit('update:show', false)
 	} catch (e) {
 		console.error('Plan creation failed', e)
-		message.error(added
-			? `Stopped after ${added} sessions. Check your connection and remove the partial plan before retrying.`
-			: "Couldn't create the plan. Check your connection and try again.")
+		message.error("Couldn't create the plan. Nothing was added — check your connection and try again.")
 	} finally {
 		saving.value = false
 	}
@@ -211,6 +293,33 @@ async function create() {
 					</n-checkbox-group>
 					<span class="bp-hint">Prefilled from the days you usually lift. Easy runs still go here.</span>
 				</div>
+
+				<div v-if="gymTemplateOptions.length" class="bp-field bp-wide bp-gym">
+					<label class="bp-toggle">
+						<input type="checkbox" v-model="includeGym" />
+						<span>Add my gym sessions too</span>
+					</label>
+					<template v-if="includeGym">
+						<span class="bp-lbl">Lift on</span>
+						<n-checkbox-group v-model:value="gymDays">
+							<n-space :size="10">
+								<n-checkbox v-for="d in WEEKDAYS" :key="d.value" :value="d.value" :label="d.label.slice(0, 3)" />
+							</n-space>
+						</n-checkbox-group>
+						<span class="bp-lbl">Rotate through</span>
+						<n-select
+							v-model:value="gymRotation"
+							multiple
+							:options="gymTemplateOptions"
+							size="small"
+							placeholder="Pick your split, in order"
+						/>
+						<span class="bp-hint">
+							Dealt out in the order you pick them and carried across weeks, so a three-session
+							split still comes round properly on a two-lift week. Long-run days are left clear.
+						</span>
+					</template>
+				</div>
 			</div>
 
 			<div v-for="p in problems" :key="p.field" class="bp-problem">{{ p.message }}</div>
@@ -218,7 +327,8 @@ async function create() {
 			<template v-if="plan">
 				<div class="bp-summary">
 					<span><strong>{{ plan.weeks.length }}</strong> weeks</span>
-					<span><strong>{{ sessions.length }}</strong> sessions</span>
+					<span><strong>{{ sessions.length }}</strong> runs</span>
+					<span v-if="gymPlacements.length"><strong>{{ gymPlacements.length }}</strong> gym</span>
 					<span><strong>{{ plan.totalKm }}</strong> km total</span>
 					<span>peak <strong>{{ plan.peakKm }}</strong> km</span>
 				</div>
@@ -239,11 +349,12 @@ async function create() {
 							<span class="bp-caret">{{ expanded === w.index ? '−' : '+' }}</span>
 						</button>
 						<div v-if="expanded === w.index" class="bp-sessions">
-							<div v-for="s in w.sessions" :key="s.date + s.name" class="bp-session">
+							<div v-for="(s, i) in weekPreview(w)" :key="s.date + s.name + i" class="bp-session"
+								:class="{ 'bp-session-gym': s.gym }">
 								<span class="bp-day mono">{{ dayLabel(s.date) }}</span>
 								<span class="bp-name">{{ s.name }}</span>
-								<span class="bp-zone">{{ s.zone }}</span>
-								<span class="bp-dist mono">{{ s.distanceKm }} km</span>
+								<span class="bp-zone">{{ s.tag }}</span>
+								<span class="bp-dist mono">{{ s.meta }}</span>
 							</div>
 						</div>
 					</div>
@@ -263,7 +374,7 @@ async function create() {
 					:disabled="!plan || saving"
 					:loading="saving"
 					@click="create"
-				>Add {{ sessions.length }} sessions to schedule</n-button>
+				>Add {{ totalToAdd }} sessions to schedule</n-button>
 			</div>
 		</template>
 	</CustomModal>
@@ -287,6 +398,22 @@ async function create() {
 	color: var(--text-muted);
 }
 .bp-hint { font-size: 0.72rem; color: var(--text-muted); }
+
+.bp-gym {
+	gap: 8px;
+	padding: 10px 12px;
+	border: 1px solid var(--border-color);
+	border-radius: var(--radius-sm);
+	background: var(--surface-2);
+}
+.bp-toggle {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	font-size: 0.82rem;
+	color: var(--text-color);
+	cursor: pointer;
+}
 
 .bp-problem {
 	font-size: 0.8rem;
@@ -365,6 +492,7 @@ async function create() {
 .bp-day { color: var(--text-muted); }
 .bp-name { color: var(--text-color); }
 .bp-zone { color: var(--primary-color); font-size: 0.72rem; }
+.bp-session-gym .bp-zone { color: var(--color-gym-primary); }
 .bp-dist { color: var(--text-muted); }
 
 .bp-note { font-size: 0.76rem; line-height: 1.5; color: var(--text-muted); margin: 10px 0 0; }

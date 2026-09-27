@@ -446,6 +446,58 @@ export function buildPlan(input: PlanInput): TrainingPlan | null {
 	}
 }
 
+/**
+ * Where the gym sessions go, and which one goes where.
+ *
+ * The running plan deliberately never touches lifting days — it only keeps hard
+ * running off them. But if you are building a *schedule*, not just a running
+ * plan, the gym half has to come from somewhere, and adding three sessions a
+ * week by hand for sixteen weeks is the most tedious thing the app can ask of
+ * you.
+ *
+ * So: pick the weekdays you lift on, pick the sessions you rotate through, and
+ * this walks the plan's date range dealing them out in order. The rotation
+ * carries across week boundaries rather than resetting, which is what makes a
+ * three-session split land correctly on a two-lift week — Push/Pull this week,
+ * Legs/Push the next, the way you would actually run it.
+ *
+ * Returns dates paired with a rotation index; the caller owns the templates.
+ */
+export interface GymPlacement {
+	date: string
+	/** Index into the caller's rotation list. */
+	slot: number
+}
+
+export function placeGymSessions(
+	plan: TrainingPlan,
+	gymDays: number[],
+	rotationLength: number,
+	/** Dates that already have something on them and should be left alone. */
+	skipDates: Iterable<string> = [],
+): GymPlacement[] {
+	if (!gymDays.length || rotationLength < 1 || !plan.weeks.length) return []
+	const days = new Set(gymDays.map(d => ((d % 7) + 7) % 7))
+	const skip = new Set(skipDates)
+
+	const out: GymPlacement[] = []
+	let slot = 0
+	for (const week of plan.weeks) {
+		const monday = parseISO(week.startDate)
+		for (let offset = 0; offset < 7; offset++) {
+			const day = addDays(monday, offset)
+			const date = format(day, 'yyyy-MM-dd')
+			// The plan ends at the finish line, and nobody lifts on race day.
+			if (date >= plan.raceDate) continue
+			if (!days.has(getDay(day))) continue
+			if (skip.has(date)) continue
+			out.push({ date, slot: slot % rotationLength })
+			slot++
+		}
+	}
+	return out
+}
+
 /** Sessions across every week, flattened — what actually gets written to the schedule. */
 export function planSessions(plan: TrainingPlan): PlannedSession[] {
 	return plan.weeks.flatMap(w => w.sessions)

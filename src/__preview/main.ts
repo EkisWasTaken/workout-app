@@ -138,7 +138,9 @@ const tplEx: any[] = [
 	{ id: 5, template_id: 2, exercise_name: 'Pull-up', sets: 4, reps: '6-10', notes: null },
 	{ id: 6, template_id: 2, exercise_name: 'Barbell row', sets: 3, reps: '8', notes: null },
 ]
-let tplId = 100
+// Above whatever the seed loop reached, so a newly added row can never collide
+// with a seeded id — duplicate v-for keys silently drop a card from the calendar.
+let tplId = 100000
 d.getWorkoutTemplates = async () =>
 	[...tpls].sort((a, b) => String(a.kind).localeCompare(String(b.kind)) || a.name.localeCompare(b.name))
 d.getTemplateExerciseCounts = async () => {
@@ -168,6 +170,19 @@ d.deleteWorkoutTemplate = async (id: number) => {
 	return true
 }
 d.addWorkout = async (w: any) => { const id = tplId++; ws.push({ ...w, id }); return id }
+d.addWorkouts = async (list: any[]) => { for (const w of list) ws.push({ ...w, id: tplId++ }); return list.length }
+d.deletePlannedWorkoutsBetween = async (from: string, to: string) => {
+	let n = 0
+	for (let i = ws.length - 1; i >= 0; i--) {
+		const w = ws[i]
+		if (w.date >= from && w.date <= to && w.isCompleted !== 1) { ws.splice(i, 1); n++ }
+	}
+	return n
+}
+d.updateWorkout = async (w: any) => { const i = ws.findIndex(x => x.id === w.id); if (i >= 0) ws[i] = { ...ws[i], ...w }; return 1 }
+d.completeWorkout = async (w: any) => { const i = ws.findIndex(x => x.id === w.id); if (i >= 0) ws[i] = { ...ws[i], ...w }; return 1 }
+d.deleteWorkout = async (id: number) => { const i = ws.findIndex(x => x.id === id); if (i >= 0) ws.splice(i, 1); return 1 }
+d.getRaceGoals = async () => races
 d.getExercises = async () => [
 	{ id: 1, name: 'Bench press', body_part: 'chest' }, { id: 2, name: 'Incline dumbbell press', body_part: 'chest' },
 	{ id: 3, name: 'Squat', body_part: 'legs' }, { id: 4, name: 'Romanian deadlift', body_part: 'legs' },
@@ -264,7 +279,10 @@ for (const name of [
 	d[name] = async (...args: any[]) => {
 		const value = await original(...args)
 		await new Promise(res => setTimeout(res, LATENCY_MS))
-		return value
+		// A fresh array, like a real query returns. The stubs hand back their own
+		// backing array, and assigning the same object reference to a ref is a
+		// no-op in Vue — so a row added here never appeared until a full reload.
+		return Array.isArray(value) ? [...value] : value
 	}
 }
 

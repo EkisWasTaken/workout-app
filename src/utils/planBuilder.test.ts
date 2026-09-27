@@ -3,7 +3,7 @@ import { addDays, format, parseISO, getDay, differenceInCalendarDays } from 'dat
 import {
 	buildPlan, planProblems, planWeekCount, planSessions, runDays, qualityDays,
 	qualityCount, weeklyVolumes, phaseFor, taperWeeks, longRunCapKm, isDeloadWeek,
-	MIN_WEEKS, MAX_LONG_RUN_KM, DELOAD_EVERY, type PlanInput,
+	MIN_WEEKS, MAX_LONG_RUN_KM, DELOAD_EVERY, placeGymSessions, type PlanInput,
 } from './planBuilder'
 import { matchZone } from './vdot'
 
@@ -309,5 +309,54 @@ describe('buildPlan', () => {
 		}))!
 		expect(short.weeks.length).toBeGreaterThanOrEqual(MIN_WEEKS)
 		expect(planSessions(short).filter(s => s.kind === 'race')).toHaveLength(1)
+	})
+})
+
+describe('placeGymSessions', () => {
+	const plan = buildPlan({
+		startDate: '2026-01-05',   // a Monday
+		raceDate: '2026-03-29',
+		raceName: 'Test Half',
+		distanceM: 21097,
+		runsPerWeek: 4,
+		startKm: 30,
+		peakKm: 45,
+		longRunDay: 6,
+	})!
+
+	it('deals sessions onto the chosen weekdays only', () => {
+		const out = placeGymSessions(plan, [1, 3, 5], 3)
+		const days = new Set(out.map(p => getDay(parseISO(p.date))))
+		expect([...days].sort()).toEqual([1, 3, 5])
+	})
+
+	it('rotates in order and carries the rotation across weeks', () => {
+		const out = placeGymSessions(plan, [1, 3], 3)
+		// Two lifts a week over a three-session split: the rotation must not
+		// restart on Monday, or you would never train the third one.
+		expect(out.slice(0, 6).map(p => p.slot)).toEqual([0, 1, 2, 0, 1, 2])
+	})
+
+	it('never schedules on or after race day', () => {
+		const out = placeGymSessions(plan, [0, 1, 2, 3, 4, 5, 6], 1)
+		expect(out.every(p => p.date < plan.raceDate)).toBe(true)
+	})
+
+	it('leaves days that already have something on them alone', () => {
+		const all = placeGymSessions(plan, [1], 1)
+		const skipped = placeGymSessions(plan, [1], 1, [all[0].date, all[2].date])
+		expect(skipped).toHaveLength(all.length - 2)
+		expect(skipped.some(p => p.date === all[0].date)).toBe(false)
+	})
+
+	it('returns nothing when there is nothing to place', () => {
+		expect(placeGymSessions(plan, [], 3)).toEqual([])
+		expect(placeGymSessions(plan, [1, 3], 0)).toEqual([])
+	})
+
+	it('accepts weekday numbers outside 0–6 without misplacing them', () => {
+		const out = placeGymSessions(plan, [8], 1) // 8 → Monday
+		expect(out.every(p => getDay(parseISO(p.date)) === 1)).toBe(true)
+		expect(out.length).toBeGreaterThan(0)
 	})
 })

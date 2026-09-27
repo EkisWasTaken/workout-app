@@ -29,6 +29,10 @@
             title="Add or update many planned sessions at once from a spreadsheet">
             <n-icon :component="CloudUploadOutline" /> Import plan (CSV)
           </button>
+          <button @click="openClearPlanned" class="action-button"
+            title="Remove planned sessions over a date range — sessions you've logged are kept">
+            <n-icon :component="TrashOutline" /> Clear planned
+          </button>
         </div>
       </div>
 
@@ -45,9 +49,28 @@
           </div>
         </div>
 
+        <!-- Planned load for the week you are looking at, against the one before.
+             Building a schedule is mostly a volume decision, and the numbers that
+             answer it lived on another page entirely. -->
+        <div v-if="viewMode === 'week' && weekSummary.sessions" class="wv-summary">
+          <span class="wvs-item"><strong class="mono">{{ weekSummary.sessions }}</strong> session{{ weekSummary.sessions === 1 ? '' : 's' }}</span>
+          <span v-if="weekSummary.km" class="wvs-item"><strong class="mono">{{ fmtKm(weekSummary.km) }}</strong> km planned</span>
+          <span v-if="weekSummary.gym" class="wvs-item"><strong class="mono">{{ weekSummary.gym }}</strong> gym</span>
+          <span v-if="weekSummary.done" class="wvs-item wvs-done"><strong class="mono">{{ weekSummary.done }}</strong> done</span>
+          <span v-if="weekSummary.deltaLabel" class="wvs-delta" :class="weekSummary.deltaClass"
+            title="Against the week before. A jump of more than about 10% is where injuries come from.">
+            {{ weekSummary.deltaLabel }}
+          </span>
+        </div>
+
         <!-- WEEK VIEW: full session details for the week at a glance -->
         <div v-if="viewMode === 'week'" class="week-view">
-          <div v-for="day in weekDetailed" :key="day.key" class="wv-day" :class="{ 'wv-today': day.isToday }">
+          <div v-for="day in weekDetailed" :key="day.key" class="wv-day"
+            :class="{ 'wv-today': day.isToday, 'wv-dragover': dragOverDate === day.key }"
+            @dragover.prevent
+            @dragenter.prevent="onDragEnter(day.date)"
+            @dragleave="onDragLeave(day.date)"
+            @drop="onDrop($event, day.date)">
             <div class="wv-dayhead">
               <span class="wv-dow">{{ day.dow }}</span>
               <span class="wv-datenum">{{ day.dayNum }}</span>
@@ -56,7 +79,14 @@
             </div>
             <p v-if="day.workouts.length === 0" class="wv-restday">Nothing planned</p>
             <div v-else class="wv-sessions">
-              <div v-for="w in day.workouts" :key="w.id" class="wv-card" :class="getWorkoutClass(w)" @click="openDetailsModal(w)">
+              <!-- Draggable here as well as in month view: the page header has
+                   always said "drag to move it", and in week view it didn't. -->
+              <div v-for="w in day.workouts" :key="w.id" class="wv-card"
+                :class="[getWorkoutClass(w), { dragging: draggingWorkoutId === w.id }]"
+                :draggable="w.isCompleted !== 1"
+                @dragstart="onDragStart($event, w)"
+                @dragend="onDragEnd"
+                @click="openDetailsModal(w)">
                 <span class="wv-badge"><n-icon :component="workoutIcon(w)" /></span>
                 <div class="wv-body">
                   <div class="wv-cardtop">
@@ -189,6 +219,18 @@
             </div>
           </div>
 
+          <!-- The zone, not a pace. Sessions have always been able to carry one —
+               generated plans and CSV imports write it — but nothing in the app
+               could set one, so a run you added yourself never showed a pace. -->
+          <div v-if="newWorkout.type === 'Running'" class="form-group">
+            <label for="workout-zone">Target zone <span class="label-hint">— the pace is worked out from your fitness</span></label>
+            <select id="workout-zone" v-model="newWorkout.targetPace">
+              <option :value="undefined">— None —</option>
+              <option v-for="z in TARGET_ZONES" :key="z.value" :value="z.value">{{ z.label }}</option>
+            </select>
+            <span v-if="newZoneHint" class="field-hint">{{ newZoneHint }}</span>
+          </div>
+
           <div class="form-group">
             <label for="workout-notes">Notes</label>
             <textarea id="workout-notes" v-model="newWorkout.notes"
@@ -217,6 +259,50 @@
       <datalist id="gym-splits">
         <option v-for="sp in splitSuggestions" :key="sp" :value="sp" />
       </datalist>
+
+      <!-- Clear planned sessions over a range.
+           The plan builder has always warned "delete the old plan first if you
+           don't want both", and there was no way to do that short of deleting
+           sixty sessions one dialog at a time. -->
+      <CustomModal v-model:show="showClearPlanned" title="Clear planned sessions">
+        <div class="form-container">
+          <div class="form-row">
+            <div class="form-group">
+              <label for="clear-from">From</label>
+              <input type="date" id="clear-from" v-model="clearRange.from" />
+            </div>
+            <div class="form-group">
+              <label for="clear-to">To</label>
+              <input type="date" id="clear-to" v-model="clearRange.to" />
+            </div>
+          </div>
+          <div class="clear-presets">
+            <button v-for="p in clearPresets" :key="p.label" class="preset-chip" @click="applyClearPreset(p)">
+              {{ p.label }}
+            </button>
+          </div>
+
+          <p v-if="clearRangeInvalid" class="clear-summary warn">
+            The end date is before the start date.
+          </p>
+          <p v-else class="clear-summary" :class="{ warn: clearCount > 0 }">
+            <template v-if="clearCount">
+              This removes <strong>{{ clearCount }}</strong> planned session{{ clearCount === 1 ? '' : 's' }}.
+              <template v-if="clearKeptCount">
+                {{ clearKeptCount }} logged session{{ clearKeptCount === 1 ? '' : 's' }} in this range
+                {{ clearKeptCount === 1 ? 'is' : 'are' }} kept — what you actually did is a record, not a plan.
+              </template>
+            </template>
+            <template v-else>Nothing planned in this range.</template>
+          </p>
+
+          <button @click="confirmClearPlanned" class="action-button delete-button save-button"
+            :disabled="isActionLoading || !clearCount || clearRangeInvalid">
+            <span v-if="!isActionLoading">Remove {{ clearCount }} session{{ clearCount === 1 ? '' : 's' }}</span>
+            <span v-else class="ascii-spinner">Removing</span>
+          </button>
+        </div>
+      </CustomModal>
 
       <!-- Log Weight Modal -->
       <CustomModal v-model:show="showLogWeightModal" title="Log body weight">
@@ -340,6 +426,18 @@
           <div v-if="selectedWorkout.type === 'Gym'" class="form-group">
             <label>Split <span class="label-hint">— groups your gym stats</span></label>
             <input v-model="selectedWorkout.gymType" list="gym-splits" placeholder="e.g. Push" />
+          </div>
+          <div v-if="selectedWorkout.type === 'Running'" class="form-group">
+            <label>Target zone</label>
+            <!-- A session carrying a written-out prescription from an old import
+                 keeps it: the picker would have to throw the text away to show a
+                 zone, so it offers a plain input instead. -->
+            <input v-if="editTargetIsFreeform" v-model="selectedWorkout.targetPace" />
+            <select v-else v-model="selectedWorkout.targetPace">
+              <option :value="undefined">— None —</option>
+              <option v-for="z in TARGET_ZONES" :key="z.value" :value="z.value">{{ z.label }}</option>
+            </select>
+            <span v-if="editZoneHint" class="field-hint">{{ editZoneHint }}</span>
           </div>
           <div class="form-row">
             <div class="form-group">
@@ -490,6 +588,7 @@
         :existing="workouts"
         :recent-weekly-km="recentWeeklyKm"
         :gym-days="usualGymDays"
+        :templates="templates"
         @created="loadWorkouts"
       />
 
@@ -564,7 +663,8 @@ import { parseActivityFile } from '@/import/parseActivityFile';
 import { targetForDate, hydrateSettings } from '@/settings';
 import { currentVdot, hydrateFitness, refreshFitness, setActivities, setWorkouts } from '@/fitness';
 import { sessionPace, type SessionPace } from '@/utils/paceAdvice';
-import { noteSteps, type SportType } from '@/utils/workouts';
+import { TARGET_ZONES, isFreeformTarget, zoneOptionFor } from '@/utils/targetZones';
+import { canonicalWorkoutType, noteSteps, type SportType } from '@/utils/workouts';
 import { buildActivityIndex, effectiveWorkoutType } from '@/utils/workoutSport';
 
 const isActionLoading = ref(false);
@@ -926,8 +1026,12 @@ function goToDetails() {
 }
 
 function openDetailsModal(workout: Workout) {
-  selectedWorkout.value = { ...workout };
+  // Canonical casing, so the edit form's Type select can actually match it.
+  // Rows written before this — by a template, or a CSV with its own spelling —
+  // otherwise opened on the wrong option and were changed by saving.
+  selectedWorkout.value = { ...workout, type: canonicalWorkoutType(workout) };
   modalMode.value = 'view';
+  editTargetIsFreeform.value = isFreeformTarget(workout.targetPace);
   completionData.value = {
     notes: workout.notes || '',
     totalWeightLifted: workout.totalWeightLifted || undefined,
@@ -1057,6 +1161,11 @@ const repeatWeeks = ref(1);
 const newWorkoutIsDistance = computed(() =>
   newWorkout.value.type === 'Running' || newWorkout.value.type === 'Bike');
 
+const newZoneHint = computed(() => zoneOptionFor(newWorkout.value.targetPace)?.hint ?? null);
+const editZoneHint = computed(() => zoneOptionFor(selectedWorkout.value?.targetPace)?.hint ?? null);
+/** Frozen at open, so typing into the free-text box can't swap the field under you. */
+const editTargetIsFreeform = ref(false);
+
 // Shared template library — pick one to pre-fill the new workout from.
 const templates = ref<WorkoutTemplate[]>([]);
 const selectedTemplateId = ref<number | null>(null);
@@ -1083,6 +1192,9 @@ watch(selectedTemplateId, (id) => {
     if (t.kind === 'gym' && t.workout_type) newWorkout.value.gymType = t.workout_type;
     if (t.duration) newWorkout.value.duration = t.duration;
     if (t.distance) newWorkout.value.distance = t.distance;
+    // Show the template's zone in the field rather than letting it arrive
+    // invisibly with the payload — it is the thing most worth changing.
+    newWorkout.value.targetPace = t.target_pace ?? undefined;
   }
 });
 
@@ -1119,6 +1231,7 @@ function openAddWorkoutModal(date: Date | null) {
     duration: undefined,
     distance: undefined,
     gymType: undefined,
+    targetPace: undefined,
     notes: '',
   };
   repeatWeeks.value = 1;
@@ -1147,6 +1260,9 @@ async function saveNewWorkout() {
     const weeks = Math.max(1, Math.min(52, Math.round(Number(repeatWeeks.value) || 1)));
     const baseDate = parseISO(newWorkout.value.date);
 
+    // Collected first and written in one request: a repeat of twelve used to be
+    // twelve round trips, and a failure partway left some of them behind.
+    const rows: AddWorkoutPayload[] = [];
     for (let i = 0; i < weeks; i++) {
       const date = format(addWeeks(baseDate, i), 'yyyy-MM-dd');
 
@@ -1169,10 +1285,14 @@ async function saveNewWorkout() {
         gymType: newWorkout.value.type === 'Gym'
           ? (newWorkout.value.gymType?.trim() || payload.gymType || undefined)
           : undefined,
+        targetPace: newWorkout.value.type === 'Running'
+          ? (newWorkout.value.targetPace || payload.targetPace || undefined)
+          : payload.targetPace,
       };
 
-      await db.addWorkout(payload);
+      rows.push(payload);
     }
+    await db.addWorkouts(rows);
 
     showAddWorkoutModal.value = false;
     await loadWorkouts();
@@ -1220,25 +1340,89 @@ async function copyLastWeek() {
 
   isActionLoading.value = true;
   try {
-    for (const w of source) {
-      // Copy the plan, never the results: a copied session starts uncompleted.
-      await db.addWorkout({
-        name: w.name,
-        date: format(addWeeks(parseISO(w.date), 1), 'yyyy-MM-dd'),
-        type: w.type,
-        duration: w.duration,
-        distance: w.isCompleted === 1 ? undefined : w.distance,
-        targetPace: w.targetPace,
-        gymType: w.gymType,
-        notes: w.notes || '',
-        isCompleted: 0,
-      } as AddWorkoutPayload);
-    }
+    // Copy the plan, never the results: a copied session starts uncompleted.
+    await db.addWorkouts(source.map(w => ({
+      name: w.name,
+      date: format(addWeeks(parseISO(w.date), 1), 'yyyy-MM-dd'),
+      type: w.type,
+      duration: w.duration,
+      distance: w.isCompleted === 1 ? undefined : w.distance,
+      targetPace: w.targetPace,
+      gymType: w.gymType,
+      notes: w.notes || '',
+      isCompleted: 0,
+    } as AddWorkoutPayload)));
     await loadWorkouts();
     message.success(`Copied ${source.length} session${source.length === 1 ? '' : 's'} from last week.`);
   } catch (e) {
     console.error('Copy week failed', e);
     message.error("Couldn't copy last week. Check your connection and try again.");
+  } finally {
+    isActionLoading.value = false;
+  }
+}
+
+// ── clearing planned sessions over a range ──────────────────────────────────
+const showClearPlanned = ref(false);
+const clearRange = ref({ from: '', to: '' });
+
+interface ClearPreset { label: string; from: () => Date; to: () => Date }
+const clearPresets: ClearPreset[] = [
+  {
+    label: 'This week',
+    from: () => startOfWeek(currentWeek.value, { weekStartsOn: 1 }),
+    to: () => endOfWeek(currentWeek.value, { weekStartsOn: 1 }),
+  },
+  {
+    label: 'From next week on',
+    from: () => startOfWeek(addWeeks(new Date(), 1), { weekStartsOn: 1 }),
+    to: () => addWeeks(new Date(), 104),
+  },
+  {
+    label: 'Everything ahead',
+    from: () => new Date(),
+    to: () => addWeeks(new Date(), 104),
+  },
+];
+
+function applyClearPreset(p: ClearPreset) {
+  clearRange.value = { from: format(p.from(), 'yyyy-MM-dd'), to: format(p.to(), 'yyyy-MM-dd') };
+}
+
+function openClearPlanned() {
+  // Default to "from next week on", which is what you want when you are about
+  // to replace a plan and keep the week you are already partway through.
+  applyClearPreset(clearPresets[1]);
+  showClearPlanned.value = true;
+}
+
+const clearRangeInvalid = computed(() =>
+  !clearRange.value.from || !clearRange.value.to || clearRange.value.to < clearRange.value.from);
+
+const clearMatches = computed(() => {
+  if (clearRangeInvalid.value) return [];
+  const { from, to } = clearRange.value;
+  return workouts.value.filter(w => w.date >= from && w.date <= to);
+});
+const clearCount = computed(() => clearMatches.value.filter(w => w.isCompleted !== 1).length);
+const clearKeptCount = computed(() => clearMatches.value.filter(w => w.isCompleted === 1).length);
+
+async function confirmClearPlanned() {
+  if (clearRangeInvalid.value || !clearCount.value) return;
+  const { from, to } = clearRange.value;
+  if (!window.confirm(
+    `Remove ${clearCount.value} planned session${clearCount.value === 1 ? '' : 's'} `
+    + `between ${from} and ${to}? Sessions you've logged are kept.`)) return;
+
+  isActionLoading.value = true;
+  try {
+    const removed = await db.deletePlannedWorkoutsBetween(from, to);
+    showClearPlanned.value = false;
+    await loadWorkouts();
+    message.success(`Removed ${removed} planned session${removed === 1 ? '' : 's'}.`);
+  } catch (e) {
+    console.error('Clear planned failed', e);
+    message.error("Couldn't clear those sessions. Check your connection and try again.");
   } finally {
     isActionLoading.value = false;
   }
@@ -1438,6 +1622,48 @@ const weekRangeLabel = computed(() => {
     : `${format(start, 'd MMM')} – ${format(end, 'd MMM yyyy')}`;
 });
 
+const fmtKm = (km: number) => (Number.isInteger(km) ? String(km) : km.toFixed(1));
+
+/** Planned running kilometres in the week containing `anchor`. */
+function weekTotals(anchor: Date) {
+  const start = format(startOfWeek(anchor, { weekStartsOn: 1 }), 'yyyy-MM-dd');
+  const end = format(endOfWeek(anchor, { weekStartsOn: 1 }), 'yyyy-MM-dd');
+  let km = 0, sessions = 0, gym = 0, done = 0;
+  for (const w of workouts.value) {
+    if (w.date < start || w.date > end) continue;
+    const sport = getWorkoutType(w);
+    if (sport === 'rest') continue;
+    sessions++;
+    if (w.isCompleted === 1) done++;
+    if (sport === 'gym') gym++;
+    if (sport === 'running' && w.distance) km += Number(w.distance) || 0;
+  }
+  return { km: Math.round(km * 10) / 10, sessions, gym, done };
+}
+
+/**
+ * This week's load next to last week's.
+ *
+ * The ramp guardrail lives on the stats page, which is the wrong place to find
+ * out you have just written yourself a 40% jump — by then the week is planned.
+ */
+const weekSummary = computed(() => {
+  const now = weekTotals(currentWeek.value);
+  const prev = weekTotals(subWeeks(currentWeek.value, 1));
+  let deltaLabel: string | null = null;
+  let deltaClass = '';
+  if (now.km > 0 && prev.km > 0) {
+    const pct = Math.round(((now.km - prev.km) / prev.km) * 100);
+    if (Math.abs(pct) >= 3) {
+      deltaLabel = `${pct > 0 ? '+' : ''}${pct}% vs last week`;
+      // Ten per cent a week is the usual rule of thumb; well past it is worth
+      // flagging, and a big drop is a deload rather than a mistake.
+      deltaClass = pct > 15 ? 'up-hard' : pct > 0 ? 'up' : 'down';
+    }
+  }
+  return { ...now, deltaLabel, deltaClass };
+});
+
 const weekDetailed = computed(() => {
   const start = startOfWeek(currentWeek.value, { weekStartsOn: 1 });
   const end = endOfWeek(currentWeek.value, { weekStartsOn: 1 });
@@ -1587,6 +1813,56 @@ onActivated(loadAll);
 
 <style scoped>
 .label-hint { font-weight: 400; color: var(--text-muted); font-size: 0.78rem; }
+
+/* Week summary strip */
+.wv-summary {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 18px;
+  padding: 10px 14px;
+  margin-bottom: 10px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius);
+  background: var(--surface-color);
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+}
+.wvs-item strong { color: var(--text-color); font-size: 0.92rem; margin-right: 3px; }
+.wvs-done strong { color: var(--success-color, #56d364); }
+.wvs-delta {
+  margin-left: auto;
+  font-size: 0.74rem;
+  padding: 2px 9px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  color: var(--text-muted);
+}
+.wvs-delta.up { color: var(--text-secondary); }
+.wvs-delta.up-hard { background: var(--warning-soft); color: var(--warning-color); }
+.wvs-delta.down { color: var(--text-muted); }
+
+/* Clear-planned dialog */
+.clear-presets { display: flex; flex-wrap: wrap; gap: 6px; }
+.preset-chip {
+  background: var(--surface-2);
+  border: 1px solid var(--border-color);
+  color: var(--text-secondary);
+  font-family: var(--font-family);
+  font-size: 0.75rem;
+  padding: 4px 10px;
+  border-radius: 999px;
+  cursor: pointer;
+}
+.preset-chip:hover { border-color: var(--border-strong); color: var(--text-color); }
+.clear-summary {
+  margin: 0;
+  font-size: 0.82rem;
+  line-height: 1.55;
+  color: var(--text-secondary);
+}
+.clear-summary.warn { color: var(--text-color); }
+.clear-summary strong { color: var(--warning-color); }
 /* The session plan a chosen template will write, so picking one is not a guess. */
 .template-preview {
   margin: 6px 0 0;
@@ -1819,6 +2095,11 @@ onActivated(loadAll);
 .chip.done { background: color-mix(in srgb, var(--tag-color) 16%, transparent); }
 .chip.done .chip-name { color: var(--text-secondary); }
 .chip.dragging { opacity: 0.4; transform: scale(0.96); cursor: grabbing; }
+
+/* Week view gets the same drag affordances as the month grid. */
+.wv-day.wv-dragover { background: var(--primary-soft); box-shadow: inset 0 0 0 2px var(--primary-color); }
+.wv-card[draggable='true'] { cursor: grab; }
+.wv-card.dragging { opacity: 0.4; transform: scale(0.98); cursor: grabbing; }
 .chip.race { background: var(--danger-soft); color: var(--danger-color); border-left-color: var(--danger-color); font-weight: 600; }
 .chip.race .chip-ico { color: var(--danger-color); }
 .chip.weight { background: transparent; color: var(--text-muted); border-left-color: transparent; padding-left: 6px; }

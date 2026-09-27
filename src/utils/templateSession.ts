@@ -17,9 +17,16 @@ export function gymNotes(
 	return [template.notes, lines.join('; ')].filter(Boolean).join(' — ')
 }
 
-/** The workout `type` column value each template kind produces. */
+/**
+ * The workout `type` column value each template kind produces.
+ *
+ * Cased exactly as the Add-session form's own options are. Gym used to be
+ * written lowercase here, which every statistic tolerated and the edit dialog
+ * did not: its `<select>` matches options exactly, so a template-scheduled gym
+ * session opened as a run.
+ */
 const KIND_TO_TYPE: Record<TemplateKind, string> = {
-	gym: 'gym', run: 'Running', bike: 'Bike', other: 'Other',
+	gym: 'Gym', run: 'Running', bike: 'Bike', other: 'Other',
 }
 
 /**
@@ -60,7 +67,7 @@ export async function buildWorkoutFromTemplate(
 	return {
 		name: template.name,
 		date: dateStr,
-		type: 'gym',
+		type: KIND_TO_TYPE.gym,
 		isCompleted: 0,
 		gymType: template.workout_type ?? undefined,
 		duration: template.duration ?? undefined,

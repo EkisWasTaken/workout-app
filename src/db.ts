@@ -231,6 +231,50 @@ export const db = {
     return 1
   },
 
+  /**
+   * Insert many sessions in one request.
+   *
+   * Building a 16-week plan meant sixty-odd sequential inserts: slow enough to
+   * watch, and not atomic — a connection dropping halfway left half a plan on
+   * the calendar and the error message asking you to go and find it. One insert
+   * either lands completely or not at all.
+   *
+   * The id-collision retry that `addWorkout` carries is deliberately not
+   * repeated here: it exists for a desynchronised sequence, which is a
+   * per-row-id problem, and retrying a whole batch on it would risk writing
+   * some rows twice. If a batch hits it, the caller falls back to one at a time.
+   */
+  addWorkouts: async (list: Omit<Workout, 'id'>[]): Promise<number> => {
+    if (!list.length) return 0
+    const uid = currentUserId()
+    const { data, error } = await supabase
+      .from('workouts')
+      .insert(list.map(w => ({ ...w, user_id: uid })))
+      .select('id')
+    if (error) throw error
+    return data?.length ?? 0
+  },
+
+  /**
+   * Soft-delete every *planned* session in a date range, inclusive.
+   *
+   * Anything already logged is left alone: the schedule is a plan you can throw
+   * away, but a session you actually did is a record. Returns how many rows went.
+   */
+  deletePlannedWorkoutsBetween: async (fromDate: string, toDate: string): Promise<number> => {
+    const { data, error } = await supabase
+      .from('workouts')
+      .update({ isDeleted: 1 })
+      .eq('user_id', currentUserId())
+      .eq('isDeleted', 0)
+      .neq('isCompleted', 1)
+      .gte('date', fromDate)
+      .lte('date', toDate)
+      .select('id')
+    if (error) throw error
+    return data?.length ?? 0
+  },
+
   deleteWorkout: async (id: number): Promise<number> => {
     const { error } = await supabase
       .from('workouts')
