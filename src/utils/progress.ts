@@ -30,7 +30,7 @@
  * except as a default argument.
  */
 import { addDays, endOfWeek, format, parseISO, startOfDay, startOfWeek, subWeeks } from 'date-fns'
-import { estimateBikePower, fitnessSeries, gradeAdjustedPace, relativeEffort } from './analysis'
+import { activityAvgHR, estimateBikePower, fitnessSeries, gradeAdjustedPace, relativeEffort } from './analysis'
 import { gymSplit } from './workouts'
 import { fmtPace } from './vdot'
 import type { Workout } from '@/types'
@@ -386,8 +386,12 @@ export const referenceHR = (maxHR: number, restHR: number) =>
 
 function steadyFraction(a: Act, maxHR: number | null, restHR: number): number | null {
 	if (!maxHR || maxHR < 140) return null
-	const hr = a.average_heartrate
-	if (!Number.isFinite(hr) || hr <= restHR) return null
+	// The repaired average, not the file's own: a run where the optical sensor
+	// dropped out for a few minutes averaged several beats low, and this is the
+	// number the whole aerobic-pace trend is built on — a sensor fault read as a
+	// fitness gain.
+	const hr = activityAvgHR(a)
+	if (hr === null || hr <= restHR) return null
 	if (!Number.isFinite(a.moving_time) || a.moving_time < MIN_STEADY_SECONDS) return null
 	const frac = hrrFraction(hr, maxHR, restHR)
 	return frac >= HRR_BAND[0] && frac <= HRR_BAND[1] ? frac : null

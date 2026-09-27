@@ -26,6 +26,12 @@ export interface StreamTrack {
 	area?: boolean
 	/** Summary shown in the strip header, e.g. "avg 148". */
 	summary?: string
+	/**
+	 * Bridge missing values instead of breaking the line. On for streams the
+	 * device samples sparsely — heart rate especially — where a break means
+	 * "nothing logged this second", not "nothing happened".
+	 */
+	connectGaps?: boolean
 }
 
 const props = withDefaults(defineProps<{
@@ -72,10 +78,13 @@ const acc = (key: string) => (d: Row) => d[key]
 
 function yDomain(tr: StreamTrack) {
 	const vals = tr.values.filter((v): v is number => v !== null && Number.isFinite(v))
-	// Trim the extreme 1% each side so a GPS spike or a stop doesn't flatten the strip.
+	// Trim the extreme 1% each side so a GPS spike or a stop doesn't flatten the
+	// strip — but only once there are enough samples for a percentile to mean
+	// something, otherwise a short strip trims away its own real extremes.
 	const sorted = [...vals].sort((p, q) => p - q)
-	const lo = sorted[Math.floor(sorted.length * 0.01)]
-	const hi = sorted[Math.ceil(sorted.length * 0.99) - 1]
+	const trim = sorted.length >= 50
+	const lo = trim ? sorted[Math.floor(sorted.length * 0.01)] : sorted[0]
+	const hi = trim ? sorted[Math.ceil(sorted.length * 0.99) - 1] : sorted[sorted.length - 1]
 	return paddedDomain(lo === undefined ? [] : [lo, hi], 0.1)
 }
 
@@ -110,8 +119,16 @@ function template(tr: StreamTrack) {
 					:color="tr.color"
 					:opacity="0.12"
 					curve-type="monotoneX"
+					:interpolate-missing-data="!!tr.connectGaps"
 				/>
-				<VisLine :x="x" :y="acc(tr.key)" :color="tr.color" :line-width="1.6" curve-type="monotoneX" />
+				<VisLine
+					:x="x"
+					:y="acc(tr.key)"
+					:color="tr.color"
+					:line-width="1.6"
+					curve-type="monotoneX"
+					:interpolate-missing-data="!!tr.connectGaps"
+				/>
 				<VisAxis
 					type="x"
 					:tick-values="timeTicks"

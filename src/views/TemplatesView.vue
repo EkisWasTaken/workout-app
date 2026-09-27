@@ -9,7 +9,8 @@
       <p class="hint">
         A template is a session you do again and again — a push day, a threshold run. Build it once,
         then add it to any date from here or with "Add session" on the schedule.
-        Templates are shared with everyone using the app: you can use anyone's, but only delete your own.
+        Templates are shared with everyone using the app: you can use and copy anyone's,
+        but only edit or delete your own.
       </p>
 
       <n-list v-if="templates.length" bordered style="width: 100%">
@@ -22,12 +23,25 @@
             </template>
             <template #description>
               <span class="tpl-meta">{{ templateSummary(template) }}</span>
+              <!-- A gym template's whole point is its exercise list, and the list
+                   used to show nothing but the split — so every push day looked
+                   identical and you had to schedule one to find out what was in it. -->
+              <span v-if="exerciseLine(template)" class="tpl-exercises">{{ exerciseLine(template) }}</span>
             </template>
           </n-thing>
           <template #suffix>
             <n-space align="center" :size="8">
               <n-button size="small" type="primary" ghost @click="openSchedule(template)">
                 Add to schedule
+              </n-button>
+              <n-button v-if="isOwn(template)" size="small" quaternary @click="openEdit(template)">
+                Edit
+              </n-button>
+              <!-- Someone else's template can't be edited, so copying it is how you
+                   adapt it: same session, your own row, yours to change. -->
+              <n-button v-else size="small" quaternary :loading="duplicatingId === template.id"
+                @click="duplicate(template)">
+                Copy to mine
               </n-button>
               <!-- Only the owner may delete. The library is shared, and a friend
                    wiping your templates is not a feature. -->
@@ -49,7 +63,7 @@
 
       <!-- Create template -->
       <n-modal v-model:show="showAddTemplateModal" preset="card" :style="{ width: '800px', maxWidth: '95vw' }"
-        title="New template" @after-leave="resetNewTemplate">
+        :title="editingId ? 'Edit template' : 'New template'" @after-leave="resetNewTemplate">
         <n-space vertical size="large">
           <n-radio-group v-model:value="newTemplate.kind">
             <n-radio-button value="gym">Gym session</n-radio-button>
@@ -104,7 +118,9 @@
               placeholder="Anything to copy onto the scheduled session" />
           </n-form-item>
 
-          <n-button type="primary" @click="saveNewTemplate" block :loading="saving">Save template</n-button>
+          <n-button type="primary" @click="saveTemplate" block :loading="saving">
+            {{ editingId ? 'Save changes' : 'Create template' }}
+          </n-button>
         </n-space>
       </n-modal>
 
@@ -134,7 +150,7 @@ import {
 } from 'naive-ui';
 import { addWeeks, format } from 'date-fns';
 import type { WorkoutTemplate, WorkoutTemplateExercise, TemplateKind } from '../types';
-import { db } from '@/db';
+import { db, NOT_YOUR_TEMPLATE } from '@/db';
 import { auth } from '@/auth';
 import { buildWorkoutFromTemplate } from '@/utils/templateSession';
 
@@ -145,6 +161,11 @@ const message = useMessage();
 const templates = ref<WorkoutTemplate[]>([]);
 const showAddTemplateModal = ref(false);
 const saving = ref(false);
+/** Set while the modal is editing an existing row; null while creating one. */
+const editingId = ref<number | null>(null);
+const duplicatingId = ref<number | null>(null);
+/** Exercise lists for every gym template, so the list can show what's in them. */
+const exercisesByTemplate = ref<Record<number, WorkoutTemplateExercise[]>>({});
 
 interface NewTemplate {
   kind: TemplateKind;
@@ -164,7 +185,10 @@ const blankTemplate = (): NewTemplate => ({
 
 const newTemplate = ref<NewTemplate>(blankTemplate());
 
-const resetNewTemplate = () => { newTemplate.value = blankTemplate(); };
+const resetNewTemplate = () => {
+  newTemplate.value = blankTemplate();
+  editingId.value = null;
+};
 
 const isDistanceKind = computed(() => newTemplate.value.kind === 'run' || newTemplate.value.kind === 'bike');
 
@@ -188,12 +212,31 @@ function templateSummary(t: WorkoutTemplate): string {
     if (t.target_pace) bits.push(t.target_pace.includes('km') ? `@ ${t.target_pace}` : `@ ${t.target_pace}/km`);
   }
   if (t.duration) bits.push(`${t.duration} min`);
+  const exs = exercisesByTemplate.value[t.id];
+  if ((t.kind ?? 'gym') === 'gym' && exs?.length) {
+    bits.push(`${exs.length} exercise${exs.length === 1 ? '' : 's'}`);
+  }
   return bits.join(' · ') || 'No details yet';
+}
+
+/** "Bench press 3x8-12 · Row 3x10 · +2 more" — enough to recognise the session. */
+function exerciseLine(t: WorkoutTemplate): string | null {
+  const exs = exercisesByTemplate.value[t.id];
+  if (!exs?.length) return null;
+  const shown = exs.slice(0, 3).map(ex => {
+    const setsReps = [ex.sets ? `${ex.sets}×` : '', ex.reps ?? ''].join('').trim();
+    return setsReps ? `${ex.exercise_name} ${setsReps}` : ex.exercise_name;
+  });
+  const rest = exs.length - shown.length;
+  return [...shown, ...(rest > 0 ? [`+${rest} more`] : [])].join(' · ');
 }
 
 const createColumns = ({ remove }: { remove: (rowIndex: number) => void }) => [
   {
-    title: 'Exercise', key: 'exercise_name',
+    // The name is the widest thing in the row and was being squeezed to about
+    // ten characters by the number inputs beside it, so every lift read as
+    // "Incline du…". Fixed widths on the small columns give it the rest.
+    title: 'Exercise', key: 'exercise_name', minWidth: 220,
     render(row: Partial<WorkoutTemplateExercise>, index: number) {
       // Suggest names from the exercise library so the same lift is spelled the same way.
       const q = (row.exercise_name || '').toLowerCase();
@@ -206,7 +249,7 @@ const createColumns = ({ remove }: { remove: (rowIndex: number) => void }) => [
     },
   },
   {
-    title: 'Sets', key: 'sets',
+    title: 'Sets', key: 'sets', width: 110,
     render(row: Partial<WorkoutTemplateExercise>, index: number) {
       return h(NInputNumber, {
         value: row.sets,
@@ -216,7 +259,7 @@ const createColumns = ({ remove }: { remove: (rowIndex: number) => void }) => [
     },
   },
   {
-    title: 'Reps', key: 'reps',
+    title: 'Reps', key: 'reps', width: 110,
     render(row: Partial<WorkoutTemplateExercise>, index: number) {
       return h(NInput, {
         value: row.reps,
@@ -236,7 +279,7 @@ const createColumns = ({ remove }: { remove: (rowIndex: number) => void }) => [
     },
   },
   {
-    title: '', key: 'actions',
+    title: '', key: 'actions', width: 100,
     render(_: Partial<WorkoutTemplateExercise>, index: number) {
       return h(NButton, { size: 'small', type: 'error', tertiary: true, onClick: () => remove(index) },
         { default: () => 'Remove' });
@@ -254,6 +297,14 @@ async function loadTemplates() {
   } catch (e) {
     console.error('Failed to load templates', e);
     message.error("Couldn't load templates. Check your connection and refresh.");
+    return;
+  }
+  // One query for every template's exercises rather than one per row. Failing
+  // here only costs the exercise preview, so the list still renders.
+  try {
+    exercisesByTemplate.value = await db.getTemplateExerciseCounts();
+  } catch (e) {
+    console.warn('Template exercises unavailable', e);
   }
 }
 
@@ -270,7 +321,24 @@ function addExercise() {
   newTemplate.value.exercises.push({ exercise_name: '', sets: undefined, reps: '', notes: '' });
 }
 
-async function saveNewTemplate() {
+/** The row shape both create and update take, from whatever the form holds. */
+function templatePayload(t: NewTemplate) {
+  const distanceKind = t.kind === 'run' || t.kind === 'bike';
+  return {
+    name: t.name.trim(),
+    kind: t.kind,
+    workout_type: t.workout_type.trim() || null,
+    target_pace: distanceKind ? (t.target_pace.trim() || null) : null,
+    distance: distanceKind ? t.distance : null,
+    duration: t.duration,
+    notes: t.notes.trim() || null,
+    // A row left blank in the editor is not an exercise; it used to reach the
+    // database as an empty name and then show up as a nameless line.
+    exercises: t.kind === 'gym' ? t.exercises.filter(ex => ex.exercise_name?.trim()) : [],
+  };
+}
+
+async function saveTemplate() {
   const t = newTemplate.value;
   if (!t.name.trim()) { message.error('Please enter a template name.'); return; }
   if (t.kind === 'gym' && t.exercises.some(ex => !ex.exercise_name?.trim())) {
@@ -278,26 +346,68 @@ async function saveNewTemplate() {
   }
 
   saving.value = true;
+  const id = editingId.value;
   try {
-    const distanceKind = t.kind === 'run' || t.kind === 'bike';
-    await db.addWorkoutTemplate({
-      name: t.name.trim(),
-      kind: t.kind,
-      workout_type: t.workout_type.trim() || null,
-      target_pace: distanceKind ? (t.target_pace.trim() || null) : null,
-      distance: distanceKind ? t.distance : null,
-      duration: t.duration,
-      notes: t.notes.trim() || null,
-      exercises: t.kind === 'gym' ? t.exercises : [],
-    });
+    if (id === null) await db.addWorkoutTemplate(templatePayload(t));
+    else await db.updateWorkoutTemplate(id, templatePayload(t));
     showAddTemplateModal.value = false;
     await loadTemplates();
-    message.success('Template created.');
+    message.success(id === null ? 'Template created.' : 'Template updated.');
   } catch (e: any) {
-    console.error('Template create failed', e);
-    message.error("Couldn't save the template. Check your connection and try again.");
+    console.error('Template save failed', e);
+    message.error(e?.message === NOT_YOUR_TEMPLATE
+      ? "That template belongs to someone else. Copy it to your own library first."
+      : "Couldn't save the template. Check your connection and try again.");
   } finally {
     saving.value = false;
+  }
+}
+
+/** Load an existing row back into the form. */
+function openEdit(template: WorkoutTemplate) {
+  newTemplate.value = {
+    kind: template.kind ?? 'gym',
+    name: template.name,
+    workout_type: template.workout_type ?? '',
+    target_pace: template.target_pace ?? '',
+    distance: template.distance ?? null,
+    duration: template.duration ?? null,
+    notes: template.notes ?? '',
+    exercises: (exercisesByTemplate.value[template.id] ?? []).map(ex => ({
+      exercise_name: ex.exercise_name, sets: ex.sets, reps: ex.reps ?? '', notes: ex.notes ?? '',
+    })),
+  };
+  editingId.value = template.id;
+  showAddTemplateModal.value = true;
+}
+
+/**
+ * Copy someone else's template into your own library, exercises and all.
+ * The library is shared but only the owner may change a row, so copying is the
+ * only way to start from a session a friend built and then adjust it.
+ */
+async function duplicate(template: WorkoutTemplate) {
+  duplicatingId.value = template.id;
+  try {
+    await db.addWorkoutTemplate({
+      name: `${template.name} (copy)`,
+      kind: template.kind ?? 'gym',
+      workout_type: template.workout_type ?? null,
+      target_pace: template.target_pace ?? null,
+      distance: template.distance ?? null,
+      duration: template.duration ?? null,
+      notes: template.notes ?? null,
+      exercises: (exercisesByTemplate.value[template.id] ?? []).map(ex => ({
+        exercise_name: ex.exercise_name, sets: ex.sets, reps: ex.reps, notes: ex.notes,
+      })),
+    });
+    await loadTemplates();
+    message.success('Copied to your templates.');
+  } catch (e) {
+    console.error('Template copy failed', e);
+    message.error("Couldn't copy that template. Check your connection and try again.");
+  } finally {
+    duplicatingId.value = null;
   }
 }
 
@@ -306,9 +416,11 @@ async function deleteTemplate(templateId: number) {
     await db.deleteWorkoutTemplate(templateId);
     await loadTemplates();
     message.success('Template deleted.');
-  } catch (e) {
+  } catch (e: any) {
     console.error('Template delete failed', e);
-    message.error("Couldn't delete the template. Check your connection and try again.");
+    message.error(e?.message === NOT_YOUR_TEMPLATE
+      ? 'That template belongs to someone else, so only they can delete it.'
+      : "Couldn't delete the template. Check your connection and try again.");
   }
 }
 
@@ -375,7 +487,14 @@ onMounted(loadTemplates);
 .kind-run { background: var(--color-running-soft); color: var(--color-running-primary); }
 .kind-bike { background: var(--color-bike-soft); color: var(--color-bike-primary); }
 .kind-other { background: var(--color-other-soft); color: var(--color-other-primary); }
-.tpl-meta { font-size: 0.8rem; color: var(--text-muted); }
+.tpl-meta { font-size: 0.8rem; color: var(--text-muted); display: block; }
+.tpl-exercises {
+  display: block;
+  margin-top: 3px;
+  font-size: 0.76rem;
+  color: var(--text-secondary);
+  line-height: 1.45;
+}
 
 .tpl-shared {
   margin-left: 8px;

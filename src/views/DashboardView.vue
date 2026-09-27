@@ -149,6 +149,7 @@
                 {{ TEMPLATE_KIND_LABELS[t.kind || 'gym'] }} · {{ t.name }}
               </option>
             </select>
+            <p v-if="templatePreview" class="template-preview">{{ templatePreview }}</p>
           </div>
           <div class="form-group">
             <label for="workout-name">Name</label>
@@ -1063,7 +1064,16 @@ const selectedTemplateId = ref<number | null>(null);
 const TEMPLATE_KIND_LABELS: Record<string, string> = { gym: 'Gym', run: 'Run', bike: 'Bike', other: 'Other' };
 const TEMPLATE_KIND_TYPES: Record<string, string> = { gym: 'Gym', run: 'Running', bike: 'Bike', other: 'Other' };
 
-/** Picking a template fills the form, so you can see — and change — what it brings. */
+/**
+ * Picking a template fills the form, so you can see — and change — what it brings.
+ *
+ * Notes are deliberately *not* prefilled. A gym template's session plan is built
+ * from its exercise list when it's scheduled, and copying the bare `notes` field
+ * into the form here made the form non-empty — which then won the "typed value
+ * overrides the template" rule in saveNewWorkout and threw the exercise list
+ * away. The plan is shown under the picker instead, and the notes box stays
+ * yours for anything you want to add on top.
+ */
 watch(selectedTemplateId, (id) => {
   if (!id) return;
   const t = templates.value.find(t => t.id === id);
@@ -1073,7 +1083,20 @@ watch(selectedTemplateId, (id) => {
     if (t.kind === 'gym' && t.workout_type) newWorkout.value.gymType = t.workout_type;
     if (t.duration) newWorkout.value.duration = t.duration;
     if (t.distance) newWorkout.value.distance = t.distance;
-    if (t.notes && !newWorkout.value.notes) newWorkout.value.notes = t.notes;
+  }
+});
+
+/** What the chosen template will actually write, so the picker isn't a black box. */
+const templatePreview = ref<string | null>(null);
+watch(selectedTemplateId, async (id) => {
+  templatePreview.value = null;
+  const t = id ? templates.value.find(x => x.id === id) : null;
+  if (!t) return;
+  try {
+    const built = await buildWorkoutFromTemplate(t, newWorkout.value.date);
+    templatePreview.value = built.notes || null;
+  } catch {
+    // Only a preview — the real build happens again on save.
   }
 });
 
@@ -1142,7 +1165,7 @@ async function saveNewWorkout() {
         distance: newWorkoutIsDistance.value
           ? (cleanNum(newWorkout.value.distance) ?? payload.distance)
           : undefined,
-        notes: newWorkout.value.notes || payload.notes || '',
+        notes: [payload.notes, newWorkout.value.notes].filter(Boolean).join(' — '),
         gymType: newWorkout.value.type === 'Gym'
           ? (newWorkout.value.gymType?.trim() || payload.gymType || undefined)
           : undefined,
@@ -1564,6 +1587,13 @@ onActivated(loadAll);
 
 <style scoped>
 .label-hint { font-weight: 400; color: var(--text-muted); font-size: 0.78rem; }
+/* The session plan a chosen template will write, so picking one is not a guess. */
+.template-preview {
+  margin: 6px 0 0;
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
 .field-hint { display: block; margin-top: 5px; font-size: 0.76rem; color: var(--text-muted); line-height: 1.45; }
 .field-hint.block { margin: -4px 0 12px; }
 .rpe-scale { display: grid; grid-template-columns: repeat(10, 1fr); gap: 4px; }

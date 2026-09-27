@@ -16,11 +16,29 @@
 .leaflet-dark .leaflet-tooltip-pane { z-index: 650; }
 .leaflet-dark .leaflet-popup-pane { z-index: 700; }
 
-/* OSM ships one light basemap. Inverting and rotating the hue back gives a
-   muted dark map that keeps water blue and parks green, and it is applied to
+/* The basemap is CARTO's dark style, already drawn for a dark ground, so it
+   needs no filtering. This rule is only for the fallback: when those tiles
+   can't be reached, createDarkMap swaps in plain OSM and adds this class, and
+   inverting the tile pane gets the old muted dark map back. The filter stays on
    the tile pane alone so routes on the overlay pane keep their true colour. */
-.leaflet-dark .leaflet-tile-pane {
+.leaflet-dark.leaflet-tiles-filtered .leaflet-tile-pane {
 	filter: invert(1) hue-rotate(180deg) brightness(0.86) contrast(0.92) saturate(0.55);
+}
+
+/* Esri's Dark Gray Canvas is built to sit under data on a mid-grey page, so on
+   this app's near-black ground it reads a stop or two brighter than the card
+   around it and the map floats off the page. A small brightness trim seats it
+   without touching the hues — unlike the fallback filter above, this keeps the
+   basemap the colour it was designed to be. The route is on the overlay pane,
+   so it stays at full strength. */
+.leaflet-dark .leaflet-tile-pane { filter: brightness(0.76) contrast(1.05); }
+
+/* Place names drawn above the routes get their own pane, outside the tile pane
+   and so outside the trim above. They are lifted rather than dimmed, and given
+   a shadow, because here they have to stay readable over a bright stack of
+   routes rather than over quiet basemap. */
+.leaflet-dark .leaflet-labels-pane {
+	filter: brightness(1.15) drop-shadow(0 0 2px rgba(0, 0, 0, 0.95));
 }
 
 .leaflet-dark .leaflet-control-attribution {

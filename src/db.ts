@@ -308,12 +308,35 @@ export const db = {
   },
 
   // TEMPLATES
+  /**
+   * The whole shared library, ordered.
+   *
+   * Postgres returns rows in whatever order it likes, so without this the list
+   * reshuffled on every visit and the "From template" dropdown on the schedule
+   * never had a session in the same place twice. Grouped by kind, then by name,
+   * which is how you look for one.
+   */
   getWorkoutTemplates: async (): Promise<WorkoutTemplate[]> => {
     const { data, error } = await supabase
       .from('workout_templates')
       .select('*')
+      .order('kind', { ascending: true })
+      .order('name', { ascending: true })
     if (error) throw error
     return data as WorkoutTemplate[]
+  },
+
+  /** Exercises for many templates at once — one round trip for the whole list. */
+  getTemplateExerciseCounts: async (): Promise<Record<number, WorkoutTemplateExercise[]>> => {
+    const { data, error } = await supabase
+      .from('workout_template_exercises')
+      .select('*')
+    if (error) throw error
+    const byTemplate: Record<number, WorkoutTemplateExercise[]> = {}
+    for (const row of (data ?? []) as WorkoutTemplateExercise[]) {
+      (byTemplate[row.template_id] ??= []).push(row)
+    }
+    return byTemplate
   },
 
   addWorkoutTemplate: async (template: {
@@ -360,8 +383,14 @@ export const db = {
 
     if (!templateId) throw new Error('MAX_RETRY_EXCEEDED_SYNC_DB_SEQUENCE')
 
+    // Only the known columns, and blanks as null — the editor hands over
+    // `{ exercise_name, sets, reps, notes }` with empty strings for the fields
+    // left alone, and spreading the row straight in stored those as ''.
     const exercisesToInsert = template.exercises.map(ex => ({
-      ...ex,
+      exercise_name: ex.exercise_name,
+      sets: ex.sets ?? null,
+      reps: ex.reps || null,
+      notes: ex.notes || null,
       template_id: templateId,
       user_id: uid,
     }))
@@ -373,6 +402,64 @@ export const db = {
       if (eError) throw eError
     }
     return templateId
+  },
+
+  /**
+   * Edit one of *your* templates, exercise list included.
+   *
+   * The exercises are replaced wholesale rather than diffed: a template's list
+   * is short, and reconciling it row by row would need ids threaded through the
+   * editor for no benefit. The owner filter matches `deleteWorkoutTemplate` —
+   * RLS blocks someone else's row anyway, but a blocked update would otherwise
+   * report success while changing nothing.
+   */
+  updateWorkoutTemplate: async (templateId: number, template: {
+    name: string
+    kind?: 'gym' | 'run' | 'bike' | 'other'
+    workout_type?: string | null
+    target_pace?: string | null
+    duration?: number | null
+    distance?: number | null
+    notes?: string | null
+    exercises: any[]
+  }): Promise<boolean> => {
+    const uid = currentUserId()
+    const { data, error } = await supabase
+      .from('workout_templates')
+      .update({
+        name: template.name,
+        kind: template.kind ?? 'gym',
+        workout_type: template.workout_type ?? null,
+        target_pace: template.target_pace ?? null,
+        duration: template.duration ?? null,
+        distance: template.distance ?? null,
+        notes: template.notes ?? null,
+      })
+      .eq('id', templateId)
+      .eq('user_id', uid)
+      .select('id')
+    if (error) throw error
+    if (!data?.length) throw new Error(NOT_YOUR_TEMPLATE)
+
+    const { error: delError } = await supabase
+      .from('workout_template_exercises')
+      .delete()
+      .eq('template_id', templateId)
+    if (delError) throw delError
+
+    const rows = template.exercises.map(ex => ({
+      exercise_name: ex.exercise_name,
+      sets: ex.sets ?? null,
+      reps: ex.reps || null,
+      notes: ex.notes || null,
+      template_id: templateId,
+      user_id: uid,
+    }))
+    if (rows.length) {
+      const { error: insError } = await supabase.from('workout_template_exercises').insert(rows)
+      if (insError) throw insError
+    }
+    return true
   },
 
   getWorkoutTemplateExercises: async (templateId: number): Promise<WorkoutTemplateExercise[]> => {
@@ -392,14 +479,24 @@ export const db = {
    * affect nothing and still report success.
    */
   deleteWorkoutTemplate: async (templateId: number): Promise<boolean> => {
+    const uid = currentUserId()
     const { data, error } = await supabase
       .from('workout_templates')
       .delete()
       .eq('id', templateId)
-      .eq('user_id', currentUserId())
+      .eq('user_id', uid)
       .select('id')
     if (error) throw error
     if (!data?.length) throw new Error(NOT_YOUR_TEMPLATE)
+
+    // The exercise rows are only reachable through their template, so they'd
+    // sit in the table forever if the foreign key isn't set to cascade. Deleting
+    // them afterwards is harmless when it is.
+    await supabase
+      .from('workout_template_exercises')
+      .delete()
+      .eq('template_id', templateId)
+      .eq('user_id', uid)
     return true
   },
 

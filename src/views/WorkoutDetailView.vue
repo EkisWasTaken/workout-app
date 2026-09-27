@@ -67,9 +67,10 @@
 
 				<!-- Secondary stats -->
 				<div v-if="stravaActivity" class="secondary-stats">
-					<div v-if="stravaActivity.average_heartrate" class="sec-stat">
-						<span class="sec-label">Avg HR</span>
-						<span class="sec-value mono">{{ Math.round(stravaActivity.average_heartrate) }} <span class="sec-unit">bpm</span></span>
+					<div v-if="avgHr" class="sec-stat">
+						<span class="sec-label">Heart rate</span>
+						<span class="sec-value mono">{{ avgHr }} <span class="sec-unit">bpm avg</span></span>
+						<span v-if="maxHr" class="sec-sub mono">max {{ maxHr }}</span>
 					</div>
 					<div v-if="gapPace" class="sec-stat">
 						<span class="sec-label" title="Your pace adjusted for hills: what it would have been on flat ground">Flat-equivalent pace</span>
@@ -129,6 +130,7 @@
 						</label>
 					</div>
 					<div class="stream-chart-card"><StreamTracks :time="stravaActivity.streams.time" :tracks="streamTracks" /></div>
+					<p v-if="hrCoverageNote" class="stream-note">{{ hrCoverageNote }}</p>
 				</div>
 
 				<!-- Best efforts -->
@@ -175,7 +177,7 @@
 							</span>
 							<span v-if="showSplitGap" class="mono gap-cell">{{ splitGap(i) }}</span>
 							<span class="mono">{{ split.elevation_difference >= 0 ? '+' : '' }}{{ split.elevation_difference.toFixed(0) }}</span>
-							<span class="mono">{{ split.average_heartrate?.toFixed(0) ?? '—' }}</span>
+							<span class="mono">{{ splitHr(i) ?? '—' }}</span>
 						</div>
 					</div>
 				</div>
@@ -203,7 +205,8 @@ import { cssColor, getSportColor, SPORT_LABELS } from '@/utils/workouts'
 import { buildActivityIndex, effectiveWorkoutType, resolveActivity } from '@/utils/workoutSport'
 import RouteMap from '@/components/RouteMap.vue'
 import StreamTracks, { type StreamTrack } from '@/components/charts/StreamTracks.vue'
-import { PULSE_ZONES, getHRSettings, timeInZones, relativeEffort, fmtSecs, gradeAdjustedPace, estimateVO2max, estimateBikePower } from '@/utils/analysis'
+import { PULSE_ZONES, getHRSettings, timeInZones, relativeEffort, fmtSecs, gradeAdjustedPace, estimateVO2max, estimateBikePower, repairedHrStream, activityAvgHR, activityMaxHR, splitHeartrates } from '@/utils/analysis'
+import { summariseHeartrate } from '@/utils/hrStream'
 import type { Workout, BestEffort } from '../types'
 
 const route = useRoute()
@@ -299,10 +302,30 @@ const effortScore = computed(() => {
 	return relativeEffort(a, hrSettings.value.maxHR, hrSettings.value.restHR)
 })
 
+/**
+ * This run's HR stream with dropouts and spikes removed and sparse sampling
+ * bridged. Every HR number on this page reads it, so the chart, the average and
+ * the zone bar are all describing the same beats.
+ */
+const hrStream = computed(() => repairedHrStream(stravaActivity.value))
+const hrSummary = computed(() => {
+	const s = hrStream.value
+	return s ? summariseHeartrate(s.time, s.heartrate) : null
+})
+const avgHr = computed(() => (stravaActivity.value ? activityAvgHR(stravaActivity.value) : null))
+const maxHr = computed(() => (stravaActivity.value ? activityMaxHR(stravaActivity.value) : null))
+
+/** Say so when the monitor genuinely dropped out, rather than quietly drawing over it. */
+const hrCoverageNote = computed(() => {
+	const s = hrSummary.value
+	if (!s || s.coverage >= 0.95) return null
+	return `The monitor recorded a heart rate for ${Math.round(s.coverage * 100)}% of this session — the gaps are breaks in the recording, not in the effort.`
+})
+
 const zoneTimes = computed(() => {
 	const a = stravaActivity.value
 	// Only meaningful with real streams; avg-HR-only puts 100% in one zone
-	if (!a?.streams?.heartrate || !hrSettings.value.maxHR) return null
+	if (!hrStream.value || !hrSettings.value.maxHR) return null
 	return timeInZones(a, hrSettings.value.maxHR, hrSettings.value.restHR)
 })
 
@@ -334,6 +357,16 @@ const gapPace = computed(() => {
 	return `${Math.floor(secs / 60)}:${String(Math.floor(secs % 60)).padStart(2, '0')}`
 })
 const showSplitGap = computed(() => !!gapResult.value && gapResult.value.perKm.some(v => v !== null))
+
+/** Per-split HR from the repaired stream, falling back to what the file stored. */
+const splitHrs = computed<(number | null)[]>(() => {
+	const splits = stravaActivity.value?.splits_metric ?? []
+	if (!splits.length) return []
+	const derived = splitHeartrates(stravaActivity.value, splits.length)
+	return splits.map((sp: any, i: number) =>
+		derived[i] ?? (sp.average_heartrate ? Math.round(sp.average_heartrate) : null))
+})
+const splitHr = (i: number) => splitHrs.value[i]
 const splitGap = (i: number) => {
 	const v = gapResult.value?.perKm[i]
 	if (!v) return '—'
@@ -430,9 +463,16 @@ const streamTracks = computed<StreamTrack[]>(() => {
 			})
 		}
 	}
-	if (st.heartrate) {
-		const a = avg(st.heartrate)
-		tracks.push({ key: 'hr', label: 'Heart rate', unit: 'bpm', color: cssColor('--color-heartrate', '#fb7185'), values: st.heartrate, area: true, format: v => String(Math.round(v)), summary: a ? `avg ${Math.round(a)} bpm` : undefined })
+	const hr = hrStream.value?.heartrate
+	if (hr) {
+		const s = hrSummary.value
+		tracks.push({
+			key: 'hr', label: 'Heart rate', unit: 'bpm',
+			color: cssColor('--color-heartrate', '#fb7185'),
+			values: hr, area: true, connectGaps: true,
+			format: v => String(Math.round(v)),
+			summary: s ? `avg ${Math.round(s.avg)} · max ${Math.round(s.max)} bpm` : undefined,
+		})
 	}
 	// Elevation, but only when there's something to see — a flat loop would add
 	// a strip of noise magnified by the trimmed y-domain.
@@ -544,6 +584,7 @@ onMounted(async () => {
 .sec-label { font-size: 0.72rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.04em; }
 .sec-value { font-size: 1.15rem; font-weight: 600; }
 .sec-unit { font-size: 0.78rem; font-weight: 400; color: var(--text-secondary); }
+.sec-sub { font-size: 0.72rem; color: var(--text-muted); }
 
 /* Effort & zones */
 .effort-section { display: flex; gap: 12px; margin-bottom: 12px; flex-wrap: wrap; }
@@ -573,6 +614,7 @@ onMounted(async () => {
 	border-radius: var(--radius); padding: 14px;
 }
 .stream-title-row { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.stream-note { margin: 8px 0 0; font-size: 0.74rem; color: var(--text-muted); line-height: 1.5; }
 .stream-toggle { display: inline-flex; align-items: center; gap: 6px; font-size: 0.78rem; color: var(--text-secondary); cursor: pointer; }
 
 /* Best efforts */

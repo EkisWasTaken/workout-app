@@ -20,9 +20,30 @@ const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647)
 const day = (n: number) => format(addDays(now, -n), 'yyyy-MM-dd')
 const rest = 52
 
-/** A plausible out-and-back through Djurgarden, Stockholm, scaled to distance. */
-function loop(km: number, seedN: number): [number, number][] {
-	const lat0 = 59.3255, lng0 = 18.1035
+/**
+ * Where a run started. Most are from home in Stockholm; a scattering are from
+ * trips, which is what the place filter on the all-routes map exists for.
+ */
+const BASES: { lat: number; lng: number }[] = [
+	{ lat: 59.3255, lng: 18.1035 },  // Stockholm (home)
+	{ lat: 57.7089, lng: 11.9746 },  // Gothenburg
+	{ lat: 63.1792, lng: 14.6357 },  // Ostersund
+	{ lat: 52.5200, lng: 13.4050 },  // Berlin
+	{ lat: 41.3874, lng: 2.1686 },   // Barcelona
+]
+let runNo = 0
+const baseFor = () => {
+	runNo++
+	return runNo % 11 === 0 ? BASES[1]
+		: runNo % 17 === 0 ? BASES[2]
+		: runNo % 13 === 0 ? BASES[3]
+		: runNo % 23 === 0 ? BASES[4]
+		: BASES[0]
+}
+
+/** A plausible out-and-back, scaled to distance, around the given base. */
+function loop(km: number, seedN: number, base = BASES[0]): [number, number][] {
+	const lat0 = base.lat, lng0 = base.lng
 	const r = km / 400
 	const n = 160
 	const out: [number, number][] = []
@@ -49,7 +70,9 @@ for (let d = 120; d >= -10; d--) {
 		const frac = 0.55 + rnd() * 0.25
 		const speed = 2.75 * (1 + (120 - d) * 0.0009) * (frac / 0.65)
 		const hr = Math.round(rest + frac * (190 - rest))
-		const n = 400
+		// Matches MAX_STREAM_POINTS in the importer, so the sample spacing here is
+		// what a real imported activity actually has (~5 s, not ~12 s).
+		const n = 900
 		const T = Math.round((km * 1000) / speed)
 		const time = Array.from({ length: n }, (_, i) => Math.round((i * T) / n))
 		const a = {
@@ -58,10 +81,20 @@ for (let d = 120; d >= -10; d--) {
 			total_elevation_gain: 60,
 			best_efforts: [{ name: '5 km', distance: 5000, elapsed_time: Math.round(5000 / (speed * 1.18)) }],
 			splits_metric: Array.from({ length: Math.floor(km) }, (_, i) => ({ split: i + 1, distance: 1000, moving_time: 300, elapsed_time: 300, average_speed: speed * (0.95 + rnd() * 0.1), elevation_difference: Math.round((rnd() - 0.5) * 20), average_heartrate: hr + Math.round((rnd() - 0.5) * 8), pace_zone: 0 })),
-			map: { polyline: encode(loop(km, d)) },
+			map: { polyline: encode(loop(km, d, baseFor())) },
 			streams: {
 				time,
-				heartrate: time.map((_, i) => Math.round(hr - 20 * Math.exp(-i / 40) + 6 * Math.sin(i / 30) + (rnd() - 0.5) * 4)),
+				// A realistically imperfect recording, so the repair in `hrStream.ts`
+				// has something to do: every third run logs HR every fifth sample
+				// (the sparse-sampling watch), every seventh drops out for a stretch,
+				// and one sample in ~120 is an interference spike.
+				heartrate: time.map((_, i) => {
+					const clean = Math.round(hr - 20 * Math.exp(-i / 40) + 6 * Math.sin(i / 30) + (rnd() - 0.5) * 4)
+					if (d % 3 === 0 && i % 5 !== 0) return null
+					if (d % 7 === 0 && i > n * 0.4 && i < n * 0.55) return 0
+					if (i > 5 && i % 120 === 0) return clean + 70
+					return clean
+				}),
 				velocity: time.map((_, i) => speed * (1 + 0.08 * Math.sin(i / 25)) + (rnd() - 0.5) * 0.6),
 				cadence: time.map(() => 170 + Math.round((rnd() - 0.5) * 8)),
 				altitude: time.map((_, i) => 12 + 28 * Math.sin((i / n) * Math.PI * 3) + 6 * Math.sin(i / 11)),
@@ -91,10 +124,50 @@ d.getRaceGoals = async () => races
 d.getImportedActivities = async () => acts
 d.getImportedActivityById = async (i: number) => acts.find(a => a.id === i) ?? null
 d.getWorkoutById = async (i: number) => ws.find(w => w.id === i) ?? null
-d.getWorkoutTemplates = async () => [
+const tpls: any[] = [
 	{ id: 1, name: 'Push day', kind: 'gym', workout_type: 'Push', duration: 60, user_id: 'me' },
-	{ id: 2, name: 'Threshold 5×1k', kind: 'run', workout_type: 'Threshold', distance: 10, target_pace: '4:30', user_id: 'other' },
+	{ id: 2, name: 'Pull day', kind: 'gym', workout_type: 'Pull', duration: 60, user_id: 'me' },
+	{ id: 3, name: 'Threshold 5×1k', kind: 'run', workout_type: 'Threshold', distance: 10, target_pace: '4:30', notes: '2 km warm-up, 5×1k, 2 km cool-down', user_id: 'other' },
+	{ id: 4, name: 'Long run', kind: 'run', workout_type: 'Long', distance: 22, target_pace: '5:30', user_id: 'me' },
 ]
+const tplEx: any[] = [
+	{ id: 1, template_id: 1, exercise_name: 'Bench press', sets: 4, reps: '6-8', notes: null },
+	{ id: 2, template_id: 1, exercise_name: 'Incline dumbbell press', sets: 3, reps: '8-12', notes: null },
+	{ id: 3, template_id: 1, exercise_name: 'Overhead press', sets: 3, reps: '8', notes: null },
+	{ id: 4, template_id: 1, exercise_name: 'Triceps pushdown', sets: 3, reps: '12-15', notes: null },
+	{ id: 5, template_id: 2, exercise_name: 'Pull-up', sets: 4, reps: '6-10', notes: null },
+	{ id: 6, template_id: 2, exercise_name: 'Barbell row', sets: 3, reps: '8', notes: null },
+]
+let tplId = 100
+d.getWorkoutTemplates = async () =>
+	[...tpls].sort((a, b) => String(a.kind).localeCompare(String(b.kind)) || a.name.localeCompare(b.name))
+d.getTemplateExerciseCounts = async () => {
+	const out: Record<number, any[]> = {}
+	for (const e of tplEx) (out[e.template_id] ??= []).push(e)
+	return out
+}
+d.getWorkoutTemplateExercises = async (id: number) => tplEx.filter(e => e.template_id === id)
+d.addWorkoutTemplate = async (t: any) => {
+	const id = tplId++
+	tpls.push({ ...t, id, user_id: 'me' })
+	for (const ex of t.exercises ?? []) tplEx.push({ ...ex, id: tplId++, template_id: id })
+	return id
+}
+d.updateWorkoutTemplate = async (id: number, t: any) => {
+	const row = tpls.find(x => x.id === id)
+	if (!row || row.user_id !== 'me') throw new Error('NOT_YOUR_TEMPLATE')
+	Object.assign(row, t, { id, user_id: 'me' })
+	for (let i = tplEx.length - 1; i >= 0; i--) if (tplEx[i].template_id === id) tplEx.splice(i, 1)
+	for (const ex of t.exercises ?? []) tplEx.push({ ...ex, id: tplId++, template_id: id })
+	return true
+}
+d.deleteWorkoutTemplate = async (id: number) => {
+	const i = tpls.findIndex(x => x.id === id)
+	if (i < 0 || tpls[i].user_id !== 'me') throw new Error('NOT_YOUR_TEMPLATE')
+	tpls.splice(i, 1)
+	return true
+}
+d.addWorkout = async (w: any) => { const id = tplId++; ws.push({ ...w, id }); return id }
 d.getExercises = async () => [
 	{ id: 1, name: 'Bench press', body_part: 'chest' }, { id: 2, name: 'Incline dumbbell press', body_part: 'chest' },
 	{ id: 3, name: 'Squat', body_part: 'legs' }, { id: 4, name: 'Romanian deadlift', body_part: 'legs' },

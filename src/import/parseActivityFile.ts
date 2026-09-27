@@ -293,7 +293,10 @@ function buildActivity(samples: Sample[], sport: string, known: {
 		const a1 = samples[i - 1].alt, a2 = samples[i].alt
 		if (a1 !== undefined && a2 !== undefined && a2 > a1) elevGain += Math.min(a2 - a1, 15)
 	}
-	for (const s of samples) if (s.hr !== undefined && s.hr > 0) hrs.push(s.hr)
+	// Dropouts (0, or anything below a living heart rate) and interference spikes
+	// must stay out of the summary: they used to drag a run's average down and
+	// its max up, and max HR sets every zone boundary in the app.
+	for (const s of samples) if (s.hr !== undefined && s.hr >= 30 && s.hr <= 235) hrs.push(s.hr)
 
 	const lastDist = [...samples].reverse().find(s => s.dist !== undefined)?.dist
 	const distance = known.distance ?? lastDist ?? 0
@@ -386,24 +389,70 @@ function buildSplits(samples: Sample[]): any[] {
 	return splits
 }
 
-/** Downsampled streams for charts + accurate time-in-zone. */
+/**
+ * Downsampled streams for charts + accurate time-in-zone.
+ *
+ * Each output point is the *mean of a bucket* of consecutive samples, not every
+ * Nth sample. Picking every Nth threw away heart rate on any watch that logs it
+ * less often than GPS — Apple Watch via HealthFit writes HR every 3–10 s and a
+ * position every second, so a stream of every 4th row landed on an HR-less row
+ * most of the time and the run's HR chart came out as a sparse, broken line
+ * with the zone bar adding up to a fraction of the session. Averaging the
+ * bucket keeps whatever the bucket contains, whichever field it was on, and
+ * takes the second-by-second noise out for free.
+ */
 function buildStreams(samples: Sample[], t0: number): ActivityStreams {
 	const step = Math.max(1, Math.ceil(samples.length / MAX_STREAM_POINTS))
-	const picked = samples.filter((_, i) => i % step === 0)
-	const hasHr = picked.some(s => s.hr !== undefined)
-	const hasVel = picked.some(s => s.speed !== undefined)
-	const hasAlt = picked.some(s => s.alt !== undefined)
-	const hasDist = picked.some(s => s.dist !== undefined)
-	const hasCad = picked.some(s => s.cad !== undefined)
+
+	type Bucket = { t: number; hr?: number; speed?: number; alt?: number; dist?: number; cad?: number }
+	const buckets: Bucket[] = []
+	for (let i = 0; i < samples.length; i += step) {
+		const group = samples.slice(i, i + step)
+		// Time, distance and altitude are positions on a curve, so the last
+		// reading in the bucket is the truthful one; heart rate, speed and
+		// cadence are rates, so they average.
+		const b: Bucket = { t: group[group.length - 1].t }
+		b.hr = meanOf(group, s => (s.hr !== undefined && s.hr >= 30 && s.hr <= 235 ? s.hr : undefined))
+		b.speed = meanOf(group, s => s.speed)
+		b.cad = meanOf(group, s => s.cad)
+		b.alt = lastOf(group, s => s.alt)
+		b.dist = lastOf(group, s => s.dist)
+		buckets.push(b)
+	}
+
+	const hasHr = buckets.some(b => b.hr !== undefined)
+	const hasVel = buckets.some(b => b.speed !== undefined)
+	const hasAlt = buckets.some(b => b.alt !== undefined)
+	const hasDist = buckets.some(b => b.dist !== undefined)
+	const hasCad = buckets.some(b => b.cad !== undefined)
 	const round = (v: number | undefined, f: number) => v === undefined ? null : Math.round(v * f) / f
 	return {
-		time: picked.map(s => Math.round((s.t - t0) / 1000)),
-		...(hasHr ? { heartrate: picked.map(s => s.hr ?? null) } : {}),
-		...(hasVel ? { velocity: picked.map(s => round(s.speed, 100)) } : {}),
-		...(hasAlt ? { altitude: picked.map(s => round(s.alt, 10)) } : {}),
-		...(hasDist ? { distance: picked.map(s => round(s.dist, 1)) } : {}),
-		...(hasCad ? { cadence: picked.map(s => round(s.cad, 1)) } : {}),
+		time: buckets.map(b => Math.round((b.t - t0) / 1000)),
+		...(hasHr ? { heartrate: buckets.map(b => round(b.hr, 1)) } : {}),
+		...(hasVel ? { velocity: buckets.map(b => round(b.speed, 100)) } : {}),
+		...(hasAlt ? { altitude: buckets.map(b => round(b.alt, 10)) } : {}),
+		...(hasDist ? { distance: buckets.map(b => round(b.dist, 1)) } : {}),
+		...(hasCad ? { cadence: buckets.map(b => round(b.cad, 1)) } : {}),
 	}
+}
+
+/** Mean of the defined values `pick` returns, or undefined when there are none. */
+function meanOf(group: Sample[], pick: (s: Sample) => number | undefined): number | undefined {
+	let sum = 0, n = 0
+	for (const s of group) {
+		const v = pick(s)
+		if (v !== undefined && Number.isFinite(v)) { sum += v; n++ }
+	}
+	return n ? sum / n : undefined
+}
+
+/** Last defined value in the group — for cumulative fields. */
+function lastOf(group: Sample[], pick: (s: Sample) => number | undefined): number | undefined {
+	for (let i = group.length - 1; i >= 0; i--) {
+		const v = pick(group[i])
+		if (v !== undefined && Number.isFinite(v)) return v
+	}
+	return undefined
 }
 
 const EFFORT_TARGETS: { name: string; distance: number }[] = [

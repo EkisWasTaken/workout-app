@@ -1,5 +1,6 @@
 import { addDays, format, parseISO, startOfDay } from 'date-fns'
 import type { ActivityStreams } from '@/types'
+import { cleanHeartrate, summariseHeartrate, HR_MAX, HR_MIN } from './hrStream'
 
 /**
  * Heart-rate analytics shared by the overview and workout detail pages.
@@ -33,8 +34,8 @@ export const MAX_HR_OUTLIER_GAP = 15
 
 export function observedMaxHR(activities: any[]): number {
 	const peaks = activities
-		.map((a: any) => Number(a?.max_heartrate))
-		.filter(v => Number.isFinite(v) && v > 100 && v < 240)
+		.map((a: any) => activityMaxHR(a))
+		.filter((v): v is number => v !== null && v > 100 && v <= HR_MAX)
 		.sort((a, b) => b - a)
 	if (!peaks.length) return 0
 	let i = 0
@@ -62,18 +63,75 @@ const hrReserveFrac = (hr: number, maxHR: number, restHR: number) =>
 	Math.max(0, Math.min(1, (hr - restHR) / Math.max(1, maxHR - restHR)))
 
 /**
+ * One activity's HR stream, dropouts and spikes removed and short sampling gaps
+ * bridged — see `hrStream.ts` for why raw streams can't be read directly.
+ *
+ * Every zone bar and Relative Effort number in the app goes through here, so a
+ * sparsely-logged run no longer loses the time between its HR samples: the zone
+ * bar used to add up to a fraction of the run and the training load came out
+ * proportionally low, purely because the watch wrote HR every five seconds.
+ *
+ * Repair is memoised per activity object. The stats pages recompute zones for
+ * every run on every reactive tick, and re-walking a few hundred streams each
+ * time was the slowest thing on the page.
+ */
+const hrCache = new WeakMap<object, { time: number[]; heartrate: (number | null)[] } | null>()
+
+export function repairedHrStream(activity: any): { time: number[]; heartrate: (number | null)[] } | null {
+	if (!activity || typeof activity !== 'object') return null
+	if (hrCache.has(activity)) return hrCache.get(activity)!
+
+	const streams: ActivityStreams | undefined = activity.streams
+	let result: { time: number[]; heartrate: (number | null)[] } | null = null
+	if (streams?.heartrate && streams.time?.length > 1) {
+		const heartrate = cleanHeartrate(streams.time, streams.heartrate)
+		if (heartrate.some(v => v !== null)) result = { time: streams.time, heartrate }
+	}
+	hrCache.set(activity, result)
+	return result
+}
+
+/**
+ * Average HR for one activity, from the repaired stream when there is one.
+ *
+ * The file's own `average_heartrate` is whatever the watch computed, dropouts
+ * included — a run where the optical sensor read 0 for two minutes came out
+ * several beats low, which then fed the pace-at-reference-HR trend and made a
+ * sensor fault look like a fitness gain.
+ */
+export function activityAvgHR(activity: any): number | null {
+	const s = repairedHrStream(activity)
+	const summary = s ? summariseHeartrate(s.time, s.heartrate) : null
+	if (summary) return Math.round(summary.avg)
+	const declared = Number(activity?.average_heartrate)
+	return Number.isFinite(declared) && declared >= HR_MIN && declared <= HR_MAX ? Math.round(declared) : null
+}
+
+/** Highest repaired beat in one activity — ignores the session's own spike. */
+export function activityMaxHR(activity: any): number | null {
+	const s = repairedHrStream(activity)
+	if (s) {
+		let max = 0
+		for (const v of s.heartrate) if (v !== null && v > max) max = v
+		if (max >= HR_MIN) return Math.round(max)
+	}
+	const declared = Number(activity?.max_heartrate)
+	return Number.isFinite(declared) && declared >= HR_MIN && declared <= HR_MAX ? declared : null
+}
+
+/**
  * Seconds spent in each zone. Uses the HR stream when available,
  * otherwise attributes all moving time to the zone of the average HR.
  */
 export function timeInZones(activity: any, maxHR: number, restHR: number): number[] | null {
 	const zones = new Array(PULSE_ZONES.length).fill(0)
-	const streams: ActivityStreams | undefined = activity.streams
+	const hrStream = repairedHrStream(activity)
 
-	if (streams?.heartrate && streams.time?.length > 1) {
-		const { time, heartrate } = streams
+	if (hrStream) {
+		const { time, heartrate } = hrStream
 		for (let i = 1; i < time.length; i++) {
 			const hr = heartrate[i]
-			if (hr === null || hr === undefined) continue
+			if (hr === null) continue
 			const dt = time[i] - time[i - 1]
 			if (dt <= 0 || dt > 60) continue
 			const frac = hrReserveFrac(hr, maxHR, restHR)
@@ -83,8 +141,9 @@ export function timeInZones(activity: any, maxHR: number, restHR: number): numbe
 		return zones.some(v => v > 0) ? zones : null
 	}
 
-	if (activity.average_heartrate && activity.moving_time) {
-		const frac = hrReserveFrac(activity.average_heartrate, maxHR, restHR)
+	const avgHR = activityAvgHR(activity)
+	if (avgHR && activity.moving_time) {
+		const frac = hrReserveFrac(avgHR, maxHR, restHR)
 		const zi = PULSE_ZONES.findIndex(z => frac >= z.min && frac < z.max)
 		if (zi >= 0) zones[zi] = activity.moving_time
 		return zones
@@ -97,18 +156,18 @@ export function timeInZones(activity: any, maxHR: number, restHR: number): numbe
  * intervals count more than the same time at the session's average HR.
  */
 export function relativeEffort(activity: any, maxHR: number, restHR: number): number | null {
-	const streams: ActivityStreams | undefined = activity.streams
 	const trimp = (minutes: number, hr: number) => {
 		const r = hrReserveFrac(hr, maxHR, restHR)
 		return minutes * r * 0.64 * Math.exp(1.92 * r)
 	}
 
-	if (streams?.heartrate && streams.time?.length > 1) {
+	const hrStream = repairedHrStream(activity)
+	if (hrStream) {
 		let sum = 0
-		const { time, heartrate } = streams
+		const { time, heartrate } = hrStream
 		for (let i = 1; i < time.length; i++) {
 			const hr = heartrate[i]
-			if (hr === null || hr === undefined) continue
+			if (hr === null) continue
 			const dt = time[i] - time[i - 1]
 			if (dt <= 0 || dt > 60) continue
 			sum += trimp(dt / 60, hr)
@@ -116,10 +175,45 @@ export function relativeEffort(activity: any, maxHR: number, restHR: number): nu
 		return sum > 0 ? Math.round(sum) : null
 	}
 
-	if (activity.average_heartrate && activity.moving_time) {
-		return Math.round(trimp(activity.moving_time / 60, activity.average_heartrate))
+	const avgHR = activityAvgHR(activity)
+	if (avgHR && activity.moving_time) {
+		return Math.round(trimp(activity.moving_time / 60, avgHR))
 	}
 	return null
+}
+
+/**
+ * Average HR for each kilometre split, recomputed from the repaired stream.
+ *
+ * The stored `splits_metric[].average_heartrate` was averaged over raw samples
+ * at import time, so a dropout inside one kilometre showed up as a split 20 bpm
+ * below its neighbours — the "heart rate jumps around mid-run" effect, in the
+ * splits table rather than the chart. Index i is split i+1; `null` where that
+ * kilometre has no usable beat.
+ */
+export function splitHeartrates(activity: any, splitCount: number): (number | null)[] {
+	const out: (number | null)[] = new Array(splitCount).fill(null)
+	const s = repairedHrStream(activity)
+	const dist: (number | null)[] | undefined = activity?.streams?.distance
+	if (!s || !dist) return out
+
+	const sums = new Array(splitCount).fill(0)
+	const secs = new Array(splitCount).fill(0)
+	for (let i = 1; i < s.time.length; i++) {
+		const hr = s.heartrate[i]
+		const d = dist[i]
+		if (hr === null || d === null || d === undefined) continue
+		const dt = s.time[i] - s.time[i - 1]
+		if (dt <= 0 || dt > 60) continue
+		const k = Math.min(Math.floor(d / 1000), splitCount - 1)
+		if (k < 0) continue
+		sums[k] += hr * dt
+		secs[k] += dt
+	}
+	for (let k = 0; k < splitCount; k++) {
+		if (secs[k] > 10) out[k] = Math.round(sums[k] / secs[k])
+	}
+	return out
 }
 
 export interface FitnessPoint {
@@ -250,11 +344,12 @@ export function gradeAdjustedPace(activity: any): GapResult | null {
  */
 export function estimateVO2max(activity: any, maxHR: number, restHR = 60): number | null {
 	if (!maxHR || maxHR < 140) return null
-	if (!activity.average_heartrate || !activity.moving_time || activity.moving_time < 600) return null
+	const avgHR = activityAvgHR(activity)
+	if (!avgHR || !activity.moving_time || activity.moving_time < 600) return null
 	const speed = gradeAdjustedPace(activity)?.speed ?? activity.average_speed
 	if (!speed || speed < 1.4) return null
 
-	const frac = (activity.average_heartrate - restHR) / Math.max(1, maxHR - restHR)
+	const frac = (avgHR - restHR) / Math.max(1, maxHR - restHR)
 	if (frac < 0.5 || frac > 0.95) return null // outside the range the model holds
 	const val = Math.round((3.5 + (speed * 60 * 0.2) / frac) * 10) / 10
 	return val >= 22 && val <= 85 ? val : null
