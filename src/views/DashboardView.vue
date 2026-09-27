@@ -665,7 +665,7 @@ import { currentVdot, hydrateFitness, refreshFitness, setActivities, setWorkouts
 import { sessionPace, type SessionPace } from '@/utils/paceAdvice';
 import { TARGET_ZONES, isFreeformTarget, zoneOptionFor } from '@/utils/targetZones';
 import { canonicalWorkoutType, noteSteps, type SportType } from '@/utils/workouts';
-import { buildActivityIndex, effectiveWorkoutType } from '@/utils/workoutSport';
+import { buildActivityIndex, effectiveWorkoutType, toActivityId } from '@/utils/workoutSport';
 
 const isActionLoading = ref(false);
 const message = useMessage();
@@ -882,9 +882,10 @@ const completionData = ref<Partial<CompleteWorkoutFormValues>>({});
 const stravaActivityOptions = ref<{ label: string; value: number; }[]>([]);
 const stravaActivities = ref<Activity[]>([]);
 
-const selectedStravaActivity = computed(() =>
-  stravaActivities.value.find(a => String(a.id) === String(completionData.value.stravaActivityId)) || null
-);
+const selectedStravaActivity = computed(() => {
+  const id = toActivityId(completionData.value.stravaActivityId);
+  return id === null ? null : stravaActivities.value.find(a => toActivityId(a.id) === id) || null;
+});
 const stravaPreview = computed(() => {
   const a = selectedStravaActivity.value;
   if (!a) return null;
@@ -935,7 +936,7 @@ async function loadStravaActivities() {
                 const distKm = act.distance ? (act.distance / 1000).toFixed(2) : '0.00';
                 return {
                     label: `${act.name || 'Unnamed activity'} · ${dateStr} · ${distKm} km`,
-                    value: act.id,
+                    value: toActivityId(act.id) as number,
                 };
             });
         } else {
@@ -964,7 +965,7 @@ async function onCompletionFitPicked(e: Event) {
     const res = await db.addImportedActivity(activity);
     await loadStravaActivities();
 
-    let linkId: number | undefined = res.duplicate ? undefined : res.id;
+    let linkId = res.duplicate ? null : toActivityId(res.id);
     if (res.duplicate) {
       // Already imported earlier: find the existing copy and link that one.
       const t = new Date(activity.start_date).getTime();
@@ -972,11 +973,11 @@ async function onCompletionFitPicked(e: Event) {
         const ta = new Date(a.start_date || a.start_date_local).getTime();
         return Math.abs(ta - t) < 120000 && Math.abs((a.distance || 0) - activity.distance) < 200;
       });
-      linkId = match?.id;
+      linkId = toActivityId(match?.id);
     }
 
-    if (linkId !== undefined) {
-      completionData.value.stravaActivityId = linkId as any;
+    if (linkId !== null) {
+      completionData.value.stravaActivityId = linkId;
       message.success(res.duplicate
         ? 'Activity was already imported — linked the existing one.'
         : 'Activity imported and linked to this workout.');
@@ -1007,8 +1008,9 @@ function startCompletion() {
   if (w && !completionData.value.stravaActivityId) {
     const sameDay = stravaActivities.value.find((a: any) =>
       String(a.start_date_local || '').slice(0, 10) === w.date &&
-      stravaActivityOptions.value.some(o => String(o.value) === String(a.id)));
-    if (sameDay) completionData.value.stravaActivityId = sameDay.id as any;
+      stravaActivityOptions.value.some(o => o.value === toActivityId(a.id)));
+    const id = toActivityId(sameDay?.id);
+    if (id !== null) completionData.value.stravaActivityId = id;
   }
   modalMode.value = 'complete';
 }
@@ -1110,15 +1112,24 @@ async function handleSaveCompletion() {
     // Never overwrite a field the form didn't show with an empty value.
     for (const k of Object.keys(payload)) if (payload[k] === undefined) delete payload[k];
 
-    // For Strava-linked runs/rides, the activity is the source of truth:
-    // pull actual distance (km) and moving time (min) straight from Strava.
-    if (payload.stravaActivityId) {
-      payload.stravaActivityId = String(payload.stravaActivityId);
+    // For a linked run or ride the recording is the source of truth: pull the
+    // actual distance (km) and moving time (min) straight off it.
+    //
+    // The id is written as a number. It used to be stringified here, into a
+    // column the rest of the app types as a number — harmless only because
+    // every reader coerced on the way back out, which is exactly the kind of
+    // agreement that stops holding the moment one of them forgets.
+    const linkedId = toActivityId(payload.stravaActivityId);
+    if (linkedId !== null) {
+      payload.stravaActivityId = linkedId;
       const act = selectedStravaActivity.value;
       if (act) {
         if (act.distance) payload.distance = Math.round((act.distance / 1000) * 100) / 100;
         if (act.moving_time) payload.actualDuration = Math.round(act.moving_time / 60);
       }
+    } else {
+      // Nothing picked: don't write a half-set link.
+      delete payload.stravaActivityId;
     }
 
     await db.completeWorkout(payload);

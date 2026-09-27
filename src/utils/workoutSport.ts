@@ -18,17 +18,37 @@ import { getWorkoutType, type SportType } from './workouts'
 import type { Workout } from '@/types'
 
 export interface ActivityIndex {
-	byId: Map<string, any>
+	byId: Map<number, any>
 	byDate: Map<string, any[]>
+}
+
+/**
+ * An activity id as a number, whatever shape it arrives in.
+ *
+ * `imported_activities.id` is a bigserial and comes back as a number, but
+ * `workouts.stravaActivityId` has been written by several generations of code
+ * and holds values like `42`, `"42"` and `"17045921530.0"` — the last of those
+ * a pre-migration Strava id stored through a decimal column. Comparing those as
+ * strings meant `"42.0"` and `42` were different activities, so a correctly
+ * linked workout could silently fail to find its own recording.
+ *
+ * Returns null for anything that isn't a usable id, including 0 — which is what
+ * `addImportedActivity` returns for a duplicate and must never be linked to.
+ */
+export function toActivityId(value: unknown): number | null {
+	if (value === null || value === undefined || value === '') return null
+	const n = Number(value)
+	return Number.isFinite(n) && n > 0 ? Math.round(n) : null
 }
 
 const activityDate = (a: any): string => String(a.start_date_local || a.start_date || '').slice(0, 10)
 
 export function buildActivityIndex(activities: any[]): ActivityIndex {
-	const byId = new Map<string, any>()
+	const byId = new Map<number, any>()
 	const byDate = new Map<string, any[]>()
 	for (const a of activities) {
-		byId.set(String(a.id), a)
+		const id = toActivityId(a.id)
+		if (id !== null) byId.set(id, a)
 		const d = activityDate(a)
 		if (!d) continue
 		const list = byDate.get(d)
@@ -49,8 +69,9 @@ const isResolvable = (type: SportType) => type === 'running' || type === 'bike'
 export function resolveActivity(workout: Workout, index: ActivityIndex): any | null {
 	if (!isResolvable(getWorkoutType(workout))) return null
 
-	if (workout.stravaActivityId != null) {
-		const hit = index.byId.get(String(workout.stravaActivityId))
+	const linked = toActivityId(workout.stravaActivityId)
+	if (linked !== null) {
+		const hit = index.byId.get(linked)
 		if (hit) return hit
 	}
 

@@ -216,7 +216,7 @@ import { format, parseISO } from 'date-fns'
 import { db } from '@/db'
 import { activityApi } from '@/activities'
 import { cssColor, getSportColor, SPORT_LABELS } from '@/utils/workouts'
-import { buildActivityIndex, effectiveWorkoutType, resolveActivity } from '@/utils/workoutSport'
+import { buildActivityIndex, effectiveWorkoutType, resolveActivity, toActivityId } from '@/utils/workoutSport'
 import RouteMap from '@/components/RouteMap.vue'
 import Skeleton from '@/components/Skeleton.vue'
 import StreamTracks, { type StreamTrack } from '@/components/charts/StreamTracks.vue'
@@ -515,11 +515,10 @@ onMounted(async () => {
 		const id = parseInt(route.params.id as string)
 		if (!isNaN(id)) {
 			workout.value = await db.getWorkoutById(id)
-			if (workout.value?.stravaActivityId) {
+			const linkedId = toActivityId(workout.value?.stravaActivityId)
+			if (linkedId !== null) {
 				try {
-					stravaActivity.value = await activityApi.getActivityById(
-						workout.value.stravaActivityId
-					)
+					stravaActivity.value = await activityApi.getActivityById(linkedId)
 				} catch {}
 			}
 			// Older workouts carry dead ids from before file import; Home matches

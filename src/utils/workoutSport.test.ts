@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { buildActivityIndex, resolveActivity, effectiveWorkoutType, effectiveDistanceKm } from './workoutSport'
+import { buildActivityIndex, resolveActivity, effectiveWorkoutType, effectiveDistanceKm, toActivityId } from './workoutSport'
 import type { Workout } from '@/types'
 
 const w = (over: Partial<Workout>): Workout =>
@@ -86,5 +86,57 @@ describe('effectiveDistanceKm', () => {
 
 	it('is undefined when neither exists', () => {
 		expect(effectiveDistanceKm(w({ type: 'running' }), buildActivityIndex([]))).toBeUndefined()
+	})
+})
+
+describe('toActivityId', () => {
+	it('accepts an id however the database hands it back', () => {
+		expect(toActivityId(42)).toBe(42)
+		expect(toActivityId('42')).toBe(42)
+		// A pre-migration Strava id, stored through a decimal column.
+		expect(toActivityId('17045921530.0')).toBe(17045921530)
+		expect(toActivityId(17045921530.0)).toBe(17045921530)
+	})
+
+	it('rejects the values that are not a link', () => {
+		expect(toActivityId(null)).toBeNull()
+		expect(toActivityId(undefined)).toBeNull()
+		expect(toActivityId('')).toBeNull()
+		expect(toActivityId('not an id')).toBeNull()
+		expect(toActivityId(NaN)).toBeNull()
+		expect(toActivityId(-1)).toBeNull()
+	})
+
+	it('rejects 0, which is what a duplicate import returns rather than an id', () => {
+		expect(toActivityId(0)).toBeNull()
+		expect(toActivityId('0')).toBeNull()
+	})
+})
+
+describe('activity linking across id shapes', () => {
+	// The point of normalising: a workout linked as a string still finds the
+	// activity whose own id is a number. Comparing them as strings did not.
+	it('matches a string-stored link to a numeric activity id', () => {
+		const idx = buildActivityIndex([act({ id: 42, start_date_local: '2026-01-01' })])
+		const found = resolveActivity(w({ type: 'Running', stravaActivityId: '42' as any, date: '2026-01-01' }), idx)
+		expect(found?.id).toBe(42)
+	})
+
+	it('matches a decimal-stored link to the same activity', () => {
+		const idx = buildActivityIndex([act({ id: 42, start_date_local: '2026-01-01' })])
+		const found = resolveActivity(w({ type: 'Running', stravaActivityId: '42.0' as any, date: '2026-01-01' }), idx)
+		expect(found?.id).toBe(42)
+	})
+
+	it('does not resolve a 0 link by id', () => {
+		// 0 is what a duplicate import returns instead of an id. Honouring it
+		// would pull in an activity from another day entirely; it has to fall
+		// through to the same-date match.
+		const idx = buildActivityIndex([
+			act({ id: 0, start_date_local: '2025-11-30' }),
+			act({ id: 9 }),
+		])
+		const found = resolveActivity(w({ type: 'Running', stravaActivityId: 0 as any }), idx)
+		expect(found?.id).toBe(9)
 	})
 })

@@ -8,7 +8,15 @@ export interface Workout {
 	targetPace?: string;
 	gymType?: string;
 	isCompleted?: number;
-	stravaActivityId?: number; // Changed from string to number
+	/**
+	 * The imported activity that recorded this session.
+	 *
+	 * A number. Older rows hold the same id as a string, some of them decimal
+	 * ("17045921530.0") from a pre-migration Strava id — so anything reading it
+	 * goes through `toActivityId` in `utils/workoutSport.ts` rather than
+	 * comparing it directly.
+	 */
+	stravaActivityId?: number;
 	actualDuration?: number;
 	rpe?: number;
 	notes?: string;

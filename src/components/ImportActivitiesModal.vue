@@ -72,6 +72,7 @@ import { parseActivityFile, type ParsedActivity } from '@/import/parseActivityFi
 import { db } from '@/db'
 import { isOwner } from '@/owner'
 import { getSportColor } from '@/utils/workouts'
+import { toActivityId } from '@/utils/workoutSport'
 
 defineProps<{ show: boolean }>()
 const emit = defineEmits<{ (e: 'update:show', v: boolean): void; (e: 'imported'): void }>()
@@ -150,9 +151,9 @@ async function saveAll() {
 					actualDuration: Math.round(a.moving_time / 60),
 					caloriesBurned: a.calories ? Math.round(a.calories) : undefined,
 					isCompleted: 1,
-					stravaActivityId: res.id,
+					stravaActivityId: toActivityId(res.id) ?? undefined,
 					notes: '',
-				} as any)
+				})
 			}
 		}
 		message.success(`Imported ${imported} activit${imported === 1 ? 'y' : 'ies'}${duplicates ? ` · ${duplicates} already existed` : ''}`)

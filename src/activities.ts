@@ -19,10 +19,16 @@ export const activityApi = {
 		)
 	},
 
-	/** Look up one imported activity by id. */
-	getActivityById: async (id: string | number): Promise<any | null> => {
+	/**
+	 * Look up one imported activity by id.
+	 *
+	 * Callers normalise with `toActivityId` first: a workout's stored link has
+	 * been written in several shapes over the years, and a dead pre-migration
+	 * Strava id simply finds nothing here, which is the correct answer.
+	 */
+	getActivityById: async (id: number): Promise<any | null> => {
 		try {
-			return await db.getImportedActivityById(Number(id))
+			return await db.getImportedActivityById(id)
 		} catch (e) {
 			console.warn('Imported activity lookup failed:', e)
 			return null

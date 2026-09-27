@@ -5,6 +5,7 @@
  */
 import { parseActivityFile } from '@/import/parseActivityFile'
 import { db } from '@/db'
+import { toActivityId } from './workoutSport'
 
 export interface ImportedFit {
 	/** Row id in imported_activities to link the workout to (0 if a duplicate
@@ -42,7 +43,10 @@ export function fitUpdates(imported: ImportedFit): {
 } {
 	const { activityId, activity } = imported
 	const updates: { stravaActivityId?: number; distance?: number; actualDuration?: number } = {}
-	if (activityId) updates.stravaActivityId = activityId
+	// 0 is what a duplicate import with no locatable original returns, and it is
+	// not an id — linking it would point the workout at nothing.
+	const id = toActivityId(activityId)
+	if (id !== null) updates.stravaActivityId = id
 	if (activity.distance) updates.distance = Math.round((activity.distance / 1000) * 100) / 100
 	if (activity.moving_time) updates.actualDuration = Math.round(activity.moving_time / 60)
 	return updates
