@@ -44,8 +44,8 @@
 							<span class="account-label">Colours, type and layout</span>
 							<span class="appearance-note">
 								Tweak the palette, fonts, corner radii and spacing, and see it applied across the
-								whole app as you go.<template v-if="uiLabChanges">
-									You have {{ uiLabChanges }} change{{ uiLabChanges === 1 ? '' : 's' }} saved on this device.</template>
+								whole app as you go.<template v-if="uiLabSummary">
+									Currently: <strong>{{ uiLabSummary }}</strong>, saved on this device.</template>
 							</span>
 						</div>
 						<router-link to="/ui-lab"><n-button tertiary>Open UI lab</n-button></router-link>
@@ -304,7 +304,18 @@ import { currentVdot, derivedFitness, hydrateFitness } from '@/fitness'
 import { hrSettings, loaded as statsLoaded, loadStats } from '@/stats'
 import { auth, signOut } from '@/auth'
 import { isOwner, GENERIC_SCHEMA_MESSAGE } from '@/owner'
-import { overrideCount as uiLabChanges } from '@/uiLab'
+import { activePalette, anyChanges, overrideCount as uiLabTokenCount, styleCount as uiLabStyleCount } from '@/uiLab'
+import { PALETTES } from '@/uiLabPalettes'
+
+/** What the lab is currently set to, for the Appearance card's summary line. */
+const uiLabSummary = computed(() => {
+	if (!anyChanges.value) return null
+	const palette = PALETTES.find(p => p.key === activePalette.value)
+	const tweaks = uiLabStyleCount.value + uiLabTokenCount.value
+	if (palette && tweaks) return `${palette.label}, plus ${tweaks} tweak${tweaks === 1 ? '' : 's'}`
+	if (palette) return palette.label
+	return `${tweaks} tweak${tweaks === 1 ? '' : 's'}`
+})
 import {
 	DISTANCES, DISTANCE_LABELS, paceTable, equivalentTimes, vdotFromRace,
 	raceTimeOnCourse, coursePaceSecPerKm, TERRAIN_PRESETS,

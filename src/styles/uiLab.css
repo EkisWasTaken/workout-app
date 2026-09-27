@@ -1,0 +1,219 @@
+/* src/styles/uiLab.css — what the UI lab's style switches actually do.
+ *
+ * Every rule here is selected by a `data-ui-*` attribute on <html>, set by
+ * `uiLab.ts`. With no attributes set, nothing in this file applies and the app
+ * looks exactly as `app.css` draws it — which is what makes "reset" free.
+ *
+ * Two things to know before editing:
+ *
+ *   It reaches into other components' classes on purpose. `.action-button`,
+ *   `.card`, `.chip` and Naive's `.n-button` are the app's shared vocabulary,
+ *   and a theme layer is the one place allowed to restyle them from outside.
+ *
+ *   `!important` is used where a scoped component rule would otherwise win.
+ *   These declarations are only ever active when someone has explicitly asked
+ *   for them in the lab, so there is nothing for them to fight with unexpectedly.
+ */
+
+/* ── Corners ──────────────────────────────────────────────────────────────── */
+
+html[data-ui-corners='sharp'] { --radius-sm: 0px; --radius: 0px; --radius-lg: 0px; }
+html[data-ui-corners='tight'] { --radius-sm: 4px; --radius: 7px; --radius-lg: 10px; }
+html[data-ui-corners='soft'] { --radius-sm: 11px; --radius: 18px; --radius-lg: 26px; }
+html[data-ui-corners='round'] { --radius-sm: 999px; --radius: 22px; --radius-lg: 32px; }
+
+/* `--radius-sm` is the controls radius, and plenty of block-level surfaces use
+   it too — a session card, a textarea, a table. At 999px those stop reading as
+   rounded and start reading as broken, so the round option keeps the pill for
+   things that are actually control-shaped and gives everything with height back
+   a sane corner. */
+html[data-ui-corners='round'] textarea,
+html[data-ui-corners='round'] .n-input,
+html[data-ui-corners='round'] pre,
+html[data-ui-corners='round'] table,
+html[data-ui-corners='round'] .wv-card,
+html[data-ui-corners='round'] .spec-wvcard,
+html[data-ui-corners='round'] .splits-table,
+html[data-ui-corners='round'] .rn-card,
+html[data-ui-corners='round'] .stream-chart-card,
+html[data-ui-corners='round'] .sec-stat,
+html[data-ui-corners='round'] .effort-card,
+html[data-ui-corners='round'] .be-card,
+html[data-ui-corners='round'] .zone-bar-card,
+html[data-ui-corners='round'] .tpl-skeletons,
+html[data-ui-corners='round'] .heat-card,
+html[data-ui-corners='round'] .route-map-card { border-radius: 16px !important; }
+
+/* ── Button shape ─────────────────────────────────────────────────────────── */
+
+html[data-ui-buttonshape='pill'] .action-button,
+html[data-ui-buttonshape='pill'] .n-button,
+html[data-ui-buttonshape='pill'] .today-button,
+html[data-ui-buttonshape='pill'] .view-toggle,
+html[data-ui-buttonshape='pill'] .view-toggle button,
+html[data-ui-buttonshape='pill'] .nav-button { border-radius: 999px !important; }
+
+html[data-ui-buttonshape='square'] .action-button,
+html[data-ui-buttonshape='square'] .n-button,
+html[data-ui-buttonshape='square'] .today-button,
+html[data-ui-buttonshape='square'] .nav-button { border-radius: 0 !important; }
+
+/* ── Button style ─────────────────────────────────────────────────────────── */
+
+/* Soft: a tint of the accent rather than a block of it, with accent-coloured
+   text. Reads as primary without dominating a toolbar of six buttons. */
+html[data-ui-buttons='soft'] .action-button.primary,
+html[data-ui-buttons='soft'] .n-button--primary-type {
+	background: var(--primary-soft) !important;
+	border-color: transparent !important;
+	color: var(--primary-color) !important;
+}
+html[data-ui-buttons='soft'] .action-button.primary:hover:not(:disabled),
+html[data-ui-buttons='soft'] .n-button--primary-type:hover {
+	background: color-mix(in srgb, var(--primary-color) 22%, transparent) !important;
+}
+
+html[data-ui-buttons='outline'] .action-button.primary,
+html[data-ui-buttons='outline'] .n-button--primary-type {
+	background: transparent !important;
+	border-color: var(--primary-color) !important;
+	color: var(--primary-color) !important;
+}
+html[data-ui-buttons='outline'] .action-button.primary:hover:not(:disabled),
+html[data-ui-buttons='outline'] .n-button--primary-type:hover {
+	background: var(--primary-soft) !important;
+}
+
+html[data-ui-buttons='ghost'] .action-button,
+html[data-ui-buttons='ghost'] .n-button {
+	background: transparent !important;
+	border-color: transparent !important;
+}
+html[data-ui-buttons='ghost'] .action-button.primary,
+html[data-ui-buttons='ghost'] .n-button--primary-type { color: var(--primary-color) !important; }
+html[data-ui-buttons='ghost'] .action-button:hover:not(:disabled),
+html[data-ui-buttons='ghost'] .n-button:hover {
+	background: var(--surface-hover) !important;
+	border-color: var(--border-color) !important;
+}
+
+html[data-ui-buttons='raised'] .action-button,
+html[data-ui-buttons='raised'] .n-button {
+	box-shadow: 0 1px 0 rgba(255, 255, 255, 0.07) inset, 0 2px 6px rgba(0, 0, 0, 0.4);
+	transition: transform 0.12s ease, box-shadow 0.12s ease, background 0.15s;
+}
+html[data-ui-buttons='raised'] .action-button:hover:not(:disabled),
+html[data-ui-buttons='raised'] .n-button:hover {
+	transform: translateY(-1px);
+	box-shadow: 0 1px 0 rgba(255, 255, 255, 0.09) inset, 0 5px 14px rgba(0, 0, 0, 0.5);
+}
+html[data-ui-buttons='raised'] .action-button:active:not(:disabled) { transform: translateY(0); }
+
+/* ── Density ──────────────────────────────────────────────────────────────── */
+
+/* Padding is the one thing not expressed as a token anywhere in the app, so
+   density reaches the shared surfaces directly. The calendar's own row height
+   is driven separately below, since a shorter cell is the point of compact. */
+html[data-ui-density='compact'] .card,
+html[data-ui-density='compact'] .stat-panel,
+html[data-ui-density='compact'] .settings-card .n-card__content { padding: 11px 13px; }
+html[data-ui-density='compact'] .action-button { padding: 6px 11px; }
+html[data-ui-density='compact'] .wv-day { padding: 9px 12px; }
+html[data-ui-density='compact'] .wv-card { padding: 8px 11px; }
+html[data-ui-density='compact'] .cal-body { grid-auto-rows: 104px; }
+html[data-ui-density='compact'] .form-container { gap: 11px; }
+
+html[data-ui-density='roomy'] .card,
+html[data-ui-density='roomy'] .stat-panel,
+html[data-ui-density='roomy'] .settings-card .n-card__content { padding: 24px 26px; }
+html[data-ui-density='roomy'] .action-button { padding: 11px 19px; }
+html[data-ui-density='roomy'] .wv-day { padding: 19px 22px; }
+html[data-ui-density='roomy'] .wv-card { padding: 16px 18px; }
+html[data-ui-density='roomy'] .cal-body { grid-auto-rows: 150px; }
+html[data-ui-density='roomy'] .form-container { gap: 21px; }
+
+/* ── Cards ────────────────────────────────────────────────────────────────── */
+
+html[data-ui-cards='flat'] .card,
+html[data-ui-cards='flat'] .stat-panel,
+html[data-ui-cards='flat'] .n-card,
+html[data-ui-cards='flat'] .calendar-container {
+	border-color: transparent !important;
+	box-shadow: none !important;
+}
+
+html[data-ui-cards='elevated'] .card,
+html[data-ui-cards='elevated'] .stat-panel,
+html[data-ui-cards='elevated'] .n-card,
+html[data-ui-cards='elevated'] .calendar-container {
+	border-color: transparent !important;
+	box-shadow: 0 1px 2px rgba(0, 0, 0, 0.35), 0 8px 24px rgba(0, 0, 0, 0.35) !important;
+}
+
+/* Outlined inverts the usual relationship: the card takes the page colour and
+   the line does the separating. Wants a bold border to read properly. */
+html[data-ui-cards='outlined'] .card,
+html[data-ui-cards='outlined'] .stat-panel,
+html[data-ui-cards='outlined'] .n-card,
+html[data-ui-cards='outlined'] .calendar-container {
+	background-color: var(--background-color) !important;
+	border-color: var(--border-strong) !important;
+	box-shadow: none !important;
+}
+
+/* ── Border weight ────────────────────────────────────────────────────────── */
+
+html[data-ui-borders='hairline'] { --border-color: color-mix(in srgb, var(--border-color) 55%, transparent); }
+html[data-ui-borders='bold'] .card,
+html[data-ui-borders='bold'] .stat-panel,
+html[data-ui-borders='bold'] .calendar-container,
+html[data-ui-borders='bold'] .n-card,
+html[data-ui-borders='bold'] .action-button,
+html[data-ui-borders='bold'] .wv-card { border-width: 2px; }
+
+/* ── Chips & pills ────────────────────────────────────────────────────────── */
+
+/* Outline: the sport's own colour draws the line. `currentColor` was the
+   obvious shortcut and the wrong one — a calendar chip's text is near-white, so
+   every chip came out with a white outline and the sport disappeared. The tag
+   colour is used where there is one, and currentColor only as a fallback for
+   the pills that genuinely have no sport. */
+html[data-ui-chips='outline'] .chip,
+html[data-ui-chips='outline'] .tpl-kind,
+html[data-ui-chips='outline'] .spec-sport-chip {
+	background: transparent !important;
+	border: 1px solid var(--tag-color, currentColor);
+	color: var(--tag-color, inherit);
+}
+html[data-ui-chips='outline'] .chip .chip-meta { color: inherit; opacity: 0.75; }
+
+html[data-ui-chips='outline'] .wv-pill,
+html[data-ui-chips='outline'] .spec-pill {
+	background: transparent !important;
+	border: 1px solid currentColor;
+}
+
+html[data-ui-chips='solid'] .chip.workout,
+html[data-ui-chips='solid'] .tpl-kind,
+html[data-ui-chips='solid'] .spec-sport-chip {
+	background: var(--tag-color, var(--primary-color)) !important;
+	color: var(--background-color) !important;
+}
+html[data-ui-chips='solid'] .chip.workout .chip-ico,
+html[data-ui-chips='solid'] .chip.workout .chip-meta { color: var(--background-color) !important; }
+
+/* ── Accent edge ──────────────────────────────────────────────────────────── */
+
+html[data-ui-accentbar='none'] .chip,
+html[data-ui-accentbar='none'] .wv-card { border-left-width: 0 !important; }
+html[data-ui-accentbar='thick'] .chip { border-left-width: 6px !important; }
+html[data-ui-accentbar='thick'] .wv-card { border-left-width: 6px !important; }
+
+/* ── Motion ───────────────────────────────────────────────────────────────── */
+
+html[data-ui-motion='none'] *,
+html[data-ui-motion='none'] *::before,
+html[data-ui-motion='none'] *::after {
+	animation-duration: 0.01ms !important;
+	transition-duration: 0.01ms !important;
+}

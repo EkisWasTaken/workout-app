@@ -23,8 +23,12 @@
  */
 import { computed, reactive, ref } from 'vue'
 import { clearSportColorCache } from './utils/workouts'
+import { STYLE_KEYS, STYLE_SWITCHES, SCALE_PX, TYPE_PAIRINGS, switchFor } from './uiLabStyles'
+import './styles/uiLab.css'
 
 const STORAGE_KEY = 'uiLab.overrides.v1'
+const STYLE_KEY = 'uiLab.styles.v1'
+const PALETTE_KEY = 'uiLab.palette.v1'
 
 export type TokenKind = 'color' | 'length' | 'font' | 'number'
 
@@ -203,13 +207,18 @@ export const fontsFor = (which: 'text' | 'display') => (which === 'text' ? TEXT_
  * nobody makes.
  */
 const loadedFonts = new Set<string>()
-function ensureFont(option: FontOption | undefined) {
-	if (!option?.google || loadedFonts.has(option.google) || typeof document === 'undefined') return
-	loadedFonts.add(option.google)
+
+export function ensureGoogleFamily(family: string) {
+	if (!family || loadedFonts.has(family) || typeof document === 'undefined') return
+	loadedFonts.add(family)
 	const link = document.createElement('link')
 	link.rel = 'stylesheet'
-	link.href = `https://fonts.googleapis.com/css2?family=${option.google}&display=swap`
+	link.href = `https://fonts.googleapis.com/css2?family=${family}&display=swap`
 	document.head.appendChild(link)
+}
+
+function ensureFont(option: FontOption | undefined) {
+	if (option?.google) ensureGoogleFamily(option.google)
 }
 
 // ─── defaults, captured before anything is overridden ─────────────────────────
@@ -240,6 +249,20 @@ export const defaultValue = (name: string) => defaults[name] ?? ''
 /** Only what differs from the stylesheet. An empty object is "stock". */
 export const overrides = reactive<Record<string, string>>({})
 export const dirty = ref(false)
+
+/** The palette currently applied, by key. Null means the shipped one. */
+export const activePalette = ref<string | null>(null)
+
+/**
+ * The style switches, by key. A key absent from here is on its default, which
+ * is the shipped look — so "nothing set" and "stock" are the same state and
+ * resetting never has to know what the defaults were.
+ */
+export const styles = reactive<Record<string, string>>({})
+
+export const styleValue = (key: string) => styles[key] ?? switchFor(key)?.fallback ?? ''
+export const styleCount = computed(() =>
+	STYLE_KEYS.filter(k => styles[k] !== undefined).length)
 
 export const currentValue = (name: string) => overrides[name] ?? defaultValue(name)
 export const isOverridden = (name: string) => overrides[name] !== undefined
@@ -294,6 +317,60 @@ function applyOne(root: HTMLElement, name: string, value: string) {
 	}
 }
 
+/**
+ * Push the style switches onto the document as `data-ui-*` attributes, which
+ * `styles/uiLab.css` selects on. A switch sitting on its default gets no
+ * attribute at all, so the stock rules apply untouched.
+ */
+function applyStyles() {
+	if (typeof document === 'undefined') return
+	const root = document.documentElement
+
+	for (const sw of STYLE_SWITCHES) {
+		const value = styles[sw.key]
+		if (value === undefined || value === sw.fallback) root.removeAttribute(`data-ui-${sw.key}`)
+		else root.setAttribute(`data-ui-${sw.key}`, value)
+	}
+
+	// Type and scale aren't CSS-only: the pairing needs its webfonts fetched,
+	// and the scale is a root font size rather than a class.
+	const pairing = TYPE_PAIRINGS[styleValue('type')]
+	if (pairing) {
+		for (const family of pairing.google) ensureGoogleFamily(family)
+		// Only written when the pairing isn't the shipped one, so a stock type
+		// setting leaves app.css's own font tokens in charge.
+		if (styleValue('type') === 'default') {
+			root.style.removeProperty('--font-family')
+			root.style.removeProperty('--font-display')
+			root.style.removeProperty('--font-mono')
+		} else {
+			root.style.setProperty('--font-family', pairing.body)
+			root.style.setProperty('--font-display', pairing.display)
+			root.style.setProperty('--font-mono', pairing.display)
+		}
+	}
+
+	const scale = SCALE_PX[styleValue('scale')]
+	root.style.fontSize = !scale || scale === 16 ? '' : `${scale}px`
+}
+
+export function setStyle(key: string, value: string) {
+	const sw = switchFor(key)
+	if (!sw) return
+	if (value === sw.fallback) delete styles[key]
+	else styles[key] = value
+	dirty.value = true
+	applyStyles()
+	persist()
+}
+
+export function resetStyles() {
+	for (const k of Object.keys(styles)) delete styles[k]
+	dirty.value = true
+	applyStyles()
+	persist()
+}
+
 /** Push the current overrides onto the document. */
 export function apply() {
 	if (typeof document === 'undefined') return
@@ -319,8 +396,28 @@ export function apply() {
 		}
 	}
 
+	applyStyles()
+
 	// Charts read the palette through getComputedStyle and memoise it.
 	clearSportColorCache()
+}
+
+/** Apply a whole palette, replacing any colour tweaks that were on top of it. */
+export function setPalette(key: string | null, values: Record<string, string>) {
+	// Colour tokens only: picking a palette must not silently resize the
+	// sidebar or change the corner radius, which are the switches' business.
+	const colourNames = new Set(
+		ALL_TOKENS.filter(t => t.kind === 'color').map(t => t.name))
+	for (const name of Object.keys(overrides)) {
+		if (colourNames.has(name)) delete overrides[name]
+	}
+	for (const [name, value] of Object.entries(values)) {
+		if (colourNames.has(name) && value !== defaultValue(name)) overrides[name] = value
+	}
+	activePalette.value = key
+	dirty.value = true
+	apply()
+	persist()
 }
 
 export function setToken(name: string, value: string) {
@@ -340,10 +437,16 @@ export function resetToken(name: string) {
 
 export function resetAll() {
 	for (const k of Object.keys(overrides)) delete overrides[k]
+	for (const k of Object.keys(styles)) delete styles[k]
+	activePalette.value = null
 	dirty.value = true
 	apply()
 	persist()
 }
+
+/** Anything at all changed from the shipped look. */
+export const anyChanges = computed(() =>
+	overrideCount.value > 0 || styleCount.value > 0 || activePalette.value !== null)
 
 /** Replace the whole set at once — used by the presets and by importing. */
 export function applyPreset(values: Record<string, string>) {
@@ -360,8 +463,13 @@ export function applyPreset(values: Record<string, string>) {
 
 function persist() {
 	try {
-		if (!Object.keys(overrides).length) localStorage.removeItem(STORAGE_KEY)
-		else localStorage.setItem(STORAGE_KEY, JSON.stringify(overrides))
+		const write = (key: string, value: unknown, empty: boolean) => {
+			if (empty) localStorage.removeItem(key)
+			else localStorage.setItem(key, JSON.stringify(value))
+		}
+		write(STORAGE_KEY, overrides, !Object.keys(overrides).length)
+		write(STYLE_KEY, styles, !Object.keys(styles).length)
+		write(PALETTE_KEY, activePalette.value, activePalette.value === null)
 	} catch {
 		// Private mode or a full quota: the tweaks just won't outlive the tab.
 	}
@@ -375,14 +483,33 @@ function persist() {
 export function hydrateUiLab() {
 	try {
 		const raw = localStorage.getItem(STORAGE_KEY)
-		if (!raw) return
-		const saved = JSON.parse(raw) as Record<string, string>
-		const known = new Set(ALL_TOKENS.map(t => t.name))
-		for (const [k, v] of Object.entries(saved)) {
-			// Ignore anything that isn't a token we still offer, so a renamed or
-			// retired token can't keep being written to the document forever.
-			if (known.has(k) && typeof v === 'string') overrides[k] = v
+		if (raw) {
+			const saved = JSON.parse(raw) as Record<string, string>
+			const known = new Set(ALL_TOKENS.map(t => t.name))
+			for (const [k, v] of Object.entries(saved)) {
+				// Ignore anything that isn't a token we still offer, so a renamed or
+				// retired token can't keep being written to the document forever.
+				if (known.has(k) && typeof v === 'string') overrides[k] = v
+			}
 		}
+
+		const rawStyles = localStorage.getItem(STYLE_KEY)
+		if (rawStyles) {
+			const saved = JSON.parse(rawStyles) as Record<string, string>
+			for (const [k, v] of Object.entries(saved)) {
+				// Same guard, and the value has to still be on the switch's list:
+				// a retired option would otherwise select CSS that no longer exists.
+				const sw = switchFor(k)
+				if (sw && sw.options.some(o => o.value === v)) styles[k] = v
+			}
+		}
+
+		const rawPalette = localStorage.getItem(PALETTE_KEY)
+		if (rawPalette) {
+			const key = JSON.parse(rawPalette)
+			if (typeof key === 'string') activePalette.value = key
+		}
+
 		apply()
 	} catch {
 		// Corrupt entry: stock palette is the safe fallback.
@@ -395,6 +522,9 @@ export function hydrateUiLab() {
 export function exportCss(): string {
 	const lines: string[] = []
 	const scale = overrides['ui-scale']
+	const styleLines = STYLE_SWITCHES
+		.filter(sw => styles[sw.key] !== undefined)
+		.map(sw => `  ${sw.label}: ${sw.options.find(o => o.value === styles[sw.key])?.label}`)
 	for (const [name, value] of Object.entries(overrides)) {
 		if (name === 'ui-scale') continue
 		lines.push(`  --${name}: ${value};`)
@@ -402,10 +532,17 @@ export function exportCss(): string {
 			lines.push(`  --${dep}: ${depValue};`)
 		}
 	}
-	if (!lines.length && !scale) return '/* No changes — this is the stock palette. */'
+	if (!lines.length && !scale && !styleLines.length) {
+		return '/* No changes — this is the stock look. */'
+	}
 	const root = lines.length ? `:root {\n${lines.join('\n')}\n}` : ''
 	const html = scale ? `html {\n  font-size: ${(Number(scale) / 100) * 16}px;\n}` : ''
-	return [root, html].filter(Boolean).join('\n\n')
+	// Style switches aren't tokens — they're attributes plus the rules in
+	// uiLab.css — so they're listed rather than emitted as copyable CSS.
+	const notes = styleLines.length
+		? `/* Style switches (set these in the lab, or copy the rules from\n   src/styles/uiLab.css):\n${styleLines.join('\n')}\n*/`
+		: ''
+	return [root, html, notes].filter(Boolean).join('\n\n')
 }
 
 // ─── colour maths, for the contrast readout ───────────────────────────────────
