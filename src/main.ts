@@ -5,6 +5,11 @@ import './styles/stats.css'
 import './components/charts/charts.css'
 import App from './App.vue'
 import router from './router'
+import { hydrateUiLab } from './uiLab'
+
+// Before the app mounts: the saved palette has to be on the document for the
+// first paint, or every load flashes the stock colours and corrects itself.
+hydrateUiLab()
 
 const app = createApp(App)
 

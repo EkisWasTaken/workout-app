@@ -37,6 +37,11 @@ const routes = [
 		name: "Exercises",
 		component: () => import("@/views/ExercisesView.vue"),
 	},
+	{
+		path: "/ui-lab",
+		name: "UiLab",
+		component: () => import("@/views/UiLabView.vue"),
+	},
 	// Legacy redirects
 	{ path: "/overview", redirect: "/" },
 	{ path: "/progress", redirect: "/" },

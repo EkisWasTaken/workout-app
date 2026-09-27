@@ -36,6 +36,22 @@
 					</div>
 				</n-card>
 
+				<!-- Appearance -->
+				<n-card bordered class="settings-card">
+					<template #header><span class="card-title">Appearance</span></template>
+					<div class="account-row">
+						<div class="account-info">
+							<span class="account-label">Colours, type and layout</span>
+							<span class="appearance-note">
+								Tweak the palette, fonts, corner radii and spacing, and see it applied across the
+								whole app as you go.<template v-if="uiLabChanges">
+									You have {{ uiLabChanges }} change{{ uiLabChanges === 1 ? '' : 's' }} saved on this device.</template>
+							</span>
+						</div>
+						<router-link to="/ui-lab"><n-button tertiary>Open UI lab</n-button></router-link>
+					</div>
+				</n-card>
+
 				<!-- About you: applies to everyone, whatever they train -->
 				<n-card bordered class="settings-card">
 					<template #header><span class="card-title">You</span></template>
@@ -288,6 +304,7 @@ import { currentVdot, derivedFitness, hydrateFitness } from '@/fitness'
 import { hrSettings, loaded as statsLoaded, loadStats } from '@/stats'
 import { auth, signOut } from '@/auth'
 import { isOwner, GENERIC_SCHEMA_MESSAGE } from '@/owner'
+import { overrideCount as uiLabChanges } from '@/uiLab'
 import {
 	DISTANCES, DISTANCE_LABELS, paceTable, equivalentTimes, vdotFromRace,
 	raceTimeOnCourse, coursePaceSecPerKm, TERRAIN_PRESETS,
@@ -635,6 +652,8 @@ onMounted(async () => {
 .sub-head { font-size: 0.8rem; font-weight: 600; color: var(--text-color); margin-top: 8px; padding-top: 14px; border-top: 1px solid var(--border-color); }
 .hr-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 @media (max-width: 480px) { .hr-row { grid-template-columns: 1fr; gap: 0; } }
+.appearance-note { font-size: 0.8rem; color: var(--text-muted); line-height: 1.5; max-width: 52ch; }
+
 .section-divider { margin: 10px 0 -4px; }
 .section-divider span { font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-muted); }
 .section-divider p { margin: 3px 0 0; font-size: 0.8rem; color: var(--text-muted); }
