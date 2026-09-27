@@ -12,8 +12,22 @@
 				</span>
 			</header>
 
-			<div v-if="loading" class="loading-state">
-				<n-spin size="large" />
+			<!-- A skeleton in the shape of the page, rather than a spinner in the
+			     middle of an empty screen: the card heights are already right, so
+			     nothing jumps when the real numbers land. -->
+			<div v-if="loading" class="detail-skeleton">
+				<Skeleton width="240px" height="30px" />
+				<Skeleton width="160px" height="13px" :delay="60" />
+				<Skeleton height="300px" radius="var(--radius)" :delay="120" />
+				<div class="sk-row">
+					<Skeleton height="78px" radius="var(--radius)" :delay="180" />
+					<Skeleton height="78px" radius="var(--radius)" :delay="220" />
+					<Skeleton height="78px" radius="var(--radius)" :delay="260" />
+				</div>
+				<div class="sk-row">
+					<Skeleton height="62px" radius="var(--radius)" :delay="300" />
+					<Skeleton height="62px" radius="var(--radius)" :delay="340" />
+				</div>
 			</div>
 
 			<template v-else-if="workout">
@@ -196,7 +210,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { NIcon, NSpin } from 'naive-ui'
+import { NIcon } from 'naive-ui'
 import { ArrowBackOutline } from '@vicons/ionicons5'
 import { format, parseISO } from 'date-fns'
 import { db } from '@/db'
@@ -204,6 +218,7 @@ import { activityApi } from '@/activities'
 import { cssColor, getSportColor, SPORT_LABELS } from '@/utils/workouts'
 import { buildActivityIndex, effectiveWorkoutType, resolveActivity } from '@/utils/workoutSport'
 import RouteMap from '@/components/RouteMap.vue'
+import Skeleton from '@/components/Skeleton.vue'
 import StreamTracks, { type StreamTrack } from '@/components/charts/StreamTracks.vue'
 import { PULSE_ZONES, getHRSettings, timeInZones, relativeEffort, fmtSecs, gradeAdjustedPace, estimateVO2max, estimateBikePower, repairedHrStream, activityAvgHR, activityMaxHR, splitHeartrates } from '@/utils/analysis'
 import { summariseHeartrate } from '@/utils/hrStream'
@@ -670,7 +685,10 @@ onMounted(async () => {
 .pace-bar-fill { height: 100%; border-radius: 2px; transition: width 0.3s; }
 
 /* States */
-.loading-state { display: flex; justify-content: center; padding: 80px 0; }
+.detail-skeleton { display: flex; flex-direction: column; gap: 12px; }
+.detail-skeleton > :first-child { margin-bottom: 2px; }
+.sk-row { display: flex; gap: 12px; }
+.sk-row > * { flex: 1; }
 .empty-state { text-align: center; color: var(--text-muted); padding: 80px 0; display: flex; flex-direction: column; gap: 12px; align-items: center; }
 .empty-link { color: var(--primary-color); font-size: 0.88rem; }
 </style>

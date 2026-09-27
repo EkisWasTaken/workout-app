@@ -246,6 +246,28 @@ d.addProgressPhoto = async (blob: Blob, size: any, meta: any) => {
 }
 d.updateProgressPhoto = async (id: number, patch: any) => { Object.assign(photoRows.find(r => r.id === id), patch) }
 d.deleteProgressPhoto = async (ph: any) => { photoRows.splice(photoRows.findIndex(r => r.id === ph.id), 1) }
+/**
+ * Every stub above answers in the same tick, which the real database never
+ * does — so loading states flashed past and couldn't be judged in the harness
+ * at all. Wrapping the reads in a round-trip-ish delay makes this behave like
+ * the app talking to Supabase over a network.
+ */
+const LATENCY_MS = 450
+for (const name of [
+	'getWorkouts', 'getDailyWeights', 'getRaceGoals', 'getImportedActivities',
+	'getImportedActivityById', 'getWorkoutById', 'getExercises', 'getProfile',
+	'getDistanceGoals', 'getWorkoutTemplates', 'getTemplateExerciseCounts',
+	'getWorkoutTemplateExercises', 'getProgressPhotos',
+]) {
+	const original = d[name]
+	if (typeof original !== 'function') continue
+	d[name] = async (...args: any[]) => {
+		const value = await original(...args)
+		await new Promise(res => setTimeout(res, LATENCY_MS))
+		return value
+	}
+}
+
 ;(auth as any).user = { id: 'me', email: 'preview@example.com' }
 ;(auth as any).ready = true
 

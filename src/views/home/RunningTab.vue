@@ -365,10 +365,11 @@ const vdotGoals = computed<GoalLine[]>(() =>
 			<template v-if="mappedRuns.length">
 				<SectionHead title="Where you run" note="routes grouped by where they start" />
 				<section>
-					<RouteHeatmap :activities="mappedRuns" color="var(--color-running-primary)" />
+					<RouteHeatmap :activities="mappedRuns" />
 					<p class="stat-note">
-						Each route is drawn faintly, so the roads you repeat come out brightest. The map opens
-						on wherever you run most; the chips jump between the other towns and countries you've
+						Colour is how many separate runs have covered each stretch of ground, cold to warm —
+						so the road you do every week stands out from the one you did once. The map opens on
+						wherever you run most; the chips jump between the other towns and countries you've
 						recorded in. Only runs imported from a watch carry GPS — hand-logged sessions aren't here.
 					</p>
 				</section>

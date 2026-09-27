@@ -37,6 +37,47 @@ function coords(): [number, number][] {
 	}
 }
 
+/**
+ * Draw the route on, start to finish, the first time it appears.
+ *
+ * A route arriving fully formed the instant the tiles load is a small jolt, and
+ * it tells you nothing; watching it trace shows you which way round you went
+ * before you've read the arrows. It's one dash-offset transition on the SVG
+ * path Leaflet already made, so it costs nothing.
+ *
+ * The dash properties are cleared afterwards. Leaflet rewrites the path's `d`
+ * on every pan and zoom, and a dash pattern left behind would turn the route
+ * into a dotted line at the next zoom level.
+ */
+function traceIn(line: L.Polyline) {
+	if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return
+	const path = line.getElement() as SVGPathElement | null
+	if (!path?.getTotalLength) return
+
+	const len = path.getTotalLength()
+	if (!len || !Number.isFinite(len)) return
+
+	const clear = () => {
+		path.style.strokeDasharray = ''
+		path.style.strokeDashoffset = ''
+		path.style.transition = ''
+	}
+	path.style.strokeDasharray = String(len)
+	path.style.strokeDashoffset = String(len)
+	path.style.transition = 'none'
+	// Two frames: one to commit the offset, one to start the transition from it.
+	requestAnimationFrame(() => {
+		requestAnimationFrame(() => {
+			path.style.transition = 'stroke-dashoffset 1.15s cubic-bezier(0.33, 0.9, 0.35, 1)'
+			path.style.strokeDashoffset = '0'
+		})
+	})
+	path.addEventListener('transitionend', clear, { once: true })
+	// A transition that never runs (tab hidden, element replaced) would leave the
+	// route dashed forever, so clear on a timer as well.
+	setTimeout(clear, 1600)
+}
+
 function drawRoute() {
 	const h = handle.value
 	if (!h) return
@@ -53,6 +94,10 @@ function drawRoute() {
 		layers.value = [...layers.value, l]
 		return l
 	}
+
+	// Everything except the traced line fades up underneath it.
+	h.map.getPane('overlayPane')?.classList.add('route-fade-in')
+	h.map.getPane('markerPane')?.classList.add('route-fade-in')
 
 	// Three passes for the glow: a wide halo, a softer core, then the sharp line.
 	add(L.polyline(pts, { color: c, weight: 13, opacity: 0.12, lineCap: 'round', lineJoin: 'round', interactive: false }))
@@ -82,6 +127,7 @@ function drawRoute() {
 	dot(pts[pts.length - 1], '#e2e8f0', 4)
 
 	h.fit(line.getBounds())
+	traceIn(line)
 }
 
 onMounted(() => {
@@ -155,4 +201,11 @@ watch(() => [props.polyline, props.color], drawRoute)
 .legend-finish { background: #e2e8f0; }
 
 .legend-hint { margin-left: auto; font-size: 0.68rem; opacity: 0.8; }
+
+/* The halo, direction arrows and end dots come up as the route traces itself.
+   Global, because Leaflet's panes live outside this component's scoped tree. */
+:global(.route-fade-in) { animation: route-fade 0.9s ease both; }
+@keyframes route-fade {
+	from { opacity: 0; }
+}
 </style>

@@ -1,29 +1,52 @@
 <script setup lang="ts">
 /**
- * Every route you've recorded, on one map.
+ * Every route you've recorded, on one map, coloured by how often you've been
+ * there.
  *
- * There's no heat calculation here and there doesn't need to be one: each route
- * is drawn faintly, so wherever you've run the same street twenty times the
- * lines stack and it comes out bright on its own. The loop you always do
- * appears; the one-off holiday run stays a whisper.
+ * This used to draw each route at 22% opacity and let the overlaps stack —
+ * twenty passes down a street piled up twenty translucent lines and came out
+ * bright. It reads as *something*, but alpha saturates: past about eight passes
+ * a street is as bright as it will ever get, so the road you run every single
+ * day looked the same as one you'd run eight times. Now `routeHeat.ts` counts
+ * how many separate activities touched each 25 m of ground and each stretch is
+ * drawn on a cold-to-warm ramp, with a legend saying what the colours mean.
  *
- * What it *does* need is somewhere to point. Fitting the whole collection was
- * fine while every run started from the same door; with runs in several towns
- * and countries the bounds grow to hold the outliers and the loop you actually
+ * The map also needs somewhere to point. Fitting the whole collection was fine
+ * while every run started from the same door; with runs in several towns and
+ * countries the bounds grow to hold the outliers and the loop you actually
  * repeat shrinks to a smudge. So routes are clustered into places (see
  * `runPlaces.ts`), the map opens on the one you run in most, and the others sit
  * behind a filter — country first when there's more than one, then city.
  */
-import { computed, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
 import L from 'leaflet'
 import { decode } from '@mapbox/polyline'
 import { createDarkMap, type DarkMap } from '@/utils/leafletMap'
 import { byCountry, clusterStartPoints, namePlaces, type RunPlace } from '@/utils/runPlaces'
+import { buildHeat, type HeatBand } from '@/utils/routeHeat'
+import Skeleton from '@/components/Skeleton.vue'
+
+/**
+ * The ramp, coldest first. Blue through cyan to amber, orange and a pale
+ * gold — a sequence the eye orders the same way every time, on a near-black
+ * basemap. Green is deliberately absent: it means "on track" everywhere else in
+ * the app, and a green street here would read as a verdict rather than a count.
+ *
+ * Hotter lines are drawn slightly heavier as well as warmer, so the shape of
+ * where you actually train survives being shrunk into a card.
+ */
+const RAMP = [
+	{ color: '#2f4b7c', weight: 1.4, opacity: 0.55 },
+	{ color: '#2a76c4', weight: 1.7, opacity: 0.7 },
+	{ color: '#1fb0cd', weight: 2.0, opacity: 0.8 },
+	{ color: '#f0b429', weight: 2.4, opacity: 0.88 },
+	{ color: '#f4713d', weight: 2.9, opacity: 0.94 },
+	{ color: '#ffe3a3', weight: 3.4, opacity: 1 },
+]
 
 const props = defineProps<{
 	/** Activities to draw. Anything without a polyline is skipped. */
 	activities: any[]
-	color: string
 }>()
 
 /**
@@ -33,9 +56,19 @@ const props = defineProps<{
  */
 const MAX_ROUTES = 300
 
+/**
+ * Total route points above which the heat build is slow enough to be worth
+ * telling the user about. Around 60 ms of binning on a normal laptop.
+ */
+const HEAVY_POINTS = 40_000
+
 const el = ref<HTMLDivElement | null>(null)
 const handle = shallowRef<DarkMap | null>(null)
 const layers = shallowRef<L.Layer[]>([])
+/** True while the heat is being counted — binning a few hundred routes is work. */
+const building = ref(true)
+const heatBands = shallowRef<HeatBand[]>([])
+const peak = ref(0)
 
 /** Null means "every place in the current country scope". */
 const selectedPlace = ref<string | null>(null)
@@ -150,27 +183,50 @@ function pickCountry(country: string | null) {
 		: places.value.find(p => (p.country ?? '') === country)?.key ?? null
 }
 
-function draw() {
+async function draw() {
 	const h = handle.value
 	if (!h) return
 
 	for (const l of layers.value) h.map.removeLayer(l)
 	layers.value = []
 
+	const routes = drawn.value.map(points).filter((p): p is [number, number][] => !!p)
+	if (!routes.length) {
+		heatBands.value = []
+		peak.value = 0
+		building.value = false
+		return
+	}
+
+	// Binning is synchronous, so the "counting" overlay can only be seen if it
+	// is painted *before* the work starts — and it is only worth painting when
+	// the work is long enough to notice. A city with forty runs bins in about
+	// ten milliseconds, where an overlay would be a flicker and nothing else;
+	// a few hundred full-resolution tracks take a third of a second, where a
+	// silent freeze is the worst of the options. So the size of the job decides,
+	// measured in points because that is what the cost scales with.
+	const work = routes.reduce((n, r) => n + r.length, 0)
+	if (work > HEAVY_POINTS) {
+		building.value = true
+		await nextTick()
+		await new Promise(requestAnimationFrame)
+	}
+
+	const heat = buildHeat(routes)
+	heatBands.value = heat.bands
+	peak.value = heat.peak
+
 	const added: L.Polyline[] = []
 	const bounds = L.latLngBounds([])
-
-	for (const a of drawn.value) {
-		const pts = points(a)
-		if (!pts) continue
-		const line = L.polyline(pts, {
-			color: props.color,
-			weight: 2,
-			// Low enough that a single pass is faint and ten passes are obvious.
-			opacity: 0.22,
+	// Coldest first, so the roads you run most end up drawn over the rest.
+	for (const band of heat.bands) {
+		const style = RAMP[Math.min(band.level, RAMP.length - 1)]
+		const line = L.polyline(band.paths, {
+			...style,
 			lineCap: 'round',
 			lineJoin: 'round',
 			interactive: false,
+			className: 'heat-band',
 		})
 		line.addTo(h.map)
 		added.push(line)
@@ -178,10 +234,18 @@ function draw() {
 	}
 
 	layers.value = added
+	building.value = false
 	// Re-fit on every filter change: picking a city is a request to be taken
 	// there, so it overrides wherever the map had been panned to.
 	if (bounds.isValid()) h.fit(bounds)
 }
+
+/** Legend swatches, coldest to hottest, labelled with the counts they cover. */
+const legend = computed(() =>
+	heatBands.value.map(b => ({
+		color: RAMP[Math.min(b.level, RAMP.length - 1)].color,
+		label: b.minCount === b.maxCount ? `${b.minCount}` : `${b.minCount}–${b.maxCount}`,
+	})))
 
 onMounted(() => {
 	if (!el.value) return
@@ -236,13 +300,41 @@ watch(drawn, draw)
 			</div>
 		</div>
 
-		<div ref="el" class="heat-map"></div>
+		<!-- The busy class goes on the wrapper, never on the map element itself:
+		     Leaflet adds its own classes to that div at runtime, and a dynamic
+		     `:class` on it makes Vue rewrite the attribute and wipe them — which
+		     cost it `leaflet-container`, and with it the overflow rule that keeps
+		     tiles inside the card. -->
+		<div class="heat-map-wrap" :class="{ busy: building }">
+			<div ref="el" class="heat-map"></div>
+			<!-- Appears instantly and only fades on the way out. Binning blocks the
+			     thread, so an enter transition could never actually run during it:
+			     the overlay would paint at almost zero opacity, freeze there for
+			     the length of the work, and vanish. -->
+			<transition name="busy">
+				<div v-if="building" class="heat-building">
+					<Skeleton width="150px" height="9px" />
+					<span class="heat-building-text">Counting {{ runWord(drawn.length) }}…</span>
+				</div>
+			</transition>
+		</div>
 
 		<div class="heat-legend">
 			<span>{{ runWord(drawn.length) }}<template v-if="scopeLabel"> in {{ scopeLabel }}</template></span>
+
+			<!-- The ramp, with the visit counts each colour stands for. Bands are
+			     picked from the data, so a city you've visited twice uses the whole
+			     ramp too — the numbers are what keep that honest. -->
+			<span v-if="legend.length > 1" class="heat-scale">
+				<span class="heat-scale-end">{{ legend[0].label }}</span>
+				<span class="heat-swatches">
+					<i v-for="l in legend" :key="l.color" :style="{ background: l.color }" :title="`${l.label} visits`"></i>
+				</span>
+				<span class="heat-scale-end">{{ legend[legend.length - 1].label }} visits</span>
+			</span>
+
 			<span class="heat-hint">
-				Brighter where you've been more often<template v-if="skipped">
-					· showing the most recent {{ MAX_ROUTES }}</template>
+				<template v-if="skipped">most recent {{ MAX_ROUTES }}</template>
 			</span>
 		</div>
 	</div>
@@ -304,18 +396,62 @@ watch(drawn, draw)
 	font-variant-numeric: tabular-nums;
 }
 
+.heat-map-wrap { position: relative; }
+
 .heat-map {
 	width: 100%;
 	aspect-ratio: 16 / 10;
 	max-height: 460px;
 	min-height: 240px;
 	background: var(--surface-color);
+	/* Leaflet sets this itself via .leaflet-container; stated here too so a
+	   tile can never escape the card even for the frame before it applies. */
+	overflow: hidden;
+	transition: opacity 0.35s ease;
 }
+/* Dim rather than hide: the basemap underneath is already worth looking at
+   while the routes are counted, and swapping the map out for a blank panel
+   would make every filter click flash. */
+.heat-map-wrap.busy .heat-map { opacity: 0.45; }
+
+.heat-building {
+	position: absolute;
+	left: 50%;
+	top: 50%;
+	transform: translate(-50%, -50%);
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	gap: 8px;
+	padding: 12px 18px;
+	border-radius: var(--radius);
+	background: rgba(11, 13, 17, 0.82);
+	border: 1px solid var(--border-color);
+	pointer-events: none;
+}
+.heat-building-text { font-size: 0.72rem; color: var(--text-muted); }
+.busy-leave-active { transition: opacity 0.25s ease; }
+.busy-leave-to { opacity: 0; }
+
+/* Each band fades up as it is added, so a filter change resolves rather than
+   snapping. `backwards` and not `both`: the band's real opacity is a Leaflet
+   presentation attribute that differs per level, and holding the animation's
+   end state would pin CSS opacity over it forever. */
+:global(.heat-band) { animation: heat-in 0.45s ease backwards; }
+@keyframes heat-in {
+	from { opacity: 0; }
+}
+
+.heat-scale { display: inline-flex; align-items: center; gap: 6px; }
+.heat-scale-end { font-size: 0.66rem; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.heat-swatches { display: inline-flex; border-radius: 3px; overflow: hidden; }
+.heat-swatches i { display: block; width: 14px; height: 7px; }
 
 .heat-legend {
 	display: flex;
 	align-items: center;
-	gap: 10px;
+	flex-wrap: wrap;
+	gap: 6px 12px;
 	padding: 10px 14px;
 	border-top: 1px solid var(--border-color);
 	font-size: 0.72rem;

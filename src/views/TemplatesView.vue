@@ -13,7 +13,19 @@
         but only edit or delete your own.
       </p>
 
-      <n-list v-if="templates.length" bordered style="width: 100%">
+      <!-- While the library loads, rows the same height as the real ones. The
+           list used to be blank and then pop into place, pushing the page down. -->
+      <div v-if="loadingTemplates" class="tpl-skeletons">
+        <div v-for="i in 3" :key="i" class="tpl-skeleton-row">
+          <div class="tpl-skeleton-main">
+            <Skeleton width="180px" height="15px" :delay="i * 90" />
+            <Skeleton width="120px" height="11px" :delay="i * 90 + 40" />
+          </div>
+          <Skeleton width="120px" height="28px" radius="var(--radius-sm, 6px)" :delay="i * 90 + 80" />
+        </div>
+      </div>
+
+      <n-list v-else-if="templates.length" bordered style="width: 100%">
         <n-list-item v-for="template in templates" :key="template.id">
           <n-thing>
             <template #header>
@@ -55,7 +67,7 @@
           </template>
         </n-list-item>
       </n-list>
-      <n-empty v-else description="No templates yet. Create one for a session you repeat every week." style="margin-top: 40px">
+      <n-empty v-else-if="!loadingTemplates" description="No templates yet. Create one for a session you repeat every week." style="margin-top: 40px">
         <template #extra>
           <n-button size="small" @click="showAddTemplateModal = true">New template</n-button>
         </template>
@@ -151,6 +163,7 @@ import {
 import { addWeeks, format } from 'date-fns';
 import type { WorkoutTemplate, WorkoutTemplateExercise, TemplateKind } from '../types';
 import { db, NOT_YOUR_TEMPLATE } from '@/db';
+import Skeleton from '@/components/Skeleton.vue';
 import { auth } from '@/auth';
 import { buildWorkoutFromTemplate } from '@/utils/templateSession';
 
@@ -163,6 +176,7 @@ const showAddTemplateModal = ref(false);
 const saving = ref(false);
 /** Set while the modal is editing an existing row; null while creating one. */
 const editingId = ref<number | null>(null);
+const loadingTemplates = ref(true);
 const duplicatingId = ref<number | null>(null);
 /** Exercise lists for every gym template, so the list can show what's in them. */
 const exercisesByTemplate = ref<Record<number, WorkoutTemplateExercise[]>>({});
@@ -298,6 +312,8 @@ async function loadTemplates() {
     console.error('Failed to load templates', e);
     message.error("Couldn't load templates. Check your connection and refresh.");
     return;
+  } finally {
+    loadingTemplates.value = false;
   }
   // One query for every template's exercises rather than one per row. Failing
   // here only costs the exercise preview, so the list still renders.
@@ -468,6 +484,21 @@ onMounted(loadTemplates);
 @media (max-width: 768px) { .templates-content { padding: 16px 16px 32px; } }
 
 .page-title { margin: 0; }
+
+.tpl-skeletons {
+  width: 100%;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+.tpl-skeleton-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 16px 20px;
+}
+.tpl-skeleton-row + .tpl-skeleton-row { border-top: 1px solid var(--border-color); }
+.tpl-skeleton-main { flex: 1; display: flex; flex-direction: column; gap: 8px; }
 .hint { font-size: 0.82rem; color: var(--text-muted); margin: 0 0 18px; line-height: 1.5; }
 
 .tpl-kind {
