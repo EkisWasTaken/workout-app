@@ -308,6 +308,45 @@ a { color: var(--primary-color); text-decoration: none; }
   box-shadow: var(--shadow-card);
 }
 
+/* ── Board layout ───────────────────────────────────────────────────────────
+ *
+ * A wide screen turns a column of cards into a board. Most of these pages were
+ * authored as one stack capped at a readable measure, which is right for prose
+ * and wrong for panels — on a laptop it left two thirds of the window empty and
+ * pushed everything below the fold.
+ *
+ * Below the breakpoint nothing applies: the grid collapses to one column and
+ * the page is exactly the stack it always was, in source order. So the mobile
+ * layout is not a separate design to keep in step, it is the absence of this
+ * one — which is also why source order still has to read correctly top to
+ * bottom.
+ *
+ * `align-items: start` matters: without it a short card stretches to its row's
+ * tallest neighbour and the board reads as a table of mismatched boxes.
+ */
+.board {
+  display: grid;
+  gap: 18px;
+  align-items: start;
+  width: 100%;
+  min-width: 0;
+}
+
+/* A column of its own, for cards that belong together and whose heights should
+   not be locked to whatever sits beside them. */
+.board-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  min-width: 0;
+}
+
+@media (min-width: 1080px) {
+  .board { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  /* Anything too wide to halve: tables, calendars, a row of numbers. */
+  .board > .board-wide { grid-column: 1 / -1; }
+}
+
 /* Naive UI light-touch overrides (theme.ts handles most colours) */
 .n-card {
   background-color: var(--surface-color) !important;

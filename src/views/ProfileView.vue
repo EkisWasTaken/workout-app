@@ -30,7 +30,94 @@
 				</div>
 			</div>
 
-			<n-space vertical size="large" style="width: 100%">
+			<!-- Your own numbers on the left, the app's settings on the right. In
+			     source order — which is what a phone gets — that reads You, Body
+			     stats, Heart rate, Account, Appearance. -->
+			<div class="board">
+				<div class="board-stack">
+				<n-card bordered class="settings-card">
+					<template #header><span class="card-title">You</span></template>
+					<n-form-item label="Name">
+						<n-input v-model:value="form.userName" placeholder="What should we call you?" />
+					</n-form-item>
+					<n-form-item label="Goal body weight (kg)">
+						<n-input v-model:value="form.goalWeight" placeholder="optional, e.g. 75.5" />
+					</n-form-item>
+					<p class="card-hint tight">
+						With a goal weight, the Body tab tracks whether your trend is heading toward it and
+						roughly when you'll get there.
+					</p>
+					<n-button @click="savePrefs" type="primary" :loading="saving">Save</n-button>
+				</n-card>
+
+				<!-- Split out of "You": three unrelated things in one card is why that
+				     card was a thousand pixels tall and its neighbour was empty. Every
+				     Save here writes the whole profile — they edit one form. -->
+				<n-card bordered class="settings-card">
+					<template #header><span class="card-title">Body stats</span></template>
+					<p class="card-hint">
+						What the fuel planner needs to turn that goal weight into daily calories. Resting
+						metabolism depends on height, age and sex as well as weight, so without these it
+						would be guessing at an average person who doesn't exist.
+					</p>
+					<div class="hr-row">
+						<n-form-item label="Height (cm)">
+							<n-input v-model:value="form.heightCm" placeholder="e.g. 183" />
+						</n-form-item>
+						<n-form-item label="Year of birth">
+							<n-input v-model:value="form.birthYear" :placeholder="`e.g. ${thisYear - 30}`" />
+						</n-form-item>
+					</div>
+					<div class="hr-row">
+						<n-form-item label="Sex">
+							<n-select v-model:value="form.sex" :options="SEX_OPTIONS" clearable placeholder="Not set" />
+						</n-form-item>
+						<n-form-item label="Day outside training">
+							<n-select v-model:value="form.activityLevel" :options="ACTIVITY_OPTIONS" clearable
+								placeholder="Desk job, little walking" />
+						</n-form-item>
+					</div>
+					<p class="card-hint tight">
+						<strong>Sex</strong> is a term in the metabolic equation and nothing more — leave it
+						empty and the planner stays shut rather than guessing.
+						<strong>Day outside training</strong> covers your job and errands only: every session
+						on your schedule is counted separately, so picking "very active" here would count
+						your training twice.
+						<template v-if="bodyStats">
+							Right now that works out to a resting rate of about
+							<strong>{{ restingRate }}</strong> kcal a day<template v-if="baselineRate">, or
+							<strong>{{ baselineRate }}</strong> on a day with no training</template>.
+						</template>
+					</p>
+					<n-button @click="savePrefs" type="primary" :loading="saving">Save</n-button>
+				</n-card>
+				</div>
+
+				<div class="board-stack">
+				<!-- Split out of "You", and grouped with the account cards so both
+				     columns come out near the same height. -->
+				<n-card bordered class="settings-card">
+					<template #header><span class="card-title">Heart rate</span></template>
+					<p class="card-hint">
+						Heart-rate zones, training load and "pace at heart rate" are all measured against
+						these two numbers, so it's worth getting them right.
+					</p>
+					<div class="hr-row">
+						<n-form-item label="Resting (bpm)">
+							<n-input v-model:value="form.restingHR" placeholder="e.g. 55" />
+						</n-form-item>
+						<n-form-item label="Maximum (bpm)">
+							<n-input v-model:value="form.maxHR" :placeholder="inferredMaxHR ? `${inferredMaxHR} from your recordings` : 'e.g. 190'" />
+						</n-form-item>
+					</div>
+					<p class="card-hint tight">
+						<strong>Resting:</strong> your pulse lying still just after waking.
+						<strong>Maximum:</strong> the highest you've seen in an all-out effort. Leave it empty and
+						we'll use the highest value in your recordings<template v-if="inferredMaxHR"> (currently {{ inferredMaxHR }} bpm)</template>.
+					</p>
+					<n-button @click="savePrefs" type="primary" :loading="saving">Save</n-button>
+				</n-card>
+
 				<!-- Account -->
 				<n-card bordered class="settings-card">
 					<template #header><span class="card-title">Account</span></template>
@@ -71,85 +158,19 @@
 						</div>
 					</div>
 				</n-card>
-
-				<!-- About you: applies to everyone, whatever they train -->
-				<n-card bordered class="settings-card">
-					<template #header><span class="card-title">You</span></template>
-					<n-space vertical>
-						<n-form-item label="Name">
-							<n-input v-model:value="form.userName" placeholder="What should we call you?" />
-						</n-form-item>
-						<n-form-item label="Goal body weight (kg)">
-							<n-input v-model:value="form.goalWeight" placeholder="optional, e.g. 75.5" />
-						</n-form-item>
-						<p class="card-hint tight">
-							With a goal weight, the Body tab tracks whether your trend is heading toward it and
-							roughly when you'll get there.
-						</p>
-
-						<div class="sub-head">Body stats</div>
-						<p class="card-hint tight">
-							What the fuel planner needs to turn that goal weight into daily calories. Resting
-							metabolism depends on height, age and sex as well as weight, so without these it
-							would be guessing at an average person who doesn't exist.
-						</p>
-						<div class="hr-row">
-							<n-form-item label="Height (cm)">
-								<n-input v-model:value="form.heightCm" placeholder="e.g. 183" />
-							</n-form-item>
-							<n-form-item label="Year of birth">
-								<n-input v-model:value="form.birthYear" :placeholder="`e.g. ${thisYear - 30}`" />
-							</n-form-item>
-						</div>
-						<div class="hr-row">
-							<n-form-item label="Sex">
-								<n-select v-model:value="form.sex" :options="SEX_OPTIONS" clearable placeholder="Not set" />
-							</n-form-item>
-							<n-form-item label="Day outside training">
-								<n-select v-model:value="form.activityLevel" :options="ACTIVITY_OPTIONS" clearable
-									placeholder="Desk job, little walking" />
-							</n-form-item>
-						</div>
-						<p class="card-hint tight">
-							<strong>Sex</strong> is a term in the metabolic equation and nothing more — leave it
-							empty and the planner stays shut rather than guessing.
-							<strong>Day outside training</strong> covers your job and errands only: every session
-							on your schedule is counted separately, so picking "very active" here would count
-							your training twice.
-							<template v-if="bodyStats">
-								Right now that works out to a resting rate of about
-								<strong>{{ restingRate }}</strong> kcal a day<template v-if="baselineRate">, or
-								<strong>{{ baselineRate }}</strong> on a day with no training</template>.
-							</template>
-						</p>
-
-						<div class="sub-head">Heart rate</div>
-						<p class="card-hint tight">
-							Heart-rate zones, training load and "pace at heart rate" are all measured against
-							these two numbers, so it's worth getting them right.
-						</p>
-						<div class="hr-row">
-							<n-form-item label="Resting (bpm)">
-								<n-input v-model:value="form.restingHR" placeholder="e.g. 55" />
-							</n-form-item>
-							<n-form-item label="Maximum (bpm)">
-								<n-input v-model:value="form.maxHR" :placeholder="inferredMaxHR ? `${inferredMaxHR} from your recordings` : 'e.g. 190'" />
-							</n-form-item>
-						</div>
-						<p class="card-hint tight">
-							<strong>Resting:</strong> your pulse lying still just after waking.
-							<strong>Maximum:</strong> the highest you've seen in an all-out effort. Leave it empty and
-							we'll use the highest value in your recordings<template v-if="inferredMaxHR"> (currently {{ inferredMaxHR }} bpm)</template>.
-						</p>
-						<n-button @click="savePrefs" type="primary" :loading="saving">Save</n-button>
-					</n-space>
-				</n-card>
-
-				<div class="section-divider">
-					<span>Running</span>
-					<p>Goal times, training paces and races. Skip this if you don't run.</p>
 				</div>
+			</div>
 
+			<div class="section-divider">
+				<span>Running</span>
+				<p>Goal times, training paces and races. Skip this if you don't run.</p>
+			</div>
+
+			<!-- Fitness pairs with the paces it produces; goals pair with the paces
+			     they demand. Two stacks rather than a plain grid, so a short card
+			     never locks its row to a tall neighbour. -->
+			<div class="board">
+				<div class="board-stack">
 				<!-- Running fitness -->
 				<n-card bordered class="settings-card">
 					<template #header><span class="card-title">Running fitness (VDOT)</span></template>
@@ -173,6 +194,38 @@
 					<n-button @click="savePrefs" :loading="saving">Save</n-button>
 				</n-card>
 
+				<!-- Training paces, from current fitness -->
+				<n-card v-if="currentVdot !== null" bordered class="settings-card">
+					<template #header>
+						<span class="card-title">Training paces</span>
+						<span class="card-badge">VDOT {{ currentVdot }}</span>
+					</template>
+					<p class="card-hint">
+						From your <strong>current fitness</strong>, not your goal — these are the paces
+						your body can absorb today. Every easy, threshold and VO₂ session on the schedule
+						shows the pace from this table, recalculated as your fitness changes.
+					</p>
+					<div class="pace-table">
+						<div v-for="z in paces" :key="z.key" class="pace-row">
+							<span class="pace-zone">{{ z.label }}</span>
+							<span class="pace-val mono">{{ fmtPaceRange(z) }}<span class="pace-unit">/km</span></span>
+						</div>
+					</div>
+
+					<div class="equiv">
+						<span class="equiv-title">What you could race today</span>
+						<div class="equiv-row">
+							<div v-for="(secs, key) in equivalents" :key="key" class="equiv-cell">
+								<span class="equiv-lbl">{{ DISTANCE_LABELS[key] }}</span>
+								<span class="equiv-val mono">{{ fmtTime(secs) }}</span>
+							</div>
+						</div>
+					</div>
+				</n-card>
+
+				</div>
+
+				<div class="board-stack">
 				<!-- Distance goals -->
 				<n-card bordered class="settings-card">
 					<template #header><span class="card-title">Goal times</span></template>
@@ -220,35 +273,6 @@
 					</div>
 				</n-card>
 
-				<!-- Training paces, from current fitness -->
-				<n-card v-if="currentVdot !== null" bordered class="settings-card">
-					<template #header>
-						<span class="card-title">Training paces</span>
-						<span class="card-badge">VDOT {{ currentVdot }}</span>
-					</template>
-					<p class="card-hint">
-						From your <strong>current fitness</strong>, not your goal — these are the paces
-						your body can absorb today. Every easy, threshold and VO₂ session on the schedule
-						shows the pace from this table, recalculated as your fitness changes.
-					</p>
-					<div class="pace-table">
-						<div v-for="z in paces" :key="z.key" class="pace-row">
-							<span class="pace-zone">{{ z.label }}</span>
-							<span class="pace-val mono">{{ fmtPaceRange(z) }}<span class="pace-unit">/km</span></span>
-						</div>
-					</div>
-
-					<div class="equiv">
-						<span class="equiv-title">What you could race today</span>
-						<div class="equiv-row">
-							<div v-for="(secs, key) in equivalents" :key="key" class="equiv-cell">
-								<span class="equiv-lbl">{{ DISTANCE_LABELS[key] }}</span>
-								<span class="equiv-val mono">{{ fmtTime(secs) }}</span>
-							</div>
-						</div>
-					</div>
-				</n-card>
-
 				<!-- Race pace for every goal -->
 				<n-card v-if="goalPaceRows.length" bordered class="settings-card">
 					<template #header><span class="card-title">Goal race paces</span></template>
@@ -278,8 +302,11 @@
 					</p>
 				</n-card>
 
-				<!-- Race goals -->
-				<n-card bordered class="settings-card">
+				</div>
+
+				<!-- Full width: a row per race, each carrying a date, distance, goal,
+				     result and terrain. Halved, it wraps into unreadable stacks. -->
+				<n-card bordered class="settings-card board-wide">
 					<template #header><span class="card-title">Races</span></template>
 					<p class="card-hint">
 						Log what you actually ran in the <em>Result</em> field. A race is a maximal
@@ -342,14 +369,14 @@
 					</div>
 					<div v-else class="status-text">No races yet. Add one above and it shows as a countdown across the app.</div>
 				</n-card>
-			</n-space>
+			</div>
 		</div>
 	</div>
 </template>
 
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted } from 'vue'
-import { NCard, NSpace, NInput, NButton, NFormItem, NSelect, useMessage, NIcon } from 'naive-ui'
+import { NCard, NInput, NButton, NFormItem, NSelect, useMessage, NIcon } from 'naive-ui'
 import { FlagOutline, MoonOutline, SunnyOutline, WarningOutline } from '@vicons/ionicons5'
 import { db, MISSING_GOALS_COLUMNS } from '@/db'
 import {
@@ -726,7 +753,13 @@ onMounted(async () => {
 
 <style scoped>
 .profile-view-wrapper { width: 100%; min-height: 100%; }
-.profile-content { padding: 24px 28px 40px; max-width: 760px; margin: 0 auto; width: 100%; box-sizing: border-box; }
+/* 760px was a reading measure, and this page is panels rather than prose — on
+   a laptop it left two thirds of the window empty and pushed the running half
+   below the fold. Wide enough for two columns of cards, still capped so the
+   rows never become a tracking exercise on an ultrawide. */
+.profile-content { padding: 24px 28px 40px; max-width: 1180px; margin: 0 auto; width: 100%; box-sizing: border-box; }
+.profile-content > .board + .section-divider { margin-top: 26px; }
+.profile-content > .board { margin-bottom: 18px; }
 @media (max-width: 768px) { .profile-content { padding: 16px 16px 32px; } }
 
 .page-title { margin-bottom: 20px; }

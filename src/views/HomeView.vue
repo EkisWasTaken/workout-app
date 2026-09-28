@@ -486,6 +486,10 @@ watch(completed, () => { if (tab.value === 'today') buildTodayCharts() })
 
 		<!-- ─── Today ─────────────────────────────────────────────────────── -->
 		<template v-if="tab === 'today'">
+			<!-- Today beside the race: both answer "where do I stand right now", and
+			     neither is wide enough to earn a full row on a laptop. -->
+			<div class="board">
+			<div class="board-stack">
 			<section class="panel today-card">
 				<div class="today-head">
 					<h2>Today</h2>
@@ -573,39 +577,6 @@ watch(completed, () => { if (tab.value === 'today') buildTodayCharts() })
 				/>
 			</section>
 
-			<section v-if="nextRace" class="hero" :class="{ urgent: nextRaceDays !== null && nextRaceDays <= 14 }">
-				<div class="hero-left">
-					<span class="hero-kicker"><n-icon :component="FlagOutline" /> Next race</span>
-					<h2 class="hero-race">{{ nextRace.name }}</h2>
-					<p class="hero-sub">{{ formatRaceDate(nextRace.date) }}</p>
-					<div v-if="goalRaceSecs !== null" class="hero-chips">
-						<span class="hero-chip"><span class="hc-lbl">Goal</span><span class="mono">{{ fmtTime(goalRaceSecs) }}</span></span>
-					</div>
-				</div>
-				<div class="hero-count">
-					<span class="hero-days mono">{{ nextRaceDays }}</span>
-					<span class="hero-days-lbl">days to go</span>
-					<span class="hero-weeks">{{ Math.ceil((nextRaceDays || 0) / 7) }} weeks</span>
-				</div>
-			</section>
-
-			<RacePlanCard
-				v-if="nextRace && nextRace.distance_km && nextRaceDays !== null"
-				:race="nextRace"
-				:current-vdot="currentVdot"
-				:days-out="nextRaceDays"
-			/>
-
-			<div v-if="recentPRs.length" class="pr-banner">
-				<span class="pr-banner-ico"><n-icon :component="TrophyOutline" /></span>
-				<span v-for="p in recentPRs" :key="p" class="pr-banner-chip">{{ p }}</span>
-			</div>
-
-			<div v-if="ramp.verdict === 'sharp'" class="stat-banner warn">
-				<n-icon :component="WarningOutline" />
-				<span>{{ ramp.message }}</span>
-			</div>
-
 			<section class="panel week-panel">
 				<div class="panel-head">
 					<h2>This week</h2>
@@ -671,6 +642,44 @@ watch(completed, () => { if (tab.value === 'today') buildTodayCharts() })
 					title="Last week"
 				/>
 			</section>
+
+			</div>
+
+			<div class="board-stack">
+			<section v-if="nextRace" class="hero" :class="{ urgent: nextRaceDays !== null && nextRaceDays <= 14 }">
+				<div class="hero-left">
+					<span class="hero-kicker"><n-icon :component="FlagOutline" /> Next race</span>
+					<h2 class="hero-race">{{ nextRace.name }}</h2>
+					<p class="hero-sub">{{ formatRaceDate(nextRace.date) }}</p>
+					<div v-if="goalRaceSecs !== null" class="hero-chips">
+						<span class="hero-chip"><span class="hc-lbl">Goal</span><span class="mono">{{ fmtTime(goalRaceSecs) }}</span></span>
+					</div>
+				</div>
+				<div class="hero-count">
+					<span class="hero-days mono">{{ nextRaceDays }}</span>
+					<span class="hero-days-lbl">days to go</span>
+					<span class="hero-weeks">{{ Math.ceil((nextRaceDays || 0) / 7) }} weeks</span>
+				</div>
+			</section>
+
+			<RacePlanCard
+				v-if="nextRace && nextRace.distance_km && nextRaceDays !== null"
+				:race="nextRace"
+				:current-vdot="currentVdot"
+				:days-out="nextRaceDays"
+			/>
+			</div>
+			</div>
+
+			<div v-if="recentPRs.length" class="pr-banner">
+				<span class="pr-banner-ico"><n-icon :component="TrophyOutline" /></span>
+				<span v-for="p in recentPRs" :key="p" class="pr-banner-chip">{{ p }}</span>
+			</div>
+
+			<div v-if="ramp.verdict === 'sharp'" class="stat-banner warn">
+				<n-icon :component="WarningOutline" />
+				<span>{{ ramp.message }}</span>
+			</div>
 
 			<template v-if="completed.length">
 				<SectionHead title="Consistency" note="every session, last 12 months" />
@@ -742,7 +751,7 @@ watch(completed, () => { if (tab.value === 'today') buildTodayCharts() })
 </template>
 
 <style scoped>
-.home-view { padding: 24px 28px 48px; max-width: 1120px; margin: 0 auto; width: 100%; box-sizing: border-box; }
+.home-view { padding: 24px 28px 48px; max-width: 1280px; margin: 0 auto; width: 100%; box-sizing: border-box; }
 @media (max-width: 768px) { .home-view { padding: 16px 16px 36px; } }
 
 .home-header {
@@ -823,7 +832,11 @@ watch(completed, () => { if (tab.value === 'today') buildTodayCharts() })
 }
 
 /* Today */
-.today-card { padding: 22px 24px; margin-bottom: 16px; }
+.today-card { padding: 22px 24px; }
+/* The board's gap owns the spacing between its children, so their own bottom
+   margins would add to it and break the rhythm. */
+.board { margin-bottom: 16px; }
+.board-stack > .hero, .board > .week-panel { margin-bottom: 0; }
 .today-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
 .today-head h2 { font-size: 1rem; font-weight: 600; font-family: var(--font-family); margin: 0; }
 .today-status { font-size: 0.74rem; font-weight: 600; padding: 3px 10px; border-radius: 999px; }
