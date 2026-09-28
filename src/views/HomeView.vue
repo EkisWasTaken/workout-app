@@ -45,6 +45,9 @@ import {
 	raceGoals, ramp, recentActivities, sportOf, sportTabs, syncClock, today, workouts,
 } from '@/stats'
 import { weekReview } from '@/utils/weekReview'
+import { useFuelPlan } from '@/fuel'
+import FuelDayCard from '@/components/FuelDayCard.vue'
+import WeekFuelReview from '@/components/WeekFuelReview.vue'
 import type { Workout } from '@/types'
 
 const route = useRoute()
@@ -283,6 +286,26 @@ const review = computed(() => weekReview({
 		})),
 }))
 
+/**
+ * Fuelling: today's calorie target, and how last week's actually went.
+ *
+ * Built from the same store the schedule uses, so the number on a calendar cell
+ * and the number here can never disagree — they're the same lookup.
+ */
+const nextRaceDate = computed<string | null>(() =>
+	raceGoals.value
+		.filter(g => g.date >= todayStr.value)
+		.sort((a, b) => a.date.localeCompare(b.date))[0]?.date ?? null)
+
+const fuel = useFuelPlan({
+	workouts,
+	dailyWeights,
+	sportOf,
+	kmOf,
+	goalDate: nextRaceDate,
+	today,
+})
+
 /** Where this week's effort sits inside the usual band, as a 0–100 position. */
 const effortBarPct = computed(() => {
 	const r = review.value
@@ -470,6 +493,16 @@ watch(completed, () => { if (tab.value === 'today') buildTodayCharts() })
 					<span v-else-if="todayState === 'rest'" class="today-status rest">Rest day</span>
 				</div>
 
+				<!-- Fuel sits inside Today because that is the question it answers:
+				     not "how is the block going" but "what do I eat now". -->
+				<FuelDayCard
+					v-if="loaded"
+					class="today-fuel"
+					:day="fuel.todayFuel.value"
+					:blocked="fuel.blocked.value"
+					label="Today"
+				/>
+
 				<p v-if="todayState === 'rest'" class="today-note">Rest day on the plan. Recovery is training.</p>
 				<div v-else-if="todayState === 'empty'" class="today-empty">
 					<p class="today-note">Nothing planned for today.</p>
@@ -626,6 +659,17 @@ watch(completed, () => { if (tab.value === 'today') buildTodayCharts() })
 						</div>
 					</router-link>
 				</div>
+			</section>
+
+			<!-- Last week, graded. Weight and training together, because a shallow
+			     deficit is usually a missed long run rather than a dietary failure. -->
+			<section v-if="loaded && (fuel.lastWeek.value || fuel.blocked.value)" class="panel">
+				<WeekFuelReview
+					:review="fuel.lastWeek.value"
+					:trend="fuel.trend.value"
+					:blocked="fuel.blocked.value"
+					title="Last week"
+				/>
 			</section>
 
 			<template v-if="completed.length">
@@ -925,6 +969,8 @@ watch(completed, () => { if (tab.value === 'today') buildTodayCharts() })
 .week-count { font-size: 0.76rem; color: var(--text-muted); }
 .text-link { margin-left: auto; font-size: 0.8rem; color: var(--primary-color); }
 .text-link:hover { text-decoration: underline; }
+
+.today-fuel { margin-bottom: 14px; }
 
 .week-strip { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; }
 .day-col { display: flex; flex-direction: column; align-items: center; gap: 6px; text-decoration: none; }

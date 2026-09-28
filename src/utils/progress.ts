@@ -1089,7 +1089,7 @@ export interface BodyProgress extends SportProgress {
 export const WEIGHT_TAU_DAYS = 7
 
 /** A trend value is only trusted this many days past its last weigh-in. */
-const WEIGHT_STALE_DAYS = 10
+export const WEIGHT_STALE_DAYS = 10
 
 /** Under this much change over four weeks, weight is holding (0.1 kg a week). */
 export const WEIGHT_BAND_KG = 0.4
@@ -1106,6 +1106,25 @@ const dayGap = (a: string, b: string) => (parseISO(b).getTime() - parseISO(a).ge
  * passed since the last one, so the trend means the same thing however often
  * you step on the scale.
  */
+/**
+ * Trend weight as of a given day, or null when no weigh-in landed near enough
+ * to it to say.
+ *
+ * "Near enough" is the caller's call: a month-on-month comparison can tolerate
+ * a reading a week and a half old, while judging one week's weight change
+ * against a reading from the week before would be measuring nothing at all.
+ */
+export function trendWeightAt(
+	smoothed: { date: string; weight: number }[],
+	dateISO: string,
+	staleDays = WEIGHT_STALE_DAYS,
+): number | null {
+	const upto = smoothed.filter(s => s.date <= dateISO)
+	const last = upto[upto.length - 1]
+	if (!last || dayGap(last.date, dateISO) > staleDays) return null
+	return last.weight
+}
+
 export function weightTrend(sorted: WeighIn[]): { date: string; weight: number }[] {
 	const out: { date: string; weight: number }[] = []
 	let trend: number | null = null
@@ -1151,13 +1170,7 @@ export function bodyProgress(weights: WeighIn[], goalWeight: number | null, toda
 	const todayStr = format(today, 'yyyy-MM-dd')
 
 	/** Trend weight as of a day — only if there was a weigh-in shortly before it. */
-	const at = (when: Date): number | null => {
-		const cutoff = format(when, 'yyyy-MM-dd')
-		const upto = smoothed.filter(s => s.date <= cutoff)
-		const lastPt = upto[upto.length - 1]
-		if (!lastPt || dayGap(lastPt.date, cutoff) > WEIGHT_STALE_DAYS) return null
-		return lastPt.weight
-	}
+	const at = (when: Date): number | null => trendWeightAt(smoothed, format(when, 'yyyy-MM-dd'))
 
 	const lastPt = smoothed[smoothed.length - 1] ?? null
 	const daysSinceLast = lastPt ? Math.round(dayGap(lastPt.date, todayStr)) : null

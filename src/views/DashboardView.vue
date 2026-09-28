@@ -61,10 +61,26 @@
           <span v-if="weekSummary.km" class="wvs-item"><strong class="mono">{{ fmtKm(weekSummary.km) }}</strong> km planned</span>
           <span v-if="weekSummary.gym" class="wvs-item"><strong class="mono">{{ weekSummary.gym }}</strong> gym</span>
           <span v-if="weekSummary.done" class="wvs-item wvs-done"><strong class="mono">{{ weekSummary.done }}</strong> done</span>
+          <span v-if="weekFuel" class="wvs-item wvs-fuel"
+            :title="`Training costs about ${weekFuel.trainingKcal.toLocaleString()} kcal this week, on top of ${weekFuel.baselineKcal.toLocaleString()} a day`">
+            <n-icon :component="FlameOutline" />
+            <strong class="mono">{{ Math.round(weekFuel.intakeKcal / 7).toLocaleString() }}</strong> kcal/day
+          </span>
           <span v-if="weekSummary.deltaLabel" class="wvs-delta" :class="weekSummary.deltaClass"
             title="Against the week before. A jump of more than about 10% is where injuries come from.">
             {{ weekSummary.deltaLabel }}
           </span>
+        </div>
+
+        <!-- How the week went. On the current week it is a progress report;
+             on a past one it is the verdict, which is when it matters most. -->
+        <div v-if="viewMode === 'week' && (weekFuelReview || fuel.blocked.value)" class="wv-review">
+          <WeekFuelReview
+            :review="weekFuelReview"
+            :trend="isCurrentWeek ? null : fuel.trend.value"
+            :blocked="fuel.blocked.value"
+            :title="isCurrentWeek ? 'This week so far' : 'Week in review'"
+          />
         </div>
 
         <!-- WEEK VIEW: full session details for the week at a glance -->
@@ -79,6 +95,10 @@
               <span class="wv-dow">{{ day.dow }}</span>
               <span class="wv-datenum">{{ day.dayNum }}</span>
               <span v-for="goal in day.raceGoals" :key="goal.id" class="wv-race"><n-icon :component="FlagOutline" /> {{ goal.name }}</span>
+              <!-- Calories lead: the macros are in the tooltip and the planner. -->
+              <span v-if="fuelKcal(day.key)" class="wv-fuel mono" :title="fuelTitle(day.key)">
+                <n-icon :component="FlameOutline" />{{ fuelKcal(day.key)!.toLocaleString() }}
+              </span>
               <button class="wv-add" @click="openAddWorkoutModal(day.date)" aria-label="Add workout"><n-icon :component="AddOutline" /></button>
             </div>
             <p v-if="day.workouts.length === 0" class="wv-restday">Nothing planned</p>
@@ -133,8 +153,15 @@
                @dragenter.prevent="onDragEnter(day.date)"
                @dragleave="onDragLeave(day.date)"
                @drop="onDrop($event, day.date)">
-            <!-- Fixed-height head so every cell's chips start on one baseline. -->
-            <div class="day-head"><span class="day-number">{{ day.dayOfMonth }}</span></div>
+            <!-- Fixed-height head so every cell's chips start on one baseline.
+                 The day's calorie target rides in it rather than costing a chip
+                 row — it belongs to the day, not to a session on it. -->
+            <div class="day-head">
+              <span class="day-number">{{ day.dayOfMonth }}</span>
+              <span v-if="fuelKcal(day.key)" class="day-fuel mono" :title="fuelTitle(day.key)">
+                {{ fuelKcal(day.key)!.toLocaleString() }}
+              </span>
+            </div>
 
             <div class="events">
               <div v-for="goal in day.showRaces" :key="'r' + goal.id" class="chip race" :title="goal.name">
@@ -601,7 +628,8 @@
         v-model:show="showFuelPlan"
         :sessions="fuelSessions"
         :source-label="fuelSource"
-        :current-weight-kg="trendWeightKg"
+        :current-weight-kg="fuel.currentWeightKg.value"
+        :end-date="fuel.goalDate.value"
       />
 
       <PhotoEditor
@@ -668,8 +696,9 @@ import ImportEditor from '../components/ImportEditor.vue';
 import ImportActivitiesModal from '../components/ImportActivitiesModal.vue';
 import BuildPlanModal from '../components/BuildPlanModal.vue';
 import FuelPlanModal from '../components/FuelPlanModal.vue';
+import WeekFuelReview from '../components/WeekFuelReview.vue';
 import { energySport, type EnergySession } from '@/utils/energy';
-import { weightTrend } from '@/utils/progress';
+import { useFuelPlan } from '@/fuel';
 import PhotoEditor from '../components/PhotoEditor.vue';
 import { loadPhotos, photos, photosError } from '@/photos';
 import { dueLabel, framesFor, nextPhotoDue, POSES, type Pose } from '@/utils/progressPhotos';
@@ -680,7 +709,7 @@ import { currentVdot, hydrateFitness, refreshFitness, setActivities, setWorkouts
 import { sessionPace, type SessionPace } from '@/utils/paceAdvice';
 import { TARGET_ZONES, isFreeformTarget, zoneOptionFor } from '@/utils/targetZones';
 import { canonicalWorkoutType, noteSteps, type SportType } from '@/utils/workouts';
-import { buildActivityIndex, effectiveWorkoutType, toActivityId } from '@/utils/workoutSport';
+import { buildActivityIndex, effectiveDistanceKm, effectiveWorkoutType, toActivityId } from '@/utils/workoutSport';
 
 const isActionLoading = ref(false);
 const message = useMessage();
@@ -804,18 +833,6 @@ const scheduledEnergySessions = computed<EnergySession[]>(() => {
 const fuelSessions = computed(() => previewedFuelSessions.value ?? scheduledEnergySessions.value);
 const fuelSource = computed(() =>
   previewedFuelSessions.value ? 'the plan you just built' : 'your schedule');
-
-/**
- * Trend weight, not the last reading — a single morning moves a kilo on
- * hydration alone, and a plan built on a bad Tuesday prescribes a bad week.
- * The Home store computes the same thing, but this page never loads it.
- */
-const trendWeightKg = computed<number | null>(() => {
-  const sorted = [...dailyWeights.value]
-    .filter(w => w.weight > 0)
-    .sort((a, b) => a.date.localeCompare(b.date));
-  return weightTrend(sorted).pop()?.weight ?? null;
-});
 
 function openFuelPlan() {
   previewedFuelSessions.value = null;
@@ -1622,6 +1639,7 @@ const days = computed(() => {
     const dow = date.getDay();
     return {
       date,
+      key: formattedDate,
       dayOfMonth: getDate(date),
       isCurrentMonth: date.getMonth() === currentMonth.value.getMonth(),
       isToday: formattedDate === todayStr,
@@ -1764,6 +1782,17 @@ const dailyWeights = ref<DailyWeight[]>([]);
 const raceGoals = ref<RaceGoal[]>([]);
 
 /**
+ * The next race, which is the date the fuel plan aims its goal weight at.
+ * Arriving at race weight two months after the race is not arriving at all.
+ */
+const nextRaceDate = computed<string | null>(() => {
+  const todayStr = format(new Date(), 'yyyy-MM-dd');
+  return raceGoals.value
+    .filter(r => r.date >= todayStr)
+    .sort((a, b) => a.date.localeCompare(b.date))[0]?.date ?? null;
+});
+
+/**
  * Where a workout has a recording behind it, the FIT file's sport wins over the
  * hand-entered `type` column. Replaces a local copy of getWorkoutType that had
  * drifted from the shared one in utils/workouts.ts.
@@ -1777,6 +1806,44 @@ const getWorkoutClass = (workout: Workout) => {
   const completed = workout.isCompleted === 1 ? 'completed' : 'pending';
   return `workout-${type} status-${completed}`;
 };
+
+/**
+ * Daily calorie targets for the calendar.
+ *
+ * Built once into a date-keyed map, so painting a month of cells is a month of
+ * lookups rather than a month of plans. It has to be constructed here, after
+ * `workouts` and `getWorkoutType` exist, because the composable reads them
+ * eagerly — the computeds inside it are lazy, the arguments are not.
+ */
+const fuel = useFuelPlan({
+  workouts,
+  dailyWeights,
+  sportOf: getWorkoutType,
+  kmOf: w => effectiveDistanceKm(w, activityIndex.value),
+  goalDate: nextRaceDate,
+});
+
+/** The kcal figure for one calendar day, or null outside the plan's window. */
+const fuelKcal = (date: string): number | null => fuel.dayFuel(date)?.intakeKcal ?? null;
+
+const fuelTitle = (date: string): string => {
+  const d = fuel.dayFuel(date);
+  if (!d) return '';
+  return `Eat ~${d.intakeKcal.toLocaleString()} kcal · burn ~${d.burnKcal.toLocaleString()} kcal`
+    + ` · ${d.macros.proteinG}P / ${d.macros.carbsG}C / ${d.macros.fatG}F`;
+};
+
+/** The review of whichever week the week view is showing. */
+const weekFuelReview = computed(() =>
+  fuel.reviewWeek(format(startOfWeek(currentWeek.value, { weekStartsOn: 1 }), 'yyyy-MM-dd')));
+
+/** The week view's own week, as the plan laid it out. */
+const weekFuel = computed(() =>
+  fuel.weekTargets.value.get(format(startOfWeek(currentWeek.value, { weekStartsOn: 1 }), 'yyyy-MM-dd')) ?? null);
+
+const isCurrentWeek = computed(() =>
+  format(startOfWeek(currentWeek.value, { weekStartsOn: 1 }), 'yyyy-MM-dd')
+  === format(startOfWeek(new Date(), { weekStartsOn: 1 }), 'yyyy-MM-dd'));
 
 // -- Runna-style card helpers --
 const TYPE_ICONS: Record<string, any> = {
@@ -1915,6 +1982,16 @@ onActivated(loadAll);
 .wvs-delta.up { color: var(--text-secondary); }
 .wvs-delta.up-hard { background: var(--warning-soft); color: var(--warning-color); }
 .wvs-delta.down { color: var(--text-muted); }
+.wvs-fuel { display: inline-flex; align-items: center; gap: 5px; color: var(--primary-color); }
+.wvs-fuel strong { color: var(--primary-color); }
+
+.wv-review {
+  padding: 12px 14px;
+  margin-bottom: 10px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius);
+  background: var(--surface-color);
+}
 
 /* Clear-planned dialog */
 .clear-presets { display: flex; flex-wrap: wrap; gap: 6px; }
@@ -2035,6 +2112,21 @@ onActivated(loadAll);
 .wv-today .wv-dow { color: var(--primary-color); }
 .wv-datenum { font-size: 0.8rem; color: var(--text-muted); }
 .wv-race { display: inline-flex; align-items: center; gap: 4px; font-size: 0.74rem; font-weight: 600; color: var(--danger-color); background: var(--danger-soft); padding: 2px 8px; border-radius: 999px; }
+.wv-fuel {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.76rem;
+  font-weight: 600;
+  color: var(--primary-color);
+  background: var(--primary-soft);
+  padding: 2px 9px;
+  border-radius: 999px;
+  cursor: default;
+}
+/* The add button takes the right edge back once the fuel chip has claimed it. */
+.wv-fuel + .wv-add { margin-left: 0; }
 .wv-add { margin-left: auto; width: 26px; height: 26px; border-radius: var(--radius-sm); border: 1px solid var(--border-color); background: var(--surface-2); color: var(--text-muted); cursor: pointer; display: flex; align-items: center; justify-content: center; opacity: 0; transition: opacity 0.15s, color 0.15s; }
 .wv-day:hover .wv-add { opacity: 1; }
 .wv-add:hover { color: var(--primary-color); border-color: var(--primary-color); }
@@ -2116,6 +2208,21 @@ onActivated(loadAll);
 
 /* A fixed-height head row keeps every cell's chips on the same baseline. */
 .day-head { height: 20px; display: flex; align-items: center; flex-shrink: 0; }
+
+/* The day's calorie target. Quiet by default — it is reference, not an event —
+   and it must never wrap, or the head row's fixed height breaks the grid. */
+.day-fuel {
+  margin-left: auto;
+  font-size: 0.66rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  cursor: default;
+}
+.day-cell:hover .day-fuel { color: var(--primary-color); }
+.is-today .day-fuel { color: var(--primary-color); }
+.not-current-month .day-fuel { opacity: 0.45; }
 .day-number {
   font-size: 0.76rem;
   font-weight: 600;
@@ -2207,7 +2314,10 @@ onActivated(loadAll);
   .cal-body { grid-auto-rows: auto; }
   .day-cell { flex-direction: row; align-items: flex-start; gap: 12px; padding: 10px; overflow: visible; }
   .day-cell.not-current-month { display: none; }
-  .day-head { height: auto; padding-top: 1px; }
+  /* The head becomes a left gutter rather than a top row, so the day's calorie
+     target stacks under the date instead of colliding with it. */
+  .day-head { height: auto; padding-top: 1px; flex-direction: column; align-items: center; gap: 2px; }
+  .day-fuel { margin-left: 0; font-size: 0.6rem; }
   .events { flex: 1; overflow: visible; gap: 4px; }
   .chip { height: 22px; font-size: 0.72rem; }
 }
