@@ -24,6 +24,9 @@
 import { computed, reactive, ref } from 'vue'
 import { clearSportColorCache } from './utils/workouts'
 import { STYLE_KEYS, STYLE_SWITCHES, SCALE_PX, TYPE_PAIRINGS, switchFor } from './uiLabStyles'
+import { modeFor, paletteFor } from './uiLabPalettes'
+import { LOOKS, matchesLook, stylesForLook, type Look } from './uiLabLooks'
+import { refreshThemeFromCss, setPaletteMode } from './theme'
 import './styles/uiLab.css'
 
 const STORAGE_KEY = 'uiLab.overrides.v1'
@@ -294,6 +297,10 @@ export function derivedFrom(name: string, value: string): Record<string, string>
 		out['glow-color'] = `rgba(${triplet}, 0.3)`
 		out['accent-color'] = value
 	}
+	// Naive UI's cards read `--card-background-color`, which app.css keeps as a
+	// separate token. Without this every palette left Naive's own cards and
+	// modals on the shipped charcoal while the rest of the app moved.
+	if (name === 'surface-color') out['card-background-color'] = value
 	if (name === 'primary-fill-hover') out['primary-strong'] = value
 	if (name === 'success-color') out['success-soft'] = `rgba(${triplet}, 0.12)`
 	if (name === 'warning-color') out['warning-soft'] = `rgba(${triplet}, 0.12)`
@@ -354,6 +361,23 @@ function applyStyles() {
 	root.style.fontSize = !scale || scale === 16 ? '' : `${scale}px`
 }
 
+/**
+ * Light or dark, from whichever palette is applied.
+ *
+ * It reaches two places a custom property can't: `color-scheme`, which decides
+ * what the browser paints for form controls and scrollbars, and Naive UI, whose
+ * components carry their own compiled palette and would otherwise render a dark
+ * dropdown over a white page.
+ */
+function applyMode() {
+	if (typeof document === 'undefined') return
+	const mode = modeFor(activePalette.value)
+	const root = document.documentElement
+	if (mode === 'light') root.setAttribute('data-ui-mode', 'light')
+	else root.removeAttribute('data-ui-mode')
+	setPaletteMode(mode)
+}
+
 export function setStyle(key: string, value: string) {
 	const sw = switchFor(key)
 	if (!sw) return
@@ -397,9 +421,15 @@ export function apply() {
 	}
 
 	applyStyles()
+	applyMode()
 
 	// Charts read the palette through getComputedStyle and memoise it.
 	clearSportColorCache()
+	// Naive UI takes its colours as JS values rather than custom properties, so
+	// it has to be told. Before this, changing palette repainted the whole app
+	// except every button, input and modal Naive draws — which is most of the
+	// dialogs — and they sat there in the shipped violet.
+	refreshThemeFromCss()
 }
 
 /** Apply a whole palette, replacing any colour tweaks that were on top of it. */
@@ -419,6 +449,51 @@ export function setPalette(key: string | null, values: Record<string, string>) {
 	apply()
 	persist()
 }
+
+/**
+ * Apply a whole look: its palette and every switch at once.
+ *
+ * Switches the look doesn't mention are set to their defaults rather than left
+ * alone, so looks replace one another cleanly instead of accumulating — see
+ * `stylesForLook`. Everything is written before a single `apply()`, so the page
+ * repaints once rather than fifteen times.
+ */
+export function applyLook(look: Look) {
+	const palette = paletteFor(look.palette)?.values
+	if (palette) {
+		const colourNames = new Set(ALL_TOKENS.filter(t => t.kind === 'color').map(t => t.name))
+		for (const name of Object.keys(overrides)) {
+			if (colourNames.has(name)) delete overrides[name]
+		}
+		for (const [name, value] of Object.entries(palette)) {
+			if (colourNames.has(name) && value !== defaultValue(name)) overrides[name] = value
+		}
+		activePalette.value = look.palette
+	}
+
+	for (const [key, value] of Object.entries(stylesForLook(look))) {
+		const sw = switchFor(key)
+		if (!sw) continue
+		if (value === sw.fallback) delete styles[key]
+		else styles[key] = value
+	}
+
+	dirty.value = true
+	apply()
+	persist()
+}
+
+/**
+ * The look currently in force, or null once anything has been tweaked away
+ * from one. Computed rather than stored: a look isn't a mode you're in, it's a
+ * description that either still fits or doesn't.
+ */
+export const activeLook = computed(() => {
+	for (const look of LOOKS) {
+		if (matchesLook(look, activePalette.value, styles)) return look.key
+	}
+	return null
+})
 
 export function setToken(name: string, value: string) {
 	if (value === defaultValue(name)) delete overrides[name]

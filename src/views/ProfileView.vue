@@ -350,17 +350,30 @@ import {
 } from '@/utils/energy'
 import { auth, signOut } from '@/auth'
 import { isOwner, GENERIC_SCHEMA_MESSAGE } from '@/owner'
-import { activePalette, anyChanges, overrideCount as uiLabTokenCount, styleCount as uiLabStyleCount } from '@/uiLab'
+import { activeLook, activePalette, anyChanges, overrideCount as uiLabTokenCount, styleCount as uiLabStyleCount } from '@/uiLab'
 import { PALETTES } from '@/uiLabPalettes'
+import { LOOKS } from '@/uiLabLooks'
 
-/** What the lab is currently set to, for the Appearance card's summary line. */
+/**
+ * What the lab is currently set to, for the Appearance card's summary line.
+ *
+ * A look names itself; otherwise it's the palette plus however many switches
+ * have been moved. Hand-edited colours are counted separately from the palette
+ * that wrote them — a palette writes twenty-odd tokens into the same store, so
+ * totalling them read as "Paper, plus 36 tweaks" when nothing had been tweaked
+ * at all.
+ */
 const uiLabSummary = computed(() => {
 	if (!anyChanges.value) return null
+	const look = LOOKS.find(l => l.key === activeLook.value)
+	if (look) return look.label
+
 	const palette = PALETTES.find(p => p.key === activePalette.value)
-	const tweaks = uiLabStyleCount.value + uiLabTokenCount.value
-	if (palette && tweaks) return `${palette.label}, plus ${tweaks} tweak${tweaks === 1 ? '' : 's'}`
-	if (palette) return palette.label
-	return `${tweaks} tweak${tweaks === 1 ? '' : 's'}`
+	const parts: string[] = []
+	if (palette) parts.push(palette.label)
+	if (uiLabStyleCount.value) parts.push(`${uiLabStyleCount.value} style change${uiLabStyleCount.value === 1 ? '' : 's'}`)
+	if (uiLabTokenCount.value && !palette) parts.push(`${uiLabTokenCount.value} colour${uiLabTokenCount.value === 1 ? '' : 's'}`)
+	return parts.join(', ') || 'custom'
 })
 import {
 	DISTANCES, DISTANCE_LABELS, paceTable, equivalentTimes, vdotFromRace,

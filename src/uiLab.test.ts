@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { ALL_TOKENS, TOKEN_GROUPS, contrast, derivedFrom, grade, luminance, toHex, toRgb } from './uiLab'
-import { GREEN_BAND, PALETTES, buildPalette, fillFor, hslToHex, isGreen } from './uiLabPalettes'
+import { GREEN_BAND, PALETTES, buildPalette, fillFor, hslToHex, isGreen, modeFor } from './uiLabPalettes'
+import { LOOKS, lookProblems, lookSwatches, matchesLook, stylesForLook } from './uiLabLooks'
 import { SCALE_PX, STYLE_SWITCHES, TYPE_PAIRINGS } from './uiLabStyles'
 
 /** Hue in degrees, or null when the value isn't a colour. */
@@ -230,8 +231,21 @@ describe('palettes', () => {
 			const page = luminance(p.values['background-color'])!
 			const card = luminance(p.values['surface-color'])!
 			const inset = luminance(p.values['surface-2'])!
+
+			// A card is lifted off its page in both modes — that part is universal.
 			expect(card, `${p.key}: card vs page`).toBeGreaterThan(page)
-			expect(inset, `${p.key}: inset vs card`).toBeGreaterThan(card)
+
+			// The inset is not. On a dark ground an input is a step *up* toward
+			// the light; on paper it is a step down into the page. What has to
+			// hold either way is that it is clearly not the card.
+			if (p.mode === 'light') expect(inset, `${p.key}: inset vs card`).toBeLessThan(card)
+			else expect(inset, `${p.key}: inset vs card`).toBeGreaterThan(card)
+
+			// Luminance deltas near black are tiny in absolute terms, so the
+			// separation is checked as distinct values rather than a threshold
+			// that would mean something different at each end of the ramp.
+			expect(p.values['surface-2'], `${p.key}: inset equals card`).not.toBe(p.values['surface-color'])
+			expect(p.values['surface-color'], `${p.key}: card equals page`).not.toBe(p.values['background-color'])
 		}
 	})
 
@@ -296,5 +310,94 @@ describe('style switches', () => {
 	it('loads no webfonts for the pairings that need none', () => {
 		expect(TYPE_PAIRINGS.default.google).toEqual([])
 		expect(TYPE_PAIRINGS.neutral.google).toEqual([])
+	})
+})
+
+describe('light palettes', () => {
+	const light = PALETTES.filter(p => p.mode === 'light')
+	const dark = PALETTES.filter(p => p.mode === 'dark')
+
+	it('ships some of each, or the mode is theatre', () => {
+		expect(light.length).toBeGreaterThan(2)
+		expect(dark.length).toBeGreaterThan(2)
+	})
+
+	it('puts the page near white and the text near black', () => {
+		for (const p of light) {
+			expect(luminance(p.values['background-color'])!, `${p.key}: page`).toBeGreaterThan(0.7)
+			expect(luminance(p.values['text-color'])!, `${p.key}: text`).toBeLessThan(0.1)
+		}
+	})
+
+	it('inverts the dark ramp rather than reusing it', () => {
+		for (const p of dark) {
+			expect(luminance(p.values['background-color'])!, `${p.key}: page`).toBeLessThan(0.1)
+			expect(luminance(p.values['text-color'])!, `${p.key}: text`).toBeGreaterThan(0.6)
+		}
+	})
+
+	it('darkens the verdicts and sensors that only work on a black ground', () => {
+		for (const p of light) {
+			for (const name of ['success-color', 'warning-color', 'danger-color', 'color-heartrate']) {
+				const ratio = contrast(p.values[name], p.values['surface-color'])!
+				expect(ratio, `${p.key}: ${name} on card`).toBeGreaterThanOrEqual(4.5)
+			}
+		}
+	})
+
+	it('reports its mode by key, defaulting to dark for anything unknown', () => {
+		expect(modeFor('paper')).toBe('light')
+		expect(modeFor('stock')).toBe('dark')
+		expect(modeFor(null)).toBe('dark')
+		expect(modeFor('no-such-palette')).toBe('dark')
+	})
+})
+
+describe('looks', () => {
+	it('has a unique key each', () => {
+		const keys = LOOKS.map(l => l.key)
+		expect(new Set(keys).size).toBe(keys.length)
+	})
+
+	it('only ever names a palette and switch options that exist', () => {
+		for (const look of LOOKS) expect(lookProblems(look), look.key).toEqual([])
+	})
+
+	it('is more than a repaint — every look but the stock one moves the shape too', () => {
+		for (const look of LOOKS) {
+			if (look.key === 'trainlog') continue
+			expect(Object.keys(look.styles).length, `${look.key} changes no switches`).toBeGreaterThan(4)
+		}
+	})
+
+	it('spells out every switch, so looks replace rather than layer', () => {
+		for (const look of LOOKS) {
+			const styles = stylesForLook(look)
+			for (const sw of STYLE_SWITCHES) expect(styles[sw.key], `${look.key}/${sw.key}`).toBeDefined()
+		}
+	})
+
+	it('recognises itself, and nothing else', () => {
+		for (const look of LOOKS) {
+			const styles = stylesForLook(look)
+			expect(matchesLook(look, look.palette, styles), look.key).toBe(true)
+			expect(matchesLook(look, 'no-such-palette', styles), look.key).toBe(false)
+		}
+	})
+
+	it('stops matching once a single switch is moved off it', () => {
+		const look = LOOKS.find(l => l.key === 'brutalist')!
+		const styles = { ...stylesForLook(look), corners: 'round' }
+		expect(matchesLook(look, look.palette, styles)).toBe(false)
+	})
+
+	it('covers both grounds, so the gallery is not twelve dark themes', () => {
+		const modes = new Set(LOOKS.map(l => modeFor(l.palette)))
+		expect(modes).toContain('dark')
+		expect(modes).toContain('light')
+	})
+
+	it('reaches for a real palette’s swatches for its tile', () => {
+		for (const look of LOOKS) expect(lookSwatches(look), look.key).toHaveLength(5)
 	})
 })

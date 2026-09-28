@@ -18,17 +18,33 @@ import { computed, ref } from 'vue'
 import { NIcon, useMessage } from 'naive-ui'
 import { CheckmarkCircle, CopyOutline, RefreshOutline, ReloadOutline } from '@vicons/ionicons5'
 import {
-	TOKEN_GROUPS, activePalette, anyChanges, contrast, currentValue, defaultValue, exportCss,
-	grade, isOverridden, overrideCount, resetAll, resetToken, setPalette, setStyle, setToken,
-	styleCount, styleValue, toHex, type TokenDef,
+	TOKEN_GROUPS, activeLook, activePalette, anyChanges, applyLook, contrast, currentValue,
+	defaultValue, exportCss, grade, isOverridden, overrideCount, resetAll, resetToken,
+	setPalette, setStyle, setToken, styleCount, styleValue, toHex, type TokenDef,
 } from '@/uiLab'
 import { FAMILIES, PALETTES } from '@/uiLabPalettes'
+import { LOOKS, lookSwatches } from '@/uiLabLooks'
 import { STYLE_SWITCHES } from '@/uiLabStyles'
 
 const message = useMessage()
 const showAdvanced = ref(false)
 const openGroup = ref('')
 const showCss = ref(false)
+
+// ─── looks ────────────────────────────────────────────────────────────────────
+
+/**
+ * How many switches a look moves off their defaults — the honest measure of
+ * how much more it is than a repaint, shown on the tile.
+ */
+const lookDepth = (styles: Record<string, string>) => Object.keys(styles).length
+
+function pickLook(key: string) {
+	const look = LOOKS.find(l => l.key === key)
+	if (!look) return
+	applyLook(look)
+	message.success(`${look.label} applied.`)
+}
 
 // ─── palettes ─────────────────────────────────────────────────────────────────
 
@@ -151,6 +167,39 @@ const sparkPath = (seed: number) => {
 					</button>
 				</div>
 			</header>
+
+			<!-- Looks: palette + every switch, in one go. The gallery leads because
+			     this is the decision most people actually want to make. -->
+			<section class="card lab-card">
+				<div class="card-head">
+					<h2 class="card-title">Looks</h2>
+					<span class="card-note">A palette <em>and</em> the shape, type and texture that go with it.</span>
+				</div>
+
+				<div class="look-grid">
+					<button
+						v-for="l in LOOKS"
+						:key="l.key"
+						class="look"
+						:class="{ on: activeLook === l.key }"
+						:title="l.blurb"
+						@click="pickLook(l.key)"
+					>
+						<span class="look-swatches">
+							<i v-for="(c, i) in lookSwatches(l)" :key="i" :style="{ background: c }"></i>
+						</span>
+						<span class="look-name">
+							{{ l.label }}
+							<n-icon v-if="activeLook === l.key" :component="CheckmarkCircle" class="palette-check" />
+						</span>
+						<span class="look-blurb">{{ l.blurb }}</span>
+						<span v-if="lookDepth(l.styles)" class="look-depth">
+							{{ lookDepth(l.styles) }} style change{{ lookDepth(l.styles) === 1 ? '' : 's' }}
+						</span>
+						<span v-else class="look-depth">stock shape</span>
+					</button>
+				</div>
+			</section>
 
 			<!-- Palette gallery -->
 			<section class="card lab-card">
@@ -406,6 +455,26 @@ const sparkPath = (seed: number) => {
 }
 .family:hover { color: var(--text-color); }
 .family.on { background: var(--primary-fill); color: var(--on-primary); }
+
+/* Looks are wider tiles than palettes: they carry a sentence, because what
+   separates two of them is rarely visible in five swatches. */
+.look-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(196px, 1fr)); gap: 10px; }
+.look {
+	display: flex; flex-direction: column; gap: 6px; align-items: stretch;
+	padding: 10px; border: 1px solid var(--border-color); border-radius: var(--radius-sm);
+	background: var(--surface-2); cursor: pointer; text-align: left;
+	font-family: var(--font-family); transition: border-color 0.15s, transform 0.12s;
+}
+.look:hover { border-color: var(--border-strong); transform: translateY(-1px); }
+.look.on { border-color: var(--primary-color); box-shadow: 0 0 0 1px var(--primary-color); }
+.look-swatches { display: flex; height: 28px; border-radius: 5px; overflow: hidden; }
+.look-swatches i { display: block; flex: 1; }
+.look-name { font-size: 0.86rem; font-weight: 600; color: var(--text-color); display: flex; align-items: center; gap: 5px; }
+.look-blurb { font-size: 0.7rem; color: var(--text-secondary); line-height: 1.4; }
+.look-depth {
+	font-size: 0.62rem; text-transform: uppercase; letter-spacing: 0.05em;
+	color: var(--text-muted); margin-top: auto;
+}
 
 .palette-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(146px, 1fr)); gap: 10px; }
 .palette {

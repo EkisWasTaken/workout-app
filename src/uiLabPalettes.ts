@@ -75,28 +75,114 @@ export function fillFor(hue: number, sat: number, startL = 58, target = 4.6): Hs
 export const GREEN_BAND: [number, number] = [80, 170]
 export const isGreen = (hue: number) => hue >= GREEN_BAND[0] && hue <= GREEN_BAND[1]
 
-// ─── the shared ramp ──────────────────────────────────────────────────────────
+// ─── the shared ramps ─────────────────────────────────────────────────────────
 
 /**
- * Lightness steps every palette shares, so the distance from page to card, and
- * card to inset, reads the same whichever theme you pick.
+ * Whether the palette is drawn on a dark ground or a light one.
  *
- * `tint` scales how much of the palette's hue survives into the greys: 0 is a
- * true neutral, 1 is unmistakably coloured furniture.
+ * This is the one difference a hue shift can't fake, and for a long time the
+ * lab couldn't express it: twenty themes that were all the same dark app with
+ * the furniture repainted. A light palette inverts the whole ramp, and several
+ * things that are invisible on one ground have to be re-derived for the other —
+ * hairlines, shadows, and every colour used as text.
  */
-const RAMP = {
-	background: 4.5,
-	surface: 8,
-	surface2: 11.5,
-	hover: 16,
-	elevated: 13,
-	sidebarTop: 6,
-	sidebarBottom: 4,
-	border: 19,
-	borderStrong: 29,
-	text: 95,
-	textSecondary: 71,
-	textMuted: 53,
+export type PaletteMode = 'dark' | 'light'
+
+export interface Ramp {
+	background: number
+	surface: number
+	surface2: number
+	hover: number
+	elevated: number
+	sidebarTop: number
+	sidebarBottom: number
+	border: number
+	borderStrong: number
+	text: number
+	textSecondary: number
+	textMuted: number
+	/** Lightness and saturation the sport hues are drawn at. */
+	sport: { s: number; l: number }
+	/** Rest and Other: the absence of a sport, so they stay near-neutral. */
+	restL: number
+	otherL: number
+}
+
+/**
+ * Lightness steps every palette of a mode shares, so the distance from page to
+ * card, and card to inset, reads the same whichever theme you pick.
+ *
+ * The light ramp is not the dark one reversed. Paper is *lighter* than the page
+ * it sits on while a dark card is lighter than its page too, so the surfaces
+ * step the same way — but text and sport colours have to come down a long way,
+ * because a hue that reads beautifully at 62% lightness on near-black is
+ * unreadable on white.
+ */
+export const RAMPS: Record<PaletteMode, Ramp> = {
+	dark: {
+		background: 4.5,
+		surface: 8,
+		surface2: 11.5,
+		hover: 16,
+		elevated: 13,
+		sidebarTop: 6,
+		sidebarBottom: 4,
+		border: 19,
+		borderStrong: 29,
+		text: 95,
+		textSecondary: 71,
+		textMuted: 53,
+		sport: { s: 78, l: 62 },
+		restL: 46,
+		otherL: 62,
+	},
+	light: {
+		background: 95.5,
+		surface: 100,
+		surface2: 93,
+		hover: 89,
+		elevated: 100,
+		sidebarTop: 99,
+		sidebarBottom: 95,
+		border: 86,
+		borderStrong: 71,
+		text: 15,
+		// Muted sits at 45, not 50: #808080 on white is 3.9:1 and fails AA, and
+		// the palette's promise is that every text colour clears it.
+		textSecondary: 36,
+		textMuted: 45,
+		sport: { s: 72, l: 42 },
+		restL: 45,
+		otherL: 38,
+	},
+}
+
+/**
+ * Verdict and sensor colours per mode.
+ *
+ * The shipped greens and ambers are tuned for a near-black ground; on white
+ * `#4ade80` is a 1.8:1 smear. Rather than make every light palette restate
+ * them, each mode has a set that works on its own ground.
+ */
+const MODE_COLORS: Record<PaletteMode, Record<string, string>> = {
+	dark: {
+		'success-color': '#4ade80',
+		'warning-color': '#fbbf24',
+		'danger-color': '#f87171',
+		'pr-gold': '#f0b429',
+		'color-heartrate': '#fb7185',
+		'color-cadence': '#c4b5fd',
+		'color-elevation': '#8ba1c0',
+	},
+	light: {
+		'success-color': '#15803d',
+		'warning-color': '#a16207',
+		'danger-color': '#b91c1c',
+		'pr-gold': '#8a6108',
+		'color-heartrate': '#be123c',
+		'color-elevation': '#4a6584',
+		'color-cadence': '#6d28d9',
+	},
 }
 
 export interface PaletteSpec {
@@ -104,34 +190,41 @@ export interface PaletteSpec {
 	label: string
 	blurb: string
 	/** Family, for grouping the gallery. */
-	family: 'neutral' | 'cool' | 'warm' | 'vivid'
+	family: 'neutral' | 'cool' | 'warm' | 'vivid' | 'light'
+	/** Dark ground unless stated. */
+	mode?: PaletteMode
 	/** Hue the greys are built on, 0–360. */
 	neutralHue: number
-	/** 0–1: how coloured the greys are. */
+	/** 0–1: how coloured the greys are. Past 1 the furniture is openly tinted. */
 	tint: number
 	/** Accent hue and saturation — links, active nav, the fitness line. */
 	accent: { h: number; s: number; l: number }
 	/** Running, gym, bike. Rest and Other are derived from the neutral. */
 	sportHues: [number, number, number]
-	/** Sport saturation and lightness. Lower both for a muted theme. */
+	/** Sport saturation and lightness, overriding the mode's ramp. */
 	sport?: { s: number; l: number }
-	/** Verdict hues, when a theme wants its own. Defaults are the stock ones. */
+	/** Verdict hues, when a theme wants its own. */
 	verdicts?: { success: string; warning: string; danger: string }
 }
+
+export const paletteMode = (spec: PaletteSpec): PaletteMode => spec.mode ?? 'dark'
 
 /**
  * Build the full token set for a palette spec.
  *
  * Returns only colour tokens. Shape, type and layout are the style switches'
- * business, so picking a palette never silently resizes your sidebar.
+ * business, so picking a palette never silently resizes your sidebar — a *look*
+ * changes both, and does so explicitly.
  */
 export function buildPalette(spec: PaletteSpec): Record<string, string> {
+	const mode = paletteMode(spec)
+	const ramp = RAMPS[mode]
 	const h = spec.neutralHue
 	const grey = (l: number, satScale = 1) =>
 		hslToHex({ h, s: Math.round(spec.tint * 22 * satScale), l })
 
-	const sportS = spec.sport?.s ?? 78
-	const sportL = spec.sport?.l ?? 62
+	const sportS = spec.sport?.s ?? ramp.sport.s
+	const sportL = spec.sport?.l ?? ramp.sport.l
 	const sport = (hue: number) => hslToHex({ h: hue, s: sportS, l: sportL })
 
 	const accent = hslToHex(spec.accent)
@@ -140,22 +233,24 @@ export function buildPalette(spec: PaletteSpec): Record<string, string> {
 	const fillHover = hslToHex({ ...fill, l: Math.min(fill.l + 7, 70) })
 
 	const values: Record<string, string> = {
-		'background-color': grey(RAMP.background),
-		'surface-color': grey(RAMP.surface),
-		'surface-2': grey(RAMP.surface2),
-		'surface-hover': grey(RAMP.hover),
-		'surface-elevated': grey(RAMP.elevated),
-		'sidebar-bg-top': grey(RAMP.sidebarTop),
-		'sidebar-bg-bottom': grey(RAMP.sidebarBottom),
+		...MODE_COLORS[mode],
 
-		'border-color': grey(RAMP.border),
-		'border-strong': grey(RAMP.borderStrong),
+		'background-color': grey(ramp.background),
+		'surface-color': grey(ramp.surface),
+		'surface-2': grey(ramp.surface2),
+		'surface-hover': grey(ramp.hover),
+		'surface-elevated': grey(ramp.elevated),
+		'sidebar-bg-top': grey(ramp.sidebarTop),
+		'sidebar-bg-bottom': grey(ramp.sidebarBottom),
+
+		'border-color': grey(ramp.border),
+		'border-strong': grey(ramp.borderStrong),
 
 		// Text carries less of the tint than the furniture: a strongly coloured
 		// body text reads as a link, whatever the hue.
-		'text-color': grey(RAMP.text, 0.35),
-		'text-secondary': grey(RAMP.textSecondary, 0.5),
-		'text-muted': grey(RAMP.textMuted, 0.6),
+		'text-color': grey(ramp.text, 0.35),
+		'text-secondary': grey(ramp.textSecondary, 0.5),
+		'text-muted': grey(ramp.textMuted, 0.6),
 
 		'primary-color': accent,
 		'primary-fill': fillHex,
@@ -164,9 +259,8 @@ export function buildPalette(spec: PaletteSpec): Record<string, string> {
 		'color-running-primary': sport(spec.sportHues[0]),
 		'color-gym-primary': sport(spec.sportHues[1]),
 		'color-bike-primary': sport(spec.sportHues[2]),
-		// Rest and Other are the absence of a sport, so they stay neutral.
-		'color-rest-primary': hslToHex({ h, s: 12, l: 46 }),
-		'color-other-primary': hslToHex({ h, s: 10, l: 62 }),
+		'color-rest-primary': hslToHex({ h, s: 12, l: ramp.restL }),
+		'color-other-primary': hslToHex({ h, s: 10, l: ramp.otherL }),
 	}
 
 	if (spec.verdicts) {
@@ -222,7 +316,7 @@ export const PALETTE_SPECS: PaletteSpec[] = [
 		neutralHue: 345, tint: 1, accent: { h: 350, s: 78, l: 70 }, sportHues: [200, 330, 30],
 		sport: { s: 62, l: 62 } },
 
-	// Vivid — louder accents, brighter sports.
+	// Vivid — louder accents, brighter sports. These are meant to be too much.
 	{ key: 'neon', label: 'Neon', blurb: 'Black ground, electric accents.', family: 'vivid',
 		neutralHue: 260, tint: 0.35, accent: { h: 280, s: 100, l: 74 }, sportHues: [190, 315, 32],
 		sport: { s: 95, l: 64 } },
@@ -236,10 +330,47 @@ export const PALETTE_SPECS: PaletteSpec[] = [
 		neutralHue: 240, tint: 0.1, accent: { h: 250, s: 100, l: 80 }, sportHues: [195, 325, 30],
 		sport: { s: 95, l: 66 },
 		verdicts: { success: '#5ef08a', warning: '#ffcc3d', danger: '#ff8a8a' } },
+	{ key: 'acid', label: 'Acid', blurb: 'Chartreuse on ink. Loud on purpose.', family: 'vivid',
+		neutralHue: 90, tint: 0.5, accent: { h: 74, s: 100, l: 64 }, sportHues: [188, 310, 35],
+		sport: { s: 100, l: 63 },
+		verdicts: { success: '#a3ff4d', warning: '#ffd400', danger: '#ff4d6d' } },
+	{ key: 'magma', label: 'Magma', blurb: 'Near-black rock, molten accent.', family: 'vivid',
+		neutralHue: 12, tint: 0.85, accent: { h: 8, s: 100, l: 66 }, sportHues: [190, 300, 40],
+		sport: { s: 98, l: 60 } },
+	{ key: 'ultraviolet', label: 'Ultraviolet', blurb: 'Saturated purple, top to bottom.', family: 'vivid',
+		neutralHue: 272, tint: 1.6, accent: { h: 292, s: 100, l: 76 }, sportHues: [196, 318, 30],
+		sport: { s: 96, l: 68 } },
+	{ key: 'cyberlime', label: 'Cyberlime', blurb: 'Terminal green over deep teal.', family: 'vivid',
+		neutralHue: 178, tint: 1.3, accent: { h: 158, s: 100, l: 60 }, sportHues: [188, 306, 38],
+		sport: { s: 92, l: 62 },
+		verdicts: { success: '#39ff9e', warning: '#ffe14d', danger: '#ff5c8a' } },
+	{ key: 'bubblegum', label: 'Bubblegum', blurb: 'Candy pink, candy everything.', family: 'vivid',
+		neutralHue: 330, tint: 1.45, accent: { h: 336, s: 100, l: 76 }, sportHues: [192, 300, 36],
+		sport: { s: 96, l: 70 } },
+
+	// Light — the same app on paper. The one change a hue shift can't fake.
+	{ key: 'paper', label: 'Paper', blurb: 'Warm white, ink text, restrained colour.', family: 'light',
+		mode: 'light', neutralHue: 40, tint: 0.5, accent: { h: 224, s: 68, l: 45 }, sportHues: [204, 330, 24] },
+	{ key: 'daylight', label: 'Daylight', blurb: 'Cool white with a clear blue accent.', family: 'light',
+		mode: 'light', neutralHue: 214, tint: 0.45, accent: { h: 212, s: 88, l: 42 }, sportHues: [200, 328, 28] },
+	{ key: 'linen', label: 'Linen', blurb: 'Soft oatmeal, muted sports.', family: 'light',
+		mode: 'light', neutralHue: 34, tint: 0.95, accent: { h: 22, s: 72, l: 44 }, sportHues: [202, 332, 26],
+		sport: { s: 52, l: 40 } },
+	{ key: 'mint', label: 'Mint', blurb: 'Pale green paper, teal accent.', family: 'light',
+		mode: 'light', neutralHue: 160, tint: 0.85, accent: { h: 178, s: 86, l: 32 }, sportHues: [206, 326, 30] },
+	{ key: 'blueprint', label: 'Blueprint', blurb: 'Drafting paper. Cold, technical, high line contrast.', family: 'light',
+		mode: 'light', neutralHue: 205, tint: 1.3, accent: { h: 206, s: 92, l: 38 }, sportHues: [200, 322, 26],
+		sport: { s: 82, l: 38 } },
+	{ key: 'glare', label: 'Glare', blurb: 'Pure white, black text, maximum contrast.', family: 'light',
+		mode: 'light', neutralHue: 0, tint: 0, accent: { h: 250, s: 96, l: 46 }, sportHues: [200, 328, 22],
+		sport: { s: 92, l: 38 },
+		verdicts: { success: '#046c38', warning: '#8a5200', danger: '#a41414' } },
 ]
 
 export interface Palette extends PaletteSpec {
 	values: Record<string, string>
+	/** Resolved, so callers never repeat the `?? 'dark'`. */
+	mode: PaletteMode
 	/** Five colours for the gallery tile. */
 	swatches: string[]
 }
@@ -248,6 +379,7 @@ export const PALETTES: Palette[] = PALETTE_SPECS.map(spec => {
 	const values = buildPalette(spec)
 	return {
 		...spec,
+		mode: paletteMode(spec),
 		values,
 		swatches: [
 			values['background-color'],
@@ -259,9 +391,15 @@ export const PALETTES: Palette[] = PALETTE_SPECS.map(spec => {
 	}
 })
 
+export const paletteFor = (key: string | null) => PALETTES.find(p => p.key === key) ?? null
+
+/** The mode a palette key implies. Dark for an unknown or absent key. */
+export const modeFor = (key: string | null): PaletteMode => paletteFor(key)?.mode ?? 'dark'
+
 export const FAMILIES: { key: Palette['family']; label: string }[] = [
 	{ key: 'neutral', label: 'Neutral' },
 	{ key: 'cool', label: 'Cool' },
 	{ key: 'warm', label: 'Warm' },
 	{ key: 'vivid', label: 'Vivid' },
+	{ key: 'light', label: 'Light' },
 ]

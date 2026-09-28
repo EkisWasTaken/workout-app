@@ -42,6 +42,12 @@ html[data-ui-corners='round'] .be-card,
 html[data-ui-corners='round'] .zone-bar-card,
 html[data-ui-corners='round'] .tpl-skeletons,
 html[data-ui-corners='round'] .heat-card,
+html[data-ui-corners='round'] .fuel-card,
+html[data-ui-corners='round'] .fp-today,
+html[data-ui-corners='round'] .fp-summary,
+html[data-ui-corners='round'] .fp-weeks,
+html[data-ui-corners='round'] .fp-stats,
+html[data-ui-corners='round'] .wfr-trend,
 html[data-ui-corners='round'] .route-map-card { border-radius: 16px !important; }
 
 /* ── Button shape ─────────────────────────────────────────────────────────── */
@@ -216,4 +222,206 @@ html[data-ui-motion='none'] *::before,
 html[data-ui-motion='none'] *::after {
 	animation-duration: 0.01ms !important;
 	transition-duration: 0.01ms !important;
+}
+
+/* ── Light ground ─────────────────────────────────────────────────────────── */
+
+/* Set by `uiLab.ts` from the active palette's own mode, not chosen separately —
+   a light palette that still drew dark hairlines and black inset shadows would
+   just look broken.
+
+   Only the handful of values that are *defined in terms of the ground* live
+   here. Everything else in the app is expressed against tokens the palette
+   already replaced, which is why a whole light theme costs this little. */
+html[data-ui-mode='light'] {
+	color-scheme: light;
+	--border-subtle: rgba(15, 23, 42, 0.09);
+	--shadow-card: 0 1px 2px rgba(15, 23, 42, 0.07);
+	--shadow-pop: 0 12px 32px rgba(15, 23, 42, 0.16);
+}
+
+html[data-ui-mode='light'] ::selection {
+	background: var(--primary-soft);
+	color: var(--text-color);
+}
+html[data-ui-mode='light'] ::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
+
+/* The stock elevated/raised styles are tuned for a black ground: at 0.35 alpha
+   they read as smudges on paper. */
+html[data-ui-mode='light'][data-ui-cards='elevated'] .card,
+html[data-ui-mode='light'][data-ui-cards='elevated'] .stat-panel,
+html[data-ui-mode='light'][data-ui-cards='elevated'] .n-card,
+html[data-ui-mode='light'][data-ui-cards='elevated'] .calendar-container {
+	box-shadow: 0 1px 2px rgba(15, 23, 42, 0.08), 0 8px 24px rgba(15, 23, 42, 0.1) !important;
+}
+html[data-ui-mode='light'][data-ui-buttons='raised'] .action-button,
+html[data-ui-mode='light'][data-ui-buttons='raised'] .n-button {
+	box-shadow: 0 1px 2px rgba(15, 23, 42, 0.12);
+}
+html[data-ui-mode='light'][data-ui-buttons='raised'] .action-button:hover:not(:disabled),
+html[data-ui-mode='light'][data-ui-buttons='raised'] .n-button:hover {
+	box-shadow: 0 5px 14px rgba(15, 23, 42, 0.18);
+}
+
+/* ── Page texture ─────────────────────────────────────────────────────────── */
+
+/* Painted on `.layout`, which fills the viewport and does not itself scroll —
+   so the texture stays put while the page moves over it. The page wrappers are
+   all transparent, so nothing has to be told to get out of the way.
+
+   Every value is a `color-mix` of an existing token rather than a fixed rgba,
+   so one rule serves a black ground and a white one. */
+html[data-ui-texture='grid'] .layout {
+	background-image:
+		repeating-linear-gradient(0deg, color-mix(in srgb, var(--text-color) 7%, transparent) 0 1px, transparent 1px 32px),
+		repeating-linear-gradient(90deg, color-mix(in srgb, var(--text-color) 7%, transparent) 0 1px, transparent 1px 32px);
+}
+
+html[data-ui-texture='dots'] .layout {
+	background-image: radial-gradient(color-mix(in srgb, var(--text-color) 15%, transparent) 1px, transparent 1px);
+	background-size: 22px 22px;
+}
+
+html[data-ui-texture='glow'] .layout {
+	background-image:
+		radial-gradient(60% 45% at 15% 0%, var(--primary-soft) 0%, transparent 70%),
+		radial-gradient(50% 40% at 90% 15%, color-mix(in srgb, var(--color-gym-primary) 12%, transparent) 0%, transparent 70%),
+		radial-gradient(70% 50% at 50% 110%, color-mix(in srgb, var(--color-running-primary) 10%, transparent) 0%, transparent 70%);
+}
+
+html[data-ui-texture='scanlines'] .layout {
+	background-image: repeating-linear-gradient(
+		0deg,
+		color-mix(in srgb, var(--text-color) 6%, transparent) 0 1px,
+		transparent 1px 4px);
+}
+
+html[data-ui-texture='stripes'] .layout {
+	background-image: repeating-linear-gradient(
+		45deg,
+		color-mix(in srgb, var(--text-color) 4%, transparent) 0 14px,
+		transparent 14px 28px);
+}
+
+/* ── Headings ─────────────────────────────────────────────────────────────── */
+
+/* The app has one heading vocabulary — h1–h4, plus the shared `.page-title`
+   and the card/section heads — so restyling it reaches every screen. */
+html[data-ui-headings='caps'] h1,
+html[data-ui-headings='caps'] h2,
+html[data-ui-headings='caps'] h3,
+html[data-ui-headings='caps'] .page-title,
+html[data-ui-headings='caps'] .card-title,
+html[data-ui-headings='caps'] .stat-head h3 {
+	text-transform: uppercase;
+	letter-spacing: 0.09em;
+	font-weight: 700;
+}
+/* Uppercase eats horizontal room, and the page title is the widest thing in
+   the header — on a phone it would wrap into the action bar. */
+html[data-ui-headings='caps'] .page-title { font-size: 1.32rem; }
+
+html[data-ui-headings='heavy'] h1,
+html[data-ui-headings='heavy'] h2,
+html[data-ui-headings='heavy'] h3,
+html[data-ui-headings='heavy'] .page-title,
+html[data-ui-headings='heavy'] .card-title,
+html[data-ui-headings='heavy'] .stat-head h3 {
+	font-weight: 800;
+	letter-spacing: -0.04em;
+}
+html[data-ui-headings='heavy'] .page-title { font-size: 2.1rem; line-height: 1.05; }
+
+html[data-ui-headings='mono'] h1,
+html[data-ui-headings='mono'] h2,
+html[data-ui-headings='mono'] h3,
+html[data-ui-headings='mono'] .page-title,
+html[data-ui-headings='mono'] .card-title,
+html[data-ui-headings='mono'] .stat-head h3 {
+	font-family: var(--font-mono);
+	letter-spacing: -0.01em;
+}
+
+html[data-ui-headings='quiet'] h1,
+html[data-ui-headings='quiet'] h2,
+html[data-ui-headings='quiet'] h3,
+html[data-ui-headings='quiet'] .page-title,
+html[data-ui-headings='quiet'] .card-title,
+html[data-ui-headings='quiet'] .stat-head h3 {
+	font-weight: 500;
+	letter-spacing: 0;
+	color: var(--text-secondary);
+}
+html[data-ui-headings='quiet'] .page-title { font-size: 1.25rem; color: var(--text-color); }
+
+/* ── Accent glow ──────────────────────────────────────────────────────────── */
+
+html[data-ui-glow='soft'] .action-button.primary,
+html[data-ui-glow='soft'] .n-button--primary-type {
+	box-shadow: 0 2px 14px var(--glow-color);
+}
+html[data-ui-glow='soft'] .navigation-link.router-link-active {
+	box-shadow: 0 0 18px var(--glow-color);
+}
+
+html[data-ui-glow='neon'] .action-button.primary,
+html[data-ui-glow='neon'] .n-button--primary-type {
+	box-shadow: 0 0 0 1px var(--primary-color), 0 0 22px var(--glow-color), 0 0 44px var(--glow-color);
+}
+html[data-ui-glow='neon'] .navigation-link.router-link-active {
+	box-shadow: 0 0 22px var(--glow-color);
+	text-shadow: 0 0 12px var(--glow-color);
+}
+html[data-ui-glow='neon'] a,
+html[data-ui-glow='neon'] .page-title,
+html[data-ui-glow='neon'] .text-link {
+	text-shadow: 0 0 14px var(--glow-color);
+}
+/* The chips carry the sport's own colour, so their halo has to as well —
+   a violet glow on an orange bike chip would read as a rendering fault. */
+html[data-ui-glow='neon'] .chip.workout {
+	box-shadow: 0 0 14px color-mix(in srgb, var(--tag-color, var(--primary-color)) 45%, transparent);
+}
+
+/* ── Sidebar ──────────────────────────────────────────────────────────────── */
+
+/* Detached: the panel stops being an edge of the window and becomes an object
+   on the page. `.layout` is a flex row at viewport height, so a margin is all
+   it takes — the main content reflows on its own. */
+html[data-ui-sidebar='floating'] .sidebar {
+	margin: 10px;
+	height: auto;
+	border: 1px solid var(--border-color);
+	border-radius: var(--radius);
+	box-shadow: var(--shadow-pop);
+}
+
+html[data-ui-sidebar='minimal'] .sidebar {
+	background: none !important;
+	border-right-color: transparent !important;
+}
+
+html[data-ui-sidebar='solid'] .sidebar {
+	background: linear-gradient(180deg,
+		var(--primary-fill) 0%,
+		color-mix(in srgb, var(--primary-fill) 74%, #000) 100%) !important;
+	border-right-color: transparent !important;
+}
+/* White is safe on the fill by construction: the palette generator darkens the
+   accent until white text clears AA on it. */
+html[data-ui-sidebar='solid'] .sidebar .navigation-link,
+html[data-ui-sidebar='solid'] .sidebar .brand-name,
+html[data-ui-sidebar='solid'] .sidebar .collapse-button { color: rgba(255, 255, 255, 0.85); }
+html[data-ui-sidebar='solid'] .sidebar .navigation-link:hover {
+	background: rgba(255, 255, 255, 0.12);
+	color: #fff;
+}
+html[data-ui-sidebar='solid'] .sidebar .navigation-link.router-link-active {
+	background: rgba(255, 255, 255, 0.18);
+	color: #fff;
+}
+html[data-ui-sidebar='solid'] .sidebar .navigation-link.router-link-active::before { background: #fff; }
+html[data-ui-sidebar='solid'] .sidebar .brand-mark {
+	background: rgba(255, 255, 255, 0.2);
+	color: #fff;
 }

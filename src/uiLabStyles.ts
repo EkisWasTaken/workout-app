@@ -125,6 +125,56 @@ export const STYLE_SWITCHES: StyleSwitch[] = [
 		],
 	},
 	{
+		key: 'texture',
+		label: 'Page texture',
+		blurb: 'What the page itself is made of. The strongest single change in here — it touches every screen at once and none of the components know about it.',
+		fallback: 'flat',
+		options: [
+			{ value: 'flat', label: 'Flat' },
+			{ value: 'grid', label: 'Grid', hint: 'Faint graph paper.' },
+			{ value: 'dots', label: 'Dots' },
+			{ value: 'glow', label: 'Glow', hint: 'A wash of the accent behind everything.' },
+			{ value: 'scanlines', label: 'Scanlines', hint: 'Horizontal rules, CRT-style.' },
+			{ value: 'stripes', label: 'Stripes', hint: 'Wide diagonals.' },
+		],
+	},
+	{
+		key: 'headings',
+		label: 'Headings',
+		blurb: 'Titles and card headers. Changes the app’s voice more than any colour does.',
+		fallback: 'default',
+		options: [
+			{ value: 'default', label: 'Default' },
+			{ value: 'caps', label: 'Small caps', hint: 'Tracked uppercase.' },
+			{ value: 'heavy', label: 'Heavy', hint: 'Bigger, blacker, tighter.' },
+			{ value: 'mono', label: 'Numeric', hint: 'The tabular face used for titles too.' },
+			{ value: 'quiet', label: 'Quiet', hint: 'Light weight, same size as body.' },
+		],
+	},
+	{
+		key: 'glow',
+		label: 'Accent glow',
+		blurb: 'Light bleeding off anything interactive. None is correct; neon is a choice.',
+		fallback: 'none',
+		options: [
+			{ value: 'none', label: 'None' },
+			{ value: 'soft', label: 'Soft' },
+			{ value: 'neon', label: 'Neon', hint: 'Halos on buttons, active nav and accent text.' },
+		],
+	},
+	{
+		key: 'sidebar',
+		label: 'Sidebar',
+		blurb: 'The app shell. Floating detaches it from the page; minimal removes the panel entirely.',
+		fallback: 'default',
+		options: [
+			{ value: 'default', label: 'Default' },
+			{ value: 'floating', label: 'Floating', hint: 'An inset panel with its own shadow.' },
+			{ value: 'minimal', label: 'Minimal', hint: 'No fill, no divider.' },
+			{ value: 'solid', label: 'Solid', hint: 'Filled with the accent.' },
+		],
+	},
+	{
 		key: 'type',
 		label: 'Type pairing',
 		blurb: 'A reading face and a display face that go together, chosen as a pair rather than two lists.',
@@ -135,6 +185,8 @@ export const STYLE_SWITCHES: StyleSwitch[] = [
 			{ value: 'technical', label: 'Technical', hint: 'IBM Plex Sans + IBM Plex Mono.' },
 			{ value: 'neutral', label: 'Neutral', hint: 'System stack throughout.' },
 			{ value: 'editorial', label: 'Editorial', hint: 'Source Sans + Sora.' },
+			{ value: 'serif', label: 'Serif', hint: 'Fraunces headings over a serif body.' },
+			{ value: 'mono', label: 'Monospace', hint: 'Space Mono for everything. Drastic.' },
 		],
 	},
 	{
@@ -176,6 +228,12 @@ export const switchFor = (key: string) => STYLE_SWITCHES.find(s => s.key === key
 export interface TypePairing {
 	body: string
 	display: string
+	/**
+	 * The numeric face, when it can't just be the display one. A serif with no
+	 * tabular figures would leave every column of split times ragged, so a
+	 * pairing that reaches for one keeps a proper numeric face beside it.
+	 */
+	mono?: string
 	/** Google Fonts family specs to load when this pairing is chosen. */
 	google: string[]
 }
@@ -207,6 +265,18 @@ export const TYPE_PAIRINGS: Record<string, TypePairing> = {
 		body: `'Source Sans 3', ${SYSTEM}`,
 		display: `'Sora', 'Source Sans 3', ${SYSTEM}`,
 		google: ['Source+Sans+3:wght@400;500;600;700', 'Sora:wght@500;600;700'],
+	},
+	serif: {
+		body: `'Source Serif 4', Georgia, 'Times New Roman', serif`,
+		display: `'Fraunces', Georgia, serif`,
+		// Fraunces has no tabular figures, and a schedule is mostly numbers.
+		mono: `'Space Grotesk', 'Inter', ${SYSTEM}`,
+		google: ['Source+Serif+4:opsz,wght@8..60,400;8..60,600', 'Fraunces:opsz,wght@9..144,600;9..144,700'],
+	},
+	mono: {
+		body: `'Space Mono', ui-monospace, 'Courier New', monospace`,
+		display: `'Space Mono', ui-monospace, monospace`,
+		google: ['Space+Mono:wght@400;700'],
 	},
 }
 
