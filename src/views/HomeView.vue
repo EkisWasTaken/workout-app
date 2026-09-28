@@ -497,16 +497,6 @@ watch(completed, () => { if (tab.value === 'today') buildTodayCharts() })
 					<span v-else-if="todayState === 'rest'" class="today-status rest">Rest day</span>
 				</div>
 
-				<!-- Fuel sits inside Today because that is the question it answers:
-				     not "how is the block going" but "what do I eat now". -->
-				<FuelDayCard
-					v-if="loaded"
-					class="today-fuel"
-					:day="fuel.todayFuel.value"
-					:blocked="fuel.blocked.value"
-					label="Today"
-				/>
-
 				<p v-if="todayState === 'rest'" class="today-note">Rest day on the plan. Recovery is training.</p>
 				<div v-else-if="todayState === 'empty'" class="today-empty">
 					<p class="today-note">Nothing planned for today.</p>
@@ -524,6 +514,7 @@ watch(completed, () => { if (tab.value === 'today') buildTodayCharts() })
 						<div class="ts-body">
 							<div class="ts-top">
 								<router-link :to="`/workout/${w.id}`" class="ts-name">{{ w.name }}</router-link>
+								<span class="ts-sport">{{ SPORT_LABELS[sportOf(w)] }}</span>
 								<span v-if="w.isCompleted === 1" class="ts-done">✓</span>
 							</div>
 							<div class="ts-pills">
@@ -574,6 +565,18 @@ watch(completed, () => { if (tab.value === 'today') buildTodayCharts() })
 					ref="fitInput" type="file" style="display: none"
 					accept=".fit,.gpx,.tcx,.gz,application/gzip"
 					@change="onFitPicked"
+				/>
+
+				<!-- Fuel belongs to Today because it answers the same question —
+				     what do I do now — but it is not what the day is about, so it
+				     sits under the session as a line rather than over it as a
+				     headline twice the size. -->
+				<FuelDayCard
+					v-if="loaded"
+					class="today-fuel"
+					strip
+					:day="fuel.todayFuel.value"
+					:blocked="fuel.blocked.value"
 				/>
 			</section>
 
@@ -845,17 +848,28 @@ watch(completed, () => { if (tab.value === 'today') buildTodayCharts() })
 .today-note { margin: 0; font-size: 0.85rem; color: var(--text-muted); }
 .today-empty { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
 
+/* The session is what the day is about, so it is the biggest thing in the
+   panel. It used to sit under a calorie figure set at twice its size, which
+   made the page read as a diet app that also tracks running. */
 .today-sessions { display: flex; flex-direction: column; gap: 10px; }
 .today-session {
-	display: flex; align-items: flex-start; gap: 11px; padding: 12px;
-	background: var(--surface-2); border: 1px solid var(--border-color);
+	display: flex; align-items: flex-start; gap: 13px; padding: 16px 18px;
+	background: var(--surface-2); border: 1px solid transparent;
 	border-radius: var(--radius-sm);
 }
 .today-session.done { opacity: 0.62; }
-.ts-dot { width: 8px; height: 8px; border-radius: 50%; margin-top: 6px; flex-shrink: 0; }
+.ts-dot { width: 10px; height: 10px; border-radius: 50%; margin-top: 8px; flex-shrink: 0; }
 .ts-body { flex: 1; min-width: 0; }
-.ts-top { display: flex; align-items: center; gap: 7px; }
-.ts-name { font-weight: 600; font-size: 0.95rem; color: var(--text-color); }
+.ts-top { display: flex; align-items: baseline; gap: 9px; flex-wrap: wrap; }
+.ts-name {
+	font-family: var(--font-display);
+	font-weight: 600; font-size: 1.28rem; line-height: 1.2;
+	letter-spacing: -0.01em; color: var(--text-color);
+}
+.ts-sport {
+	font-size: 0.7rem; font-weight: 600; text-transform: uppercase;
+	letter-spacing: 0.06em; color: var(--text-muted);
+}
 .ts-name:hover { color: var(--primary-color); }
 .ts-done { color: var(--success-color); font-weight: 700; }
 .ts-pills { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 7px; }
@@ -991,7 +1005,7 @@ watch(completed, () => { if (tab.value === 'today') buildTodayCharts() })
 .text-link { margin-left: auto; font-size: 0.8rem; color: var(--primary-color); }
 .text-link:hover { text-decoration: underline; }
 
-.today-fuel { margin-bottom: 14px; }
+.today-fuel { margin-top: 14px; }
 
 .week-strip { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; }
 .day-col { display: flex; flex-direction: column; align-items: center; gap: 6px; text-decoration: none; }

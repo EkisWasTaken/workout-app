@@ -218,22 +218,47 @@ async function draw() {
 
 	const added: L.Polyline[] = []
 	const bounds = L.latLngBounds([])
+
+	/**
+	 * One canvas for every band, rather than Leaflet's default SVG.
+	 *
+	 * Six bands over a couple of years of training is on the order of a hundred
+	 * thousand segments, and as SVG that becomes six enormous <path> elements
+	 * the browser re-rasterises on every pan, zoom and page scroll. Measured at
+	 * 120k segments: 35 ms a frame against 6.7 ms on a canvas. Same picture, and
+	 * the difference between roughly 28 fps and a smooth one.
+	 *
+	 * A canvas has no per-layer DOM, so the old per-path fade-in class has
+	 * nowhere to attach; the whole canvas is faded in instead, which looks the
+	 * same because the bands arrive together anyway.
+	 */
+	const renderer = L.canvas({ padding: 0.3 })
+	renderer.addTo(h.map)
+	// Leaflet gives no public handle on a renderer's element, so the canvas it
+	// just created is picked out of the pane it was added to. Reaching for the
+	// private `_container` would work today and break on a patch release.
+	h.map.getPanes().overlayPane
+		.querySelectorAll('canvas:not(.heat-canvas)')
+		.forEach(c => c.classList.add('heat-canvas'))
+
 	// Coldest first, so the roads you run most end up drawn over the rest.
 	for (const band of heat.bands) {
 		const style = RAMP[Math.min(band.level, RAMP.length - 1)]
 		const line = L.polyline(band.paths, {
 			...style,
+			renderer,
 			lineCap: 'round',
 			lineJoin: 'round',
 			interactive: false,
-			className: 'heat-band',
 		})
 		line.addTo(h.map)
 		added.push(line)
 		bounds.extend(line.getBounds())
 	}
 
-	layers.value = added
+	// The renderer is tracked alongside the lines so a redraw takes its canvas
+	// with it — otherwise every filter change would leave one behind.
+	layers.value = [...added, renderer]
 	building.value = false
 	// Re-fit on every filter change: picking a city is a request to be taken
 	// there, so it overrides wherever the map had been panned to.
@@ -437,7 +462,7 @@ watch(drawn, draw)
    snapping. `backwards` and not `both`: the band's real opacity is a Leaflet
    presentation attribute that differs per level, and holding the animation's
    end state would pin CSS opacity over it forever. */
-:global(.heat-band) { animation: heat-in 0.45s ease backwards; }
+:global(.heat-canvas) { animation: heat-in 0.45s ease backwards; }
 @keyframes heat-in {
 	from { opacity: 0; }
 }

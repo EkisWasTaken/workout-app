@@ -25,10 +25,18 @@ const props = withDefaults(defineProps<{
 	blocked?: 'stats' | 'weight' | null
 	/** Render at half size, for sitting inside a denser panel. */
 	compact?: boolean
+	/**
+	 * One line instead of a card, for panels where fuel is supporting detail
+	 * rather than the headline. Calories still lead within the line — they are
+	 * the number that decides whether the weight moves — but they no longer
+	 * outrank the session the day is actually about.
+	 */
+	strip?: boolean
 }>(), {
 	label: 'Today',
 	blocked: null,
 	compact: false,
+	strip: false,
 })
 
 const sports = computed(() => {
@@ -40,7 +48,7 @@ const kcal = (n: number) => Math.round(n).toLocaleString()
 </script>
 
 <template>
-	<div class="fuel-card" :class="{ compact }">
+	<div class="fuel-card" :class="{ compact, strip }">
 		<template v-if="blocked">
 			<span class="fc-kicker"><n-icon :component="FlameOutline" /> Fuel</span>
 			<p class="fc-blocked">
@@ -55,6 +63,20 @@ const kcal = (n: number) => Math.round(n).toLocaleString()
 			<router-link :to="blocked === 'weight' ? '/schedule' : '/profile'" class="fc-link">
 				{{ blocked === 'weight' ? 'Log weight' : 'Open profile' }} →
 			</router-link>
+		</template>
+
+		<!-- The strip drops the kicker: whatever panel it sits in has already
+		     said which day this is, and saying it twice is noise. -->
+		<template v-else-if="day && strip">
+			<span class="fc-strip-main">
+				<strong class="mono">{{ kcal(day.intakeKcal) }}</strong> kcal to eat
+			</span>
+			<span class="fc-strip-rest">
+				{{ day.macros.proteinG }}<abbr title="protein">P</abbr> /
+				{{ day.macros.carbsG }}<abbr title="carbohydrate">C</abbr> /
+				{{ day.macros.fatG }}<abbr title="fat">F</abbr>
+			</span>
+			<span class="fc-strip-rest">burn ~{{ kcal(day.burnKcal) }}</span>
 		</template>
 
 		<template v-else-if="day">
@@ -125,6 +147,28 @@ const kcal = (n: number) => Math.round(n).toLocaleString()
 .fc-blocked { margin: 2px 0 0; font-size: 0.8rem; line-height: 1.5; color: var(--text-secondary); }
 .fc-link { font-size: 0.8rem; color: var(--primary-color); text-decoration: none; }
 .fc-link:hover { text-decoration: underline; }
+
+/* A rule, not a card: no fill, no accent edge, just a line of numbers under
+   whatever it belongs to. */
+.strip {
+	flex-direction: row;
+	align-items: baseline;
+	flex-wrap: wrap;
+	gap: 4px 16px;
+	padding: 11px 0 0;
+	border-left: none;
+	border-top: 1px solid var(--border-subtle);
+	border-radius: 0;
+	background: none;
+	font-size: 0.82rem;
+	color: var(--text-muted);
+}
+.fc-strip-main { color: var(--text-secondary); }
+.fc-strip-main strong { font-size: 1.05rem; font-weight: 600; color: var(--text-color); }
+.fc-strip-rest { color: var(--text-muted); }
+.strip abbr { text-decoration: none; }
+.strip .fc-blocked { margin: 0; font-size: 0.78rem; }
+.strip .fc-kicker { display: none; }
 
 .compact { padding: 10px 12px; }
 .compact .fc-val { font-size: 1.45rem; }
