@@ -25,7 +25,9 @@ import { computed, ref, watch } from 'vue'
 import { NButton, NInputNumber, NSelect, useMessage } from 'naive-ui'
 import { addDays, format, parseISO, startOfWeek } from 'date-fns'
 import CustomModal from './CustomModal.vue'
-import { settings, saveSettings, bodyStats, ageFromBirthYear } from '@/settings'
+import { settings, saveSettings, bodyStats, ageFromBirthYear, pendingMigration } from '@/settings'
+import { MISSING_GOALS_COLUMNS } from '@/db'
+import { isOwner, GENERIC_SCHEMA_MESSAGE } from '@/owner'
 import { currentWeightKg as storedWeightKg } from '@/stats'
 import {
 	ACTIVITY_LEVELS, SPORT_LABELS, buildEnergyPlan, energyProblems,
@@ -179,9 +181,17 @@ async function saveStats() {
 			goalWeight: goalKg.value,
 		})
 		message.success('Saved to your profile')
-	} catch (e) {
+	} catch (e: any) {
 		console.error('Could not save body stats', e)
-		message.error('Saved to this browser, but the database write failed')
+		// A missing migration is not a failed connection, and saying so sends
+		// people to check their wifi over something only SQL can fix.
+		if (e?.message === MISSING_GOALS_COLUMNS) {
+			message.warning(isOwner.value
+				? `Saved to this browser only — run ${pendingMigration.script ?? 'the pending migration'} in Supabase to store it on your account.`
+				: GENERIC_SCHEMA_MESSAGE)
+		} else {
+			message.error('Saved to this browser, but the database write failed')
+		}
 	} finally {
 		saving.value = false
 	}

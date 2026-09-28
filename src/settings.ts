@@ -10,11 +10,11 @@
  * Call `hydrateSettings()` once at boot.
  */
 import { reactive, computed } from 'vue'
-import { db, schema, MISSING_GOALS_TABLES } from './db'
+import { db, schema, MISSING_GOALS_TABLES, MISSING_GOALS_COLUMNS } from './db'
 import { signupName } from './auth'
 import { DISTANCES, DISTANCE_LABELS, vdotFromRace, vdotForCourse, FLAT, type DistanceKey } from './utils/vdot'
 import { ACTIVITY_FACTORS, type ActivityLevel, type Sex } from './utils/energy'
-import type { RaceGoal, Target } from './types'
+import type { Profile, RaceGoal, Target } from './types'
 
 export interface Settings {
 	userName: string
@@ -139,8 +139,20 @@ export async function hydrateSettings(): Promise<void> {
 		// first run after the migration: push the cache up rather than clobber it.
 		const dbEmpty = !profile || (profile.user_name === null && profile.goal_weight === null &&
 			profile.resting_hr === null && profile.max_hr === null)
-		if (dbEmpty && (settings.userName || settings.goalWeight !== null || settings.maxHR !== null)) {
-			await saveSettings(settings)
+		// Body stats count as cached data too. They were left out, so someone
+		// whose only local values were a height and a birth year had nothing
+		// pushed up and the branch below then read the empty row back over them.
+		const cacheHasSomething = !!settings.userName || settings.goalWeight !== null ||
+			settings.maxHR !== null || settings.heightCm !== null || settings.birthYear !== null ||
+			settings.sex !== null || settings.activityLevel !== null
+		if (dbEmpty && cacheHasSomething) {
+			// A database still behind supabase_body_stats.sql now rejects the body
+			// stats half of this write. Everything else lands, and the banner set
+			// below is what tells the user why — so that refusal must not abort
+			// the rest of hydration and take the explanation down with it.
+			await saveSettings(settings).catch(e => {
+				if (e?.message !== MISSING_GOALS_COLUMNS) throw e
+			})
 		} else if (profile) {
 			settings.userName = profile.user_name ?? ''
 			// A brand-new account has a profile row but no name yet; fall back to
@@ -157,15 +169,7 @@ export async function hydrateSettings(): Promise<void> {
 			settings.restingHR = profile.resting_hr ?? DEFAULTS.restingHR
 			settings.maxHR = profile.max_hr
 			settings.vdotOverride = profile.vdot_override ?? null
-			// A database still behind supabase_body_stats.sql answers null for all
-			// of these; copying that over would wipe stats typed before the
-			// migration ran, so the cache stays authoritative until it lands.
-			if (schema.v4) {
-				settings.birthYear = profile.birth_year ?? null
-				settings.heightCm = profile.height_cm ?? null
-				settings.sex = asSex(profile.sex ?? null)
-				settings.activityLevel = asActivity(profile.activity_level ?? null)
-			}
+			adoptBodyStats(profile)
 			writeCache(settings)
 		}
 
@@ -192,6 +196,49 @@ export async function hydrateSettings(): Promise<void> {
 			return
 		}
 		console.error('[settings] hydrate failed, using local cache', e)
+	}
+}
+
+/**
+ * Merge the stored body stats into the settings, without ever losing one.
+ *
+ * A null in the row is not an answer, it's an absence — the account predates
+ * `supabase_body_stats.sql`, or a write that would have filled it was dropped
+ * by a database that was still behind. Copying those nulls over the cache is
+ * how a height typed before the migration disappeared the moment it landed,
+ * which is the one thing this must not do.
+ *
+ * So the row wins wherever it has a value, the cache survives wherever it
+ * doesn't, and anything the cache knows that the row doesn't is pushed back up
+ * — otherwise the stats would live on one browser forever and the next device
+ * would keep asking for them.
+ *
+ * The cost is that clearing a stat on one device can be undone by another
+ * device that still has it cached, until that one syncs. Resurrecting a value
+ * someone deleted is the lesser failure: they can clear it again, whereas the
+ * old behaviour silently destroyed data they had no way to get back.
+ */
+function adoptBodyStats(profile: Profile): void {
+	// Before the migration the row can't hold these at all, so there is nothing
+	// to merge and nothing worth pushing up — it would only fail.
+	if (!schema.v4) return
+
+	if (profile.birth_year !== null) settings.birthYear = profile.birth_year
+	if (profile.height_cm !== null) settings.heightCm = profile.height_cm
+	const dbSex = asSex(profile.sex ?? null)
+	if (dbSex !== null) settings.sex = dbSex
+	const dbActivity = asActivity(profile.activity_level ?? null)
+	if (dbActivity !== null) settings.activityLevel = dbActivity
+
+	const aheadOfDb =
+		(settings.birthYear !== null && profile.birth_year === null) ||
+		(settings.heightCm !== null && profile.height_cm === null) ||
+		(settings.sex !== null && dbSex === null) ||
+		(settings.activityLevel !== null && dbActivity === null)
+
+	if (aheadOfDb) {
+		saveSettings({}).catch(e =>
+			console.warn('[settings] could not push cached body stats to the database', e))
 	}
 }
 

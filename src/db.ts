@@ -1,5 +1,6 @@
 import { supabase } from './supabase'
 import { currentUserId } from './auth'
+import { PROFILE_COLUMNS, PROFILE_V4_BLANKS, stripUnstorable, unstorableFields } from './profileFields'
 import type { Workout, DailyWeight, WorkoutTemplate, WorkoutTemplateExercise, Exercise, RaceGoal, AddRaceGoalPayload, DistanceGoal, Profile, ProgressPhoto, ProgressPhotoMeta } from './types'
 
 /** Thrown when supabase_goals.sql hasn't been run yet. */
@@ -36,13 +37,8 @@ const isMissingColumn = (error: { code?: string } | null) => error?.code === '42
  */
 export const schema = { v2: true, v3: true, v4: true }
 
-/** Profile columns each migration added, so a read can fall back a tier at a time. */
-const PROFILE_BASE = 'user_name, goal_weight, resting_hr, max_hr'
-const PROFILE_V2 = `${PROFILE_BASE}, vdot_override`
-const PROFILE_V4 = `${PROFILE_V2}, birth_year, height_cm, sex, activity_level`
-
-/** Fields a given tier can't store, blanked so callers never read a stale value. */
-const PROFILE_V4_BLANKS = { birth_year: null, height_cm: null, sex: null, activity_level: null }
+/** Which columns each migration added, and what an older schema can hold. */
+const { base: PROFILE_BASE, v2: PROFILE_V2, v4: PROFILE_V4 } = PROFILE_COLUMNS
 
 export const db = {
   // PROFILE (one row per user, keyed on user_id)
@@ -79,15 +75,24 @@ export const db = {
     const row: Record<string, unknown> = {
       user_id: currentUserId(), ...profile, updated_at: new Date().toISOString(),
     }
-    if (!schema.v2) delete row.vdot_override
-    if (!schema.v4) for (const k of Object.keys(PROFILE_V4_BLANKS)) delete row[k]
+    /**
+     * Anything this database can't hold yet used to be deleted from the row and
+     * the upsert allowed to succeed — which reported a successful save for
+     * values that never left the browser, the exact trap `setDistanceGoal`
+     * refuses to fall into. The rest of the profile is still written, because a
+     * missing migration must not stop you saving your name; then the caller is
+     * told, loudly, what didn't land.
+     */
+    const dropped = unstorableFields(row, schema)
+    const storable = stripUnstorable(row, schema)
 
-    const { error } = await supabase.from('profile').upsert([row], { onConflict: 'user_id' })
+    const { error } = await supabase.from('profile').upsert([storable], { onConflict: 'user_id' })
     if (error) {
       if (isMissingTable(error)) throw new Error(MISSING_GOALS_TABLES)
       if (isMissingColumn(error)) throw new Error(MISSING_GOALS_COLUMNS)
       throw error
     }
+    if (dropped.length) throw new Error(MISSING_GOALS_COLUMNS)
   },
 
   // DISTANCE GOALS (5k / 10k / half / marathon)

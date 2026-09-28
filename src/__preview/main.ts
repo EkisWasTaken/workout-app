@@ -8,7 +8,8 @@ import '../styles/stats.css'
 import '../components/charts/charts.css'
 import { naiveTheme, themeOverrides } from '../theme'
 import { encode } from '@mapbox/polyline'
-import { db } from '../db'
+import { db, schema, MISSING_GOALS_COLUMNS } from '../db'
+import { stripUnstorable, unstorableFields } from '../profileFields'
 import { auth } from '../auth'
 import router from '../router'
 import MainLayout from '../layouts/MainLayout.vue'
@@ -191,11 +192,47 @@ d.getExercises = async () => [
 	{ id: 3, name: 'Squat', body_part: 'legs' }, { id: 4, name: 'Romanian deadlift', body_part: 'legs' },
 	{ id: 5, name: 'Pull-up', body_part: 'back' },
 ]
-d.getProfile = async () => ({
+/** The stored row, so a save in the harness is readable back like a real one. */
+const profileRow: Record<string, any> = {
 	user_name: 'Elias', goal_weight: 78, resting_hr: rest, max_hr: null, vdot_override: null,
 	birth_year: now.getFullYear() - 29, height_cm: 183, sex: 'male', activity_level: 'light',
-})
-d.saveProfile = async () => {}
+}
+d.getProfile = async () => ({ ...profileRow })
+// Exposed so the stored row can be inspected from the console — a dynamic
+// import of db.ts in the page gets a second module instance without these
+// stubs on it, and tries to reach the real Supabase.
+;(window as any).__previewProfileRow = profileRow
+/**
+ * Writes go through the same schema-tier policy the real one does.
+ *
+ * It used to accept everything silently, which is precisely the fiction that
+ * hid a real bug: body stats looked saved in the harness while a database
+ * behind `supabase_body_stats.sql` was dropping them. Set `schema.v4 = false`
+ * from the console to see what that account actually gets.
+ */
+/**
+ * `?behind=body-stats` pretends the account's database has not had
+ * `supabase_body_stats.sql` applied, which is the state most people will
+ * actually be in. It is the only way to judge that path without a second
+ * Supabase project.
+ */
+const previewFlags = new URLSearchParams(location.search)
+if (previewFlags.get('behind') === 'body-stats') schema.v4 = false
+/**
+ * `?stats=empty` is the row you have the moment the migration lands: the
+ * columns exist and are all null, because every write that would have filled
+ * them was dropped by the schema that came before. Whatever is cached in this
+ * browser has to survive that read, which is the bug it exists to prove.
+ */
+if (previewFlags.get('stats') === 'empty') {
+	Object.assign(profileRow, { birth_year: null, height_cm: null, sex: null, activity_level: null })
+}
+
+d.saveProfile = async (profile: any) => {
+	const dropped = unstorableFields(profile, schema)
+	Object.assign(profileRow, stripUnstorable(profile, schema))
+	if (dropped.length) throw new Error(MISSING_GOALS_COLUMNS)
+}
 d.getDistanceGoals = async () => []
 
 // Progress photos: drawn silhouettes that slim down over five months, each

@@ -394,8 +394,11 @@ async function handleSignOut() {
  */
 const failed = (e: any, fallback: string) => {
 	if (e?.message !== MISSING_GOALS_COLUMNS) return message.error(fallback)
+	// Name the migration that is actually outstanding. This used to always say
+	// supabase_goals_v2.sql, which sent people to run a file they had already
+	// applied while the one they needed went unmentioned.
 	return message.error(isOwner.value
-		? 'Run supabase_goals_v2.sql in Supabase first — this field needs it.'
+		? `Saved to this browser only — run ${pendingMigration.script ?? 'the pending migration'} in Supabase to store it on your account.`
 		: GENERIC_SCHEMA_MESSAGE)
 }
 
