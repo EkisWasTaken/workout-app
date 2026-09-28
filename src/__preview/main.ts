@@ -12,12 +12,11 @@ import { db } from '../db'
 import { auth } from '../auth'
 import router from '../router'
 import MainLayout from '../layouts/MainLayout.vue'
-import { hydrateUiLab } from '../uiLab'
+import { hydrateTheme } from '../theme'
 
-document.documentElement.setAttribute('data-theme', 'dark')
-// Same as the real entry point: saved UI-lab tweaks have to be on the document
-// before the first paint, or the harness can't be used to judge them.
-hydrateUiLab()
+// Same as the real entry point: the chosen theme has to be on the document
+// before the first paint.
+hydrateTheme()
 const now = new Date()
 let seed = 11
 const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647)

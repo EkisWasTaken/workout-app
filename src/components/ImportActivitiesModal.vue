@@ -225,7 +225,7 @@ function reset() {
 	display: inline-flex; align-items: center; gap: 7px;
 }
 .action-button:hover:not(:disabled) { background: var(--surface-hover); border-color: var(--border-strong); }
-.action-button.primary { background: var(--primary-color); border-color: var(--primary-color); color: #fff; }
-.action-button.primary:hover:not(:disabled) { background: var(--primary-strong); }
+.action-button.primary { background: var(--primary-soft); border-color: transparent; color: var(--primary-color); font-weight: 600; }
+.action-button.primary:hover:not(:disabled) { border-color: var(--primary-color); }
 .action-button:disabled { opacity: 0.5; cursor: not-allowed; }
 </style>

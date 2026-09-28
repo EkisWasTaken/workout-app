@@ -43,19 +43,32 @@
 					</div>
 				</n-card>
 
-				<!-- Appearance -->
+				<!-- Appearance. The sidebar carries the same toggle, but there is no
+				     sidebar on a phone, so this is where it lives there. -->
 				<n-card bordered class="settings-card">
 					<template #header><span class="card-title">Appearance</span></template>
 					<div class="account-row">
 						<div class="account-info">
-							<span class="account-label">Colours, type and layout</span>
+							<span class="account-label">Theme</span>
 							<span class="appearance-note">
-								Tweak the palette, fonts, corner radii and spacing, and see it applied across the
-								whole app as you go.<template v-if="uiLabSummary">
-									Currently: <strong>{{ uiLabSummary }}</strong>, saved on this device.</template>
+								Warm charcoal or warm paper. Saved on this device; until you pick one it
+								follows your system setting.
 							</span>
 						</div>
-						<router-link to="/ui-lab"><n-button tertiary>Open UI lab</n-button></router-link>
+						<div class="theme-choice" role="radiogroup" aria-label="Theme">
+							<button
+								v-for="opt in THEME_OPTIONS"
+								:key="opt.value"
+								class="theme-opt"
+								:class="{ on: theme === opt.value }"
+								role="radio"
+								:aria-checked="theme === opt.value"
+								@click="setTheme(opt.value)"
+							>
+								<n-icon :component="opt.icon" />
+								<span>{{ opt.label }}</span>
+							</button>
+						</div>
 					</div>
 				</n-card>
 
@@ -337,7 +350,7 @@
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted } from 'vue'
 import { NCard, NSpace, NInput, NButton, NFormItem, NSelect, useMessage, NIcon } from 'naive-ui'
-import { FlagOutline, WarningOutline } from '@vicons/ionicons5'
+import { FlagOutline, MoonOutline, SunnyOutline, WarningOutline } from '@vicons/ionicons5'
 import { db, MISSING_GOALS_COLUMNS } from '@/db'
 import {
 	settings, distanceGoals, raceGoals, pendingMigration, activeTarget, targets, racesMissingGoalTime,
@@ -350,31 +363,12 @@ import {
 } from '@/utils/energy'
 import { auth, signOut } from '@/auth'
 import { isOwner, GENERIC_SCHEMA_MESSAGE } from '@/owner'
-import { activeLook, activePalette, anyChanges, overrideCount as uiLabTokenCount, styleCount as uiLabStyleCount } from '@/uiLab'
-import { PALETTES } from '@/uiLabPalettes'
-import { LOOKS } from '@/uiLabLooks'
+import { setTheme, theme, type ThemeName } from '@/theme'
 
-/**
- * What the lab is currently set to, for the Appearance card's summary line.
- *
- * A look names itself; otherwise it's the palette plus however many switches
- * have been moved. Hand-edited colours are counted separately from the palette
- * that wrote them — a palette writes twenty-odd tokens into the same store, so
- * totalling them read as "Paper, plus 36 tweaks" when nothing had been tweaked
- * at all.
- */
-const uiLabSummary = computed(() => {
-	if (!anyChanges.value) return null
-	const look = LOOKS.find(l => l.key === activeLook.value)
-	if (look) return look.label
-
-	const palette = PALETTES.find(p => p.key === activePalette.value)
-	const parts: string[] = []
-	if (palette) parts.push(palette.label)
-	if (uiLabStyleCount.value) parts.push(`${uiLabStyleCount.value} style change${uiLabStyleCount.value === 1 ? '' : 's'}`)
-	if (uiLabTokenCount.value && !palette) parts.push(`${uiLabTokenCount.value} colour${uiLabTokenCount.value === 1 ? '' : 's'}`)
-	return parts.join(', ') || 'custom'
-})
+const THEME_OPTIONS: { value: ThemeName; label: string; icon: any }[] = [
+	{ value: 'light', label: 'Light', icon: SunnyOutline },
+	{ value: 'dark', label: 'Dark', icon: MoonOutline },
+]
 import {
 	DISTANCES, DISTANCE_LABELS, paceTable, equivalentTimes, vdotFromRace,
 	raceTimeOnCourse, coursePaceSecPerKm, TERRAIN_PRESETS,
@@ -774,6 +768,31 @@ onMounted(async () => {
 @media (max-width: 480px) { .hr-row { grid-template-columns: 1fr; gap: 0; } }
 .appearance-note { font-size: 0.8rem; color: var(--text-muted); line-height: 1.5; max-width: 52ch; }
 
+.theme-choice {
+	display: inline-flex;
+	gap: 2px;
+	padding: 3px;
+	border-radius: var(--radius-sm);
+	background: var(--surface-2);
+	flex-shrink: 0;
+}
+.theme-opt {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	padding: 7px 14px;
+	border: none;
+	border-radius: calc(var(--radius-sm) - 3px);
+	background: transparent;
+	color: var(--text-secondary);
+	font: inherit;
+	font-size: 0.82rem;
+	cursor: pointer;
+	transition: background 0.15s, color 0.15s;
+}
+.theme-opt:hover { color: var(--text-color); }
+.theme-opt.on { background: var(--surface-color); color: var(--primary-color); font-weight: 600; }
+
 .section-divider { margin: 10px 0 -4px; }
 .section-divider span { font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-muted); }
 .section-divider p { margin: 3px 0 0; font-size: 0.8rem; color: var(--text-muted); }
@@ -867,7 +886,7 @@ onMounted(async () => {
 	display: inline-flex; align-items: center; justify-content: center;
 	border-radius: 4px; flex-shrink: 0;
 }
-.prio-A { background: var(--primary-color); color: #fff; }
+.prio-A { background: var(--primary-fill); color: var(--on-primary); }
 .prio-B { background: var(--surface-hover); color: var(--text-secondary); }
 .prio-C { background: transparent; color: var(--text-muted); border: 1px solid var(--border-color); }
 .goal-date { color: var(--text-muted); font-size: 0.82rem; }

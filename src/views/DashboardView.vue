@@ -2030,7 +2030,7 @@ onActivated(loadAll);
   color: var(--text-secondary); font-family: var(--font-mono); font-size: 0.8rem;
 }
 .rpe-dot:hover { border-color: var(--border-strong); color: var(--text-color); }
-.rpe-dot.on { background: var(--primary-color); border-color: var(--primary-color); color: #fff; }
+.rpe-dot.on { background: var(--primary-fill); border-color: var(--primary-fill); color: var(--on-primary); }
 /* min-height, not height: a fixed 100% clamps to the scroll container's padded
    content box, so the calendar overflowed past the padding that clears the nav. */
 .dashboard-view-wrapper { min-height: 100%; }
@@ -2053,7 +2053,7 @@ onActivated(loadAll);
   background: var(--surface-2);
   border: 1px solid var(--border-color);
   color: var(--text-color);
-  padding: 9px 15px;
+  padding: 11px 18px;
   border-radius: var(--radius-sm);
   cursor: pointer;
   font-family: var(--font-family);
@@ -2066,10 +2066,10 @@ onActivated(loadAll);
 }
 .action-button:hover:not(:disabled) { background: var(--surface-hover); border-color: var(--border-strong); }
 .action-button .n-icon { font-size: 1.1rem; }
-.action-button.primary { background: var(--primary-color); border-color: var(--primary-color); color: #fff; }
-.action-button.primary:hover:not(:disabled) { background: var(--primary-strong); border-color: var(--primary-strong); }
+.action-button.primary { background: var(--primary-soft); border-color: transparent; color: var(--primary-color); font-weight: 600; }
+.action-button.primary:hover:not(:disabled) { background: var(--primary-soft); border-color: var(--primary-color); }
 
-.calendar-container { border: 1px solid var(--border-color); background: var(--surface-color); border-radius: var(--radius); overflow: hidden; }
+.calendar-container { border: 1px solid transparent; background: var(--surface-color); border-radius: var(--radius); overflow: hidden; }
 /* Gap-based, not space-between: the nav cluster stays together on the left and
    the view toggle is pushed right, so the month label doesn't wander. */
 .calendar-header { display: flex; align-items: center; gap: 8px; padding: 11px 13px; border-bottom: 1px solid var(--border-color); flex-wrap: wrap; }
@@ -2100,11 +2100,11 @@ onActivated(loadAll);
 .view-toggle { margin-left: auto; display: inline-flex; background: var(--surface-2); border: 1px solid var(--border-color); border-radius: var(--radius-sm); padding: 2px; gap: 2px; }
 .view-toggle button { background: none; border: none; color: var(--text-secondary); font-family: var(--font-family); font-size: 0.8rem; font-weight: 500; padding: 5px 12px; border-radius: calc(var(--radius-sm) - 2px); cursor: pointer; transition: background 0.15s, color 0.15s; }
 .view-toggle button:hover { color: var(--text-color); }
-.view-toggle button.active { background: var(--primary-color); color: #fff; }
+.view-toggle button.active { background: var(--primary-fill); color: var(--on-primary); }
 
 /* Week view — full session detail */
 .week-view { display: flex; flex-direction: column; }
-.wv-day { padding: 14px 16px; border-top: 1px solid var(--border-color); }
+.wv-day { padding: 19px 22px; border-top: 1px solid var(--border-color); }
 .wv-day:first-child { border-top: none; }
 .wv-today { background: var(--primary-soft); }
 .wv-dayhead { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
@@ -2132,7 +2132,7 @@ onActivated(loadAll);
 .wv-add:hover { color: var(--primary-color); border-color: var(--primary-color); }
 .wv-restday { margin: 0; font-size: 0.82rem; color: var(--text-muted); font-style: italic; }
 .wv-sessions { display: flex; flex-direction: column; gap: 10px; }
-.wv-card { display: flex; gap: 12px; padding: 12px 14px; border: 1px solid var(--border-color); border-left: 3px solid var(--tag-color); border-radius: var(--radius-sm); background: var(--surface-color); cursor: pointer; transition: background 0.15s, box-shadow 0.15s; }
+.wv-card { display: flex; gap: 12px; padding: 16px 18px; border: 1px solid transparent; border-radius: var(--radius-sm); background: var(--surface-2); cursor: pointer; transition: background 0.15s, box-shadow 0.15s; }
 .wv-card:hover { background: var(--surface-2); box-shadow: 0 1px 6px rgba(0,0,0,0.08); }
 .wv-card.status-completed { background: color-mix(in srgb, var(--tag-color) 8%, transparent); }
 .wv-badge { width: 34px; height: 34px; border-radius: 9px; background: var(--tag-color); color: #fff; display: flex; align-items: center; justify-content: center; font-size: 1.1rem; flex-shrink: 0; }
@@ -2185,7 +2185,7 @@ onActivated(loadAll);
 
 /* Every row is exactly this tall. Rows used to grow with their busiest day, so
    the grid came out lumpy and you couldn't scan across a week. */
-.cal-body { grid-auto-rows: 126px; }
+.cal-body { grid-auto-rows: 150px; }
 
 .day-cell {
   background: var(--surface-color);
@@ -2238,7 +2238,7 @@ onActivated(loadAll);
 
 /* Today gets a filled disc and a ring — findable without hunting for a tint. */
 .day-cell.is-today { background: color-mix(in srgb, var(--primary-color) 8%, var(--surface-color)); }
-.is-today .day-number { background: var(--primary-color); color: #fff; font-weight: 700; }
+.is-today .day-number { background: var(--primary-fill); color: var(--on-primary); font-weight: 700; }
 .is-today::after {
   content: '';
   position: absolute;
@@ -2323,7 +2323,7 @@ onActivated(loadAll);
 }
 
 /* Forms */
-.form-container { display: flex; flex-direction: column; gap: 16px; padding: 6px 0; }
+.form-container { display: flex; flex-direction: column; gap: 21px; padding: 6px 0; }
 .form-group { display: flex; flex-direction: column; gap: 6px; }
 
 .photo-option {

@@ -23,6 +23,12 @@
 					<span class="icon"><n-icon :component="PersonCircleOutline" /></span>
 					<span v-if="!collapsed" class="label">Profile</span>
 				</router-link>
+				<button @click="toggleTheme" class="navigation-link theme-button"
+					:title="isDark ? 'Switch to light' : 'Switch to dark'"
+					:aria-label="isDark ? 'Switch to light theme' : 'Switch to dark theme'">
+					<span class="icon"><n-icon :component="isDark ? SunnyOutline : MoonOutline" /></span>
+					<span v-if="!collapsed" class="label">{{ isDark ? 'Light' : 'Dark' }}</span>
+				</button>
 				<button @click="toggleCollapse" class="navigation-link collapse-button"
 					:title="collapsed ? 'Expand' : 'Collapse'" :aria-label="collapsed ? 'Expand sidebar' : 'Collapse sidebar'">
 					<span class="icon"><n-icon :component="collapsed ? ChevronForwardOutline : ChevronBackOutline" /></span>
@@ -74,8 +80,11 @@ import {
 	PersonCircleOutline,
 	PulseOutline,
 	ChevronBackOutline,
-	ChevronForwardOutline
+	ChevronForwardOutline,
+	MoonOutline,
+	SunnyOutline
 } from '@vicons/ionicons5'
+import { isDark, toggleTheme } from '@/theme'
 
 const menuOptions = [
 	{ label: 'Home', key: 'Home', to: { name: 'Home' }, icon: markRaw(GridOutline) },
@@ -116,10 +125,13 @@ onUnmounted(() => {
 	overflow: hidden;
 }
 
+/* Unfilled on purpose: the shell is a column of links on the page rather than
+   a panel bolted to its edge. It is the same idea as the flat cards — things
+   separate by their own colour, not by a frame. */
 .sidebar {
 	width: var(--sidebar-width);
-	background: linear-gradient(180deg, var(--sidebar-bg-top) 0%, var(--sidebar-bg-bottom) 100%);
-	border-right: 1px solid var(--border-color);
+	background: transparent;
+	border-right: 1px solid transparent;
 	display: flex;
 	flex-direction: column;
 	transition: width 0.22s ease;
@@ -252,7 +264,7 @@ onUnmounted(() => {
 	gap: 2px;
 }
 
-.collapse-button { color: var(--text-muted); }
+.collapse-button, .theme-button { color: var(--text-muted); }
 
 .main-content {
 	flex: 1;

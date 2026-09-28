@@ -217,8 +217,8 @@ async function submit() {
 	margin-top: 4px;
 	border: none;
 	border-radius: var(--radius);
-	background: var(--primary-color);
-	color: #fff;
+	background: var(--primary-fill);
+	color: var(--on-primary);
 	font-size: 0.95rem;
 	font-weight: 600;
 	font-family: inherit;

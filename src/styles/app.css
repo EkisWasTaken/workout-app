@@ -1,52 +1,64 @@
 /* src/styles/app.css — Trainlog design tokens and global surfaces
  *
+ * The design is "Linen": warm neutrals, soft corners, flat panels, generous
+ * spacing and quiet headings. It exists in two grounds — a warm charcoal and a
+ * warm paper — and the only difference between them is the block of colour
+ * tokens below. Everything else in the app is written against those tokens, so
+ * the whole light theme costs one `[data-theme='light']` block and nothing
+ * else in the codebase knows which one is active.
+ *
  * Colour roles, and why they're separate:
  *
  *   primary     interactive things and neutral data lines (links, active nav,
- *               the fitness line). Violet, so it never reads as good or bad.
+ *               the fitness line). Warm amber, away from the verdict hues.
+ *   primary-fill the *filled* shade. White text is AA on it and is not on
+ *               --primary-color, which is tuned for text on a surface.
  *   success /   the progress verdicts. Green and amber are reserved for "better"
  *   warning     and "worse" — nothing decorative uses them.
  *   sport       one hue per sport, all chosen away from green/amber/red so a
  *               running chart can't be mistaken for a verdict.
  *
- * Every text colour here clears WCAG AA on --surface-color.
+ * Every text colour here clears WCAG AA on --surface-color, in both grounds.
  */
 
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Source+Sans+3:wght@400;500;600;700&family=Sora:wght@500;600;700&display=swap');
 
 :root {
-  /* Surfaces — neutral charcoal, a touch cool */
-  --background-color: #0b0d11;
-  --surface-color: #12151b;
-  --card-background-color: #12151b;
-  --surface-2: #191d24;
-  --surface-hover: #20252e;
-  --surface-elevated: #1b1f27;
+  /* ── Dark: warm charcoal ────────────────────────────────────────────────── */
 
-  /* Sidebar — its own tokens so a light theme can override it independently */
-  --sidebar-bg-top: #0f1116;
-  --sidebar-bg-bottom: #0d0f13;
+  /* Surfaces */
+  --background-color: #0d0c0a;
+  --surface-color: #161512;
+  --card-background-color: #161512;
+  --surface-2: #201e1a;
+  --surface-hover: #2d2925;
+  --surface-elevated: #24211e;
 
-  /* Borders */
-  --border-color: #232830;
-  --border-strong: #333a45;
+  /* Sidebar — its own tokens, though the Linen shell leaves it unfilled. */
+  --sidebar-bg-top: #110f0e;
+  --sidebar-bg-bottom: #0b0a09;
+
+  /* Borders. Deliberately close to the surfaces: panels are flat here, so a
+     line is a hint that two things are different, not a frame around one. */
+  --border-color: #2c2824;
+  --border-strong: #514a43;
   --border-subtle: rgba(255, 255, 255, 0.05);
 
   /* Text */
-  --text-color: #eef0f4;
-  --text-secondary: #a4abb8;
-  --text-muted: #747c8b;
+  --text-color: #f3f2f2;
+  --text-secondary: #b9b5b1;
+  --text-muted: #8e8880;
   --color-text-light: #ffffff;
 
   /* Brand / interactive */
-  --primary-color: #9b8cff;          /* text, lines, focus rings on dark */
-  --primary-fill: #6c5ce7;           /* filled buttons — white text is AA on this */
-  --primary-fill-hover: #7b6cf0;
+  --primary-color: #f3a268;          /* text, lines, focus rings */
+  --primary-fill: #be5409;           /* filled buttons — white text is AA on this */
+  --primary-fill-hover: #e0640b;
   --on-primary: #ffffff;
   --accent-color: var(--primary-color);
-  --primary-soft: rgba(155, 140, 255, 0.13);
-  --primary-strong: #7b6cf0;
-  --glow-color: rgba(155, 140, 255, 0.3);
+  --primary-soft: rgba(243, 162, 104, 0.13);
+  --primary-strong: #e0640b;
+  --glow-color: rgba(243, 162, 104, 0.3);
 
   /* Verdicts and states */
   --success-color: #4ade80;
@@ -57,22 +69,23 @@
   --danger-soft: rgba(248, 113, 113, 0.12);
 
   /* Sports. Each hue also gets a --*-soft tint for badges and chip fills, so a
-     sport reads the same whether it's a chart series or a label. */
-  --color-running-primary: #38bdf8;
-  --color-running-primary-rgb: 56, 189, 248;
-  --color-running-soft: rgba(56, 189, 248, 0.14);
-  --color-gym-primary: #f472b6;
-  --color-gym-primary-rgb: 244, 114, 182;
-  --color-gym-soft: rgba(244, 114, 182, 0.14);
-  --color-bike-primary: #fb923c;
-  --color-bike-primary-rgb: 251, 146, 60;
-  --color-bike-soft: rgba(251, 146, 60, 0.14);
-  --color-rest-primary: #64748b;
-  --color-rest-primary-rgb: 100, 116, 139;
-  --color-rest-soft: rgba(100, 116, 139, 0.16);
-  --color-other-primary: #94a3b8;
-  --color-other-primary-rgb: 148, 163, 184;
-  --color-other-soft: rgba(148, 163, 184, 0.14);
+     sport reads the same whether it's a chart series or a label. Muted here:
+     a warm ground can't carry the neon versions without them screaming. */
+  --color-running-primary: #62b2da;
+  --color-running-primary-rgb: 98, 178, 218;
+  --color-running-soft: rgba(98, 178, 218, 0.14);
+  --color-gym-primary: #da6294;
+  --color-gym-primary-rgb: 218, 98, 148;
+  --color-gym-soft: rgba(218, 98, 148, 0.14);
+  --color-bike-primary: #daa862;
+  --color-bike-primary-rgb: 218, 168, 98;
+  --color-bike-soft: rgba(218, 168, 98, 0.14);
+  --color-rest-primary: #837667;
+  --color-rest-primary-rgb: 131, 118, 103;
+  --color-rest-soft: rgba(131, 118, 103, 0.16);
+  --color-other-primary: #a89f94;
+  --color-other-primary-rgb: 168, 159, 148;
+  --color-other-soft: rgba(168, 159, 148, 0.14);
 
   /* Personal records — gold, deliberately distinct from the amber warning hue. */
   --pr-gold: #f0b429;
@@ -82,21 +95,23 @@
   --color-cadence: #c4b5fd;
   --color-elevation: #8ba1c0;
 
-  /* Shape */
-  --radius-sm: 8px;
-  --radius: 14px;
-  --radius-lg: 20px;
-  --shadow-card: 0 1px 0 rgba(255, 255, 255, 0.04) inset, 0 1px 2px rgba(0, 0, 0, 0.3);
+  /* Shape — soft corners throughout. */
+  --radius-sm: 11px;
+  --radius: 18px;
+  --radius-lg: 26px;
+  /* Panels are flat: they separate by fill, not by a frame or a drop shadow.
+     --shadow-pop is still real, because a modal genuinely floats. */
+  --shadow-card: none;
   --shadow-pop: 0 12px 32px rgba(0, 0, 0, 0.45);
 
   /* Type
-   * Inter for reading, Space Grotesk for headings and every number that matters.
+   * Source Sans for reading, Sora for headings and every number that matters.
    * --font-mono is the numeric face (tabular figures), not a code font — nothing
    * in the app shows code to users. --font-serif is kept as an alias so older
    * rules still resolve. */
-  --font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
-  --font-display: 'Space Grotesk', 'Inter', system-ui, sans-serif;
-  --font-mono: 'Space Grotesk', 'Inter', system-ui, sans-serif;
+  --font-family: 'Source Sans 3', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --font-display: 'Sora', 'Source Sans 3', system-ui, sans-serif;
+  --font-mono: 'Sora', 'Source Sans 3', system-ui, sans-serif;
   --font-serif: var(--font-display);
 
   /* Layout */
@@ -118,6 +133,75 @@
   color-scheme: dark;
   color: var(--text-color);
   background-color: var(--background-color);
+}
+
+/* ── Light: warm paper ──────────────────────────────────────────────────────
+ *
+ * Only the values that are *defined in terms of the ground* change. The light
+ * ramp is not the dark one reversed: an inset recesses into paper where it
+ * lifts off charcoal, and every colour used as text has to come a long way
+ * down, because a hue that reads beautifully at 62% lightness on near-black is
+ * unreadable on white.
+ */
+html[data-theme='light'] {
+  --background-color: #f6f4f1;
+  --surface-color: #ffffff;
+  --card-background-color: #ffffff;
+  --surface-2: #f1eee9;
+  --surface-hover: #e9e4dd;
+  --surface-elevated: #ffffff;
+
+  --sidebar-bg-top: #fdfdfc;
+  --sidebar-bg-bottom: #f5f3f0;
+
+  --border-color: #eae4dc;
+  --border-strong: #c5b7a6;
+  --border-subtle: rgba(41, 39, 36, 0.09);
+
+  --text-color: #292724;
+  --text-secondary: #655d53;
+  --text-muted: #827564;
+
+  --primary-color: #c15b1f;
+  --primary-fill: #bf5518;
+  --primary-fill-hover: #de631b;
+  --primary-soft: rgba(193, 91, 31, 0.13);
+  --primary-strong: #de631b;
+  --glow-color: rgba(193, 91, 31, 0.3);
+
+  /* The dark theme's greens and ambers are tuned for a black ground; on paper
+     #4ade80 is a 1.8:1 smear. */
+  --success-color: #15803d;
+  --success-soft: rgba(21, 128, 61, 0.12);
+  --warning-color: #a16207;
+  --warning-soft: rgba(161, 98, 7, 0.12);
+  --danger-color: #b91c1c;
+  --danger-soft: rgba(185, 28, 28, 0.12);
+  --pr-gold: #8a6108;
+
+  --color-running-primary: #31749b;
+  --color-running-primary-rgb: 49, 116, 155;
+  --color-running-soft: rgba(49, 116, 155, 0.14);
+  --color-gym-primary: #9b3162;
+  --color-gym-primary-rgb: 155, 49, 98;
+  --color-gym-soft: rgba(155, 49, 98, 0.14);
+  --color-bike-primary: #9b5f31;
+  --color-bike-primary-rgb: 155, 95, 49;
+  --color-bike-soft: rgba(155, 95, 49, 0.14);
+  --color-rest-primary: #817565;
+  --color-rest-primary-rgb: 129, 117, 101;
+  --color-rest-soft: rgba(129, 117, 101, 0.16);
+  --color-other-primary: #6b6257;
+  --color-other-primary-rgb: 107, 98, 87;
+  --color-other-soft: rgba(107, 98, 87, 0.14);
+
+  --color-heartrate: #be123c;
+  --color-cadence: #6d28d9;
+  --color-elevation: #4a6584;
+
+  --shadow-pop: 0 12px 32px rgba(41, 39, 36, 0.16);
+
+  color-scheme: light;
 }
 
 body {
@@ -177,39 +261,49 @@ body {
 }
 ::-webkit-scrollbar-thumb:hover { background: #46505e; }
 
-/* Headings */
+/* Headings.
+ *
+ * Quiet on purpose: this app is mostly numbers, and a wall of tight bold titles
+ * competes with them. Section headings sit back in the secondary text colour
+ * and let the data be the loudest thing on the page. The page title is the one
+ * exception — it still has to say where you are. */
 h1, h2, h3, h4 {
-  color: var(--text-color);
+  color: var(--text-secondary);
   font-family: var(--font-display);
-  font-weight: 600;
-  letter-spacing: -0.02em;
+  font-weight: 500;
+  letter-spacing: 0;
   margin: 0;
 }
 
 a { color: var(--primary-color); text-decoration: none; }
 
-::selection { background: rgba(155, 140, 255, 0.35); }
+::selection { background: var(--primary-soft); color: var(--text-color); }
 
 :focus-visible { outline: 2px solid var(--primary-color); outline-offset: 2px; }
 
 /* One page header, shared by every top-level view. */
 .page-title {
+  color: var(--text-color);
   font-family: var(--font-display);
-  font-size: 1.65rem;
+  font-size: 1.4rem;
   font-weight: 600;
-  letter-spacing: -0.025em;
-  line-height: 1.15;
+  letter-spacing: -0.01em;
+  line-height: 1.2;
 }
 
 /* One step down on phones, so a long title can't wrap the header. */
 @media (max-width: 768px) {
-  .page-title { font-size: 1.35rem; }
+  .page-title { font-size: 1.22rem; }
 }
 
-/* Reusable card surface */
+/* Reusable card surface.
+ *
+ * Flat: a panel separates from the page by its own fill, not by a frame or a
+ * shadow. The border is kept in the box model at zero visual weight so nothing
+ * shifts by a pixel when a component turns one on for its own reasons. */
 .card {
   background-color: var(--surface-color);
-  border: 1px solid var(--border-color);
+  border: 1px solid transparent;
   border-radius: var(--radius);
   box-shadow: var(--shadow-card);
 }
@@ -217,11 +311,11 @@ a { color: var(--primary-color); text-decoration: none; }
 /* Naive UI light-touch overrides (theme.ts handles most colours) */
 .n-card {
   background-color: var(--surface-color) !important;
-  border: 1px solid var(--border-color) !important;
+  border: 1px solid transparent !important;
   border-radius: var(--radius) !important;
   box-shadow: var(--shadow-card) !important;
 }
-.n-card-header__main { font-family: var(--font-display); letter-spacing: -0.01em; }
+.n-card-header__main { font-family: var(--font-display); font-weight: 500; letter-spacing: 0; }
 
 /* Subtle inline loading indicator */
 .ascii-spinner::after {

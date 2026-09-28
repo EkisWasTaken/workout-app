@@ -761,13 +761,18 @@ watch(completed, () => { if (tab.value === 'today') buildTodayCharts() })
 .streak-badge .flame { animation: flame-pulse 2.6s ease-in-out infinite; }
 @keyframes flame-pulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.22); } }
 
+/* Soft, like every other primary action: a tint of the accent with accent
+   text. It used to fill with --primary-color and put white on top, which is a
+   2:1 ratio on the dark ground — that token is the shade tuned for text *on* a
+   surface, not for a surface to sit under text. */
 .primary-btn {
 	display: inline-flex; align-items: center; gap: 6px;
-	background: var(--primary-color); color: #fff;
+	background: var(--primary-soft); color: var(--primary-color);
+	border: 1px solid transparent;
 	padding: 8px 14px; border-radius: var(--radius-sm);
 	font-size: 0.84rem; font-weight: 600;
 }
-.primary-btn:hover { background: var(--primary-strong); }
+.primary-btn:hover { border-color: var(--primary-color); }
 
 /* Onboarding */
 .onboarding {
@@ -807,15 +812,18 @@ watch(completed, () => { if (tab.value === 'today') buildTodayCharts() })
 .tabbar button:hover { color: var(--text-secondary); }
 .tabbar button.active { color: var(--primary-color); border-bottom-color: var(--primary-color); }
 
+/* Flat, like every other panel in the app: separated by its own fill rather
+   than a frame. The border is kept at zero weight so nothing shifts when a
+   card turns one on for its own reasons. */
 .panel {
 	background: var(--surface-color);
-	border: 1px solid var(--border-color);
+	border: 1px solid transparent;
 	border-radius: var(--radius);
-	box-shadow: inset 0 1px 0 var(--border-subtle);
+	box-shadow: none;
 }
 
 /* Today */
-.today-card { padding: 16px 18px; margin-bottom: 14px; }
+.today-card { padding: 22px 24px; margin-bottom: 16px; }
 .today-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
 .today-head h2 { font-size: 1rem; font-weight: 600; font-family: var(--font-family); margin: 0; }
 .today-status { font-size: 0.74rem; font-weight: 600; padding: 3px 10px; border-radius: 999px; }
@@ -860,7 +868,7 @@ watch(completed, () => { if (tab.value === 'today') buildTodayCharts() })
 	border: 1px solid var(--border-strong); background: var(--surface-color);
 	color: var(--text-secondary);
 }
-.ts-complete { background: var(--primary-color); border-color: var(--primary-color); color: #fff; }
+.ts-complete { background: var(--primary-soft); border-color: transparent; color: var(--primary-color); }
 .ts-complete:disabled, .ts-file:disabled { opacity: 0.55; cursor: default; }
 .ts-file-lbl { white-space: nowrap; }
 
