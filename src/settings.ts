@@ -13,6 +13,7 @@ import { reactive, computed } from 'vue'
 import { db, schema, MISSING_GOALS_TABLES } from './db'
 import { signupName } from './auth'
 import { DISTANCES, DISTANCE_LABELS, vdotFromRace, vdotForCourse, FLAT, type DistanceKey } from './utils/vdot'
+import { ACTIVITY_FACTORS, type ActivityLevel, type Sex } from './utils/energy'
 import type { RaceGoal, Target } from './types'
 
 export interface Settings {
@@ -21,15 +22,32 @@ export interface Settings {
 	restingHR: number
 	maxHR: number | null
 	vdotOverride: number | null
+	/**
+	 * Body stats, for the energy planner. A birth year rather than an age, so a
+	 * profile filled in once doesn't quietly go wrong every birthday.
+	 */
+	birthYear: number | null
+	heightCm: number | null
+	sex: Sex | null
+	activityLevel: ActivityLevel | null
 }
 
-const DEFAULTS: Settings = { userName: '', goalWeight: null, restingHR: 60, maxHR: null, vdotOverride: null }
+const DEFAULTS: Settings = {
+	userName: '', goalWeight: null, restingHR: 60, maxHR: null, vdotOverride: null,
+	birthYear: null, heightCm: null, sex: null, activityLevel: null,
+}
 
 /** localStorage keys, unchanged from the pre-database version. */
 const LS = {
 	userName: 'userName', goalWeight: 'goalWeight', restingHR: 'restingHR',
 	maxHR: 'maxHR', vdotOverride: 'vdotOverride',
+	birthYear: 'birthYear', heightCm: 'heightCm', sex: 'sex', activityLevel: 'activityLevel',
 } as const
+
+/** Only the values the equations understand survive a round trip through the cache. */
+const asSex = (v: string | null): Sex | null => (v === 'male' || v === 'female' ? v : null)
+const asActivity = (v: string | null): ActivityLevel | null =>
+	v && v in ACTIVITY_FACTORS ? (v as ActivityLevel) : null
 
 function readCache(): Settings {
 	const num = (k: string) => {
@@ -44,6 +62,10 @@ function readCache(): Settings {
 		restingHR: num(LS.restingHR) ?? DEFAULTS.restingHR,
 		maxHR: num(LS.maxHR),
 		vdotOverride: num(LS.vdotOverride),
+		birthYear: num(LS.birthYear),
+		heightCm: num(LS.heightCm),
+		sex: asSex(localStorage.getItem(LS.sex)),
+		activityLevel: asActivity(localStorage.getItem(LS.activityLevel)),
 	}
 }
 
@@ -51,10 +73,16 @@ function writeCache(s: Settings) {
 	localStorage.setItem(LS.userName, s.userName)
 	const put = (k: string, v: number | null) =>
 		v === null ? localStorage.removeItem(k) : localStorage.setItem(k, String(v))
+	const putStr = (k: string, v: string | null) =>
+		v === null ? localStorage.removeItem(k) : localStorage.setItem(k, v)
 	put(LS.goalWeight, s.goalWeight)
 	put(LS.restingHR, s.restingHR)
 	put(LS.maxHR, s.maxHR)
 	put(LS.vdotOverride, s.vdotOverride)
+	put(LS.birthYear, s.birthYear)
+	put(LS.heightCm, s.heightCm)
+	putStr(LS.sex, s.sex)
+	putStr(LS.activityLevel, s.activityLevel)
 }
 
 export const settings = reactive<Settings>(readCache())
@@ -129,6 +157,15 @@ export async function hydrateSettings(): Promise<void> {
 			settings.restingHR = profile.resting_hr ?? DEFAULTS.restingHR
 			settings.maxHR = profile.max_hr
 			settings.vdotOverride = profile.vdot_override ?? null
+			// A database still behind supabase_body_stats.sql answers null for all
+			// of these; copying that over would wipe stats typed before the
+			// migration ran, so the cache stays authoritative until it lands.
+			if (schema.v4) {
+				settings.birthYear = profile.birth_year ?? null
+				settings.heightCm = profile.height_cm ?? null
+				settings.sex = asSex(profile.sex ?? null)
+				settings.activityLevel = asActivity(profile.activity_level ?? null)
+			}
 			writeCache(settings)
 		}
 
@@ -142,6 +179,9 @@ export async function hydrateSettings(): Promise<void> {
 		} else if (!schema.v3) {
 			pendingMigration.script = 'supabase_goals_v3.sql'
 			console.warn('[settings] course terrain needs supabase_goals_v3.sql')
+		} else if (!schema.v4) {
+			pendingMigration.script = 'supabase_body_stats.sql'
+			console.warn('[settings] the energy planner’s body stats need supabase_body_stats.sql')
 		}
 
 		await migrateLegacyRaceGoal()
@@ -195,8 +235,44 @@ export async function saveSettings(next: Partial<Settings>): Promise<void> {
 		resting_hr: settings.restingHR,
 		max_hr: settings.maxHR,
 		vdot_override: settings.vdotOverride,
+		birth_year: settings.birthYear,
+		height_cm: settings.heightCm,
+		sex: settings.sex,
+		activity_level: settings.activityLevel,
 	})
 }
+
+// ─── body stats ───────────────────────────────────────────────────────────────
+
+/**
+ * Age in whole years, from the stored birth year.
+ *
+ * Deliberately coarse: the BMR equation subtracts five kilocalories per year of
+ * age, so knowing the birthday to the day would change the answer by less than
+ * a rounding error. `todayYear` is injectable so nothing here needs a clock.
+ */
+export function ageFromBirthYear(birthYear: number | null, todayYear = new Date().getFullYear()): number | null {
+	if (birthYear === null || !Number.isFinite(birthYear)) return null
+	const age = todayYear - birthYear
+	return age >= 14 && age <= 100 ? age : null
+}
+
+/**
+ * Everything the energy planner needs except the current weight, or null when
+ * the profile hasn't been filled in far enough to compute anything honest.
+ */
+export const bodyStats = computed(() => {
+	const age = ageFromBirthYear(settings.birthYear)
+	if (age === null || !settings.heightCm || !settings.sex) return null
+	return {
+		age,
+		heightCm: settings.heightCm,
+		sex: settings.sex,
+		// Most people who train have a desk job; it's the safest thing to assume,
+		// and assuming more would inflate every target they're given.
+		activityLevel: settings.activityLevel ?? ('sedentary' as ActivityLevel),
+	}
+})
 
 // Distance goals have no local fallback, so the DB write has to land before the
 // reactive store changes — otherwise a failed save still lights up the pace table.

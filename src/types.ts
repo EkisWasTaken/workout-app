@@ -201,6 +201,17 @@ export interface Profile {
 	max_hr: number | null;
 	/** Manual current VDOT; overrides everything derived from activities. */
 	vdot_override: number | null;
+	/**
+	 * Body stats for the energy planner (supabase_body_stats.sql).
+	 *
+	 * A year rather than an age, so it doesn't silently go stale on a birthday.
+	 */
+	birth_year: number | null;
+	height_cm: number | null;
+	/** 'male' | 'female'. A term in the BMR equation, nothing more. */
+	sex: string | null;
+	/** Daily life outside training: 'sedentary' | 'light' | 'moderate' | 'very'. */
+	activity_level: string | null;
 }
 
 /**

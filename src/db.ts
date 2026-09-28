@@ -34,31 +34,45 @@ const isMissingColumn = (error: { code?: string } | null) => error?.code === '42
  * Flipped to false the first time a v2 column comes back missing, so reads fall
  * back and v2-only writes fail loudly instead of silently dropping data.
  */
-export const schema = { v2: true, v3: true }
+export const schema = { v2: true, v3: true, v4: true }
+
+/** Profile columns each migration added, so a read can fall back a tier at a time. */
+const PROFILE_BASE = 'user_name, goal_weight, resting_hr, max_hr'
+const PROFILE_V2 = `${PROFILE_BASE}, vdot_override`
+const PROFILE_V4 = `${PROFILE_V2}, birth_year, height_cm, sex, activity_level`
+
+/** Fields a given tier can't store, blanked so callers never read a stale value. */
+const PROFILE_V4_BLANKS = { birth_year: null, height_cm: null, sex: null, activity_level: null }
 
 export const db = {
   // PROFILE (one row per user, keyed on user_id)
   getProfile: async (): Promise<Profile | null> => {
     const uid = currentUserId()
-    const full = await supabase
-      .from('profile')
-      .select('user_name, goal_weight, resting_hr, max_hr, vdot_override')
-      .eq('user_id', uid)
-      .maybeSingle()
+    const read = (columns: string) =>
+      supabase.from('profile').select(columns).eq('user_id', uid).maybeSingle()
 
-    if (!full.error) return full.data as Profile | null
+    // Newest schema first, falling back one migration at a time. Each fallback
+    // flips its flag so writes stop trying to send columns that aren't there.
+    const full = await read(PROFILE_V4)
+    if (!full.error) return full.data as unknown as Profile | null
     if (isMissingTable(full.error)) throw new Error(MISSING_GOALS_TABLES)
     if (!isMissingColumn(full.error)) throw full.error
 
-    // v2 not applied yet: read what exists so the rest of Profile still works.
+    // A dynamic column list defeats supabase-js's row typing, so the partial
+    // rows come back untyped and are widened by hand.
+    schema.v4 = false
+    const v2 = await read(PROFILE_V2)
+    if (!v2.error) {
+      const row = v2.data as Record<string, unknown> | null
+      return row ? ({ ...row, ...PROFILE_V4_BLANKS } as unknown as Profile) : null
+    }
+    if (!isMissingColumn(v2.error)) throw v2.error
+
     schema.v2 = false
-    const base = await supabase
-      .from('profile')
-      .select('user_name, goal_weight, resting_hr, max_hr')
-      .eq('user_id', uid)
-      .maybeSingle()
+    const base = await read(PROFILE_BASE)
     if (base.error) throw base.error
-    return base.data ? ({ ...base.data, vdot_override: null } as Profile) : null
+    const row = base.data as Record<string, unknown> | null
+    return row ? ({ ...row, vdot_override: null, ...PROFILE_V4_BLANKS } as unknown as Profile) : null
   },
 
   saveProfile: async (profile: Partial<Profile>): Promise<void> => {
@@ -66,6 +80,7 @@ export const db = {
       user_id: currentUserId(), ...profile, updated_at: new Date().toISOString(),
     }
     if (!schema.v2) delete row.vdot_override
+    if (!schema.v4) for (const k of Object.keys(PROFILE_V4_BLANKS)) delete row[k]
 
     const { error } = await supabase.from('profile').upsert([row], { onConflict: 'user_id' })
     if (error) {

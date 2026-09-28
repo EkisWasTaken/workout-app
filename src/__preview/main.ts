@@ -192,7 +192,11 @@ d.getExercises = async () => [
 	{ id: 3, name: 'Squat', body_part: 'legs' }, { id: 4, name: 'Romanian deadlift', body_part: 'legs' },
 	{ id: 5, name: 'Pull-up', body_part: 'back' },
 ]
-d.getProfile = async () => ({ user_name: 'Elias', goal_weight: 78, resting_hr: rest, max_hr: null, vdot_override: null })
+d.getProfile = async () => ({
+	user_name: 'Elias', goal_weight: 78, resting_hr: rest, max_hr: null, vdot_override: null,
+	birth_year: now.getFullYear() - 29, height_cm: 183, sex: 'male', activity_level: 'light',
+})
+d.saveProfile = async () => {}
 d.getDistanceGoals = async () => []
 
 // Progress photos: drawn silhouettes that slim down over five months, each

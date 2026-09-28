@@ -178,6 +178,22 @@ export const bike = computed(() => bikeProgress({
 export const body = computed(() =>
 	bodyProgress(dailyWeights.value, settings.goalWeight, today.value))
 
+/**
+ * What the athlete weighs, for anything that needs one number.
+ *
+ * The *trend* weight, not the last reading: a single morning swings a kilo on
+ * hydration alone, and an energy plan built off a bad Tuesday would hand back a
+ * week of the wrong targets. Null when nobody has ever weighed in — callers ask
+ * for the number rather than being handed an invented one.
+ */
+export const currentWeightKg = computed<number | null>(() => {
+	const trend = body.value.smoothed
+	const last = trend[trend.length - 1]
+	if (last) return last.weight
+	const latest = [...dailyWeights.value].sort((a, b) => b.date.localeCompare(a.date))[0]
+	return latest?.weight > 0 ? latest.weight : null
+})
+
 export const load = computed(() =>
 	trainingLoad(activities.value, hrSettings.value.maxHR, hrSettings.value.restHR, 120, today.value))
 

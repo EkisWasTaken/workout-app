@@ -25,6 +25,10 @@
             title="Generate a phased training plan from now to a race on your calendar">
             <n-icon :component="TrendingUpOutline" /> Build plan
           </button>
+          <button @click="openFuelPlan" class="action-button"
+            title="Work out daily calories and macros from your goal weight and what's on the schedule">
+            <n-icon :component="FlameOutline" /> Fuel plan
+          </button>
           <button @click="handleImportSys" class="action-button"
             title="Add or update many planned sessions at once from a spreadsheet">
             <n-icon :component="CloudUploadOutline" /> Import plan (CSV)
@@ -590,6 +594,14 @@
         :gym-days="usualGymDays"
         :templates="templates"
         @created="loadWorkouts"
+        @fuel="fuelPlanFor"
+      />
+
+      <FuelPlanModal
+        v-model:show="showFuelPlan"
+        :sessions="fuelSessions"
+        :source-label="fuelSource"
+        :current-weight-kg="trendWeightKg"
       />
 
       <PhotoEditor
@@ -626,7 +638,7 @@ import {
   AddOutline, BodyOutline, CloudUploadOutline, CopyOutline, ChevronBackOutline, ChevronForwardOutline,
   FlagOutline, CheckmarkCircle, TrashOutline, CreateOutline, CheckmarkOutline, MapOutline,
   WatchOutline, WalkOutline, BarbellOutline, BicycleOutline, BedOutline, FitnessOutline,
-  TrendingUpOutline, CameraOutline,
+  TrendingUpOutline, CameraOutline, FlameOutline,
 } from '@vicons/ionicons5';
 import { db } from '@/db';
 import { isOwner } from '@/owner';
@@ -655,6 +667,9 @@ import CustomModal from '../components/CustomModal.vue';
 import ImportEditor from '../components/ImportEditor.vue';
 import ImportActivitiesModal from '../components/ImportActivitiesModal.vue';
 import BuildPlanModal from '../components/BuildPlanModal.vue';
+import FuelPlanModal from '../components/FuelPlanModal.vue';
+import { energySport, type EnergySession } from '@/utils/energy';
+import { weightTrend } from '@/utils/progress';
 import PhotoEditor from '../components/PhotoEditor.vue';
 import { loadPhotos, photos, photosError } from '@/photos';
 import { dueLabel, framesFor, nextPhotoDue, POSES, type Pose } from '@/utils/progressPhotos';
@@ -765,6 +780,54 @@ const usualGymDays = computed(() => {
   if (busiest < 2) return [];
   return counts.flatMap((n, day) => (n >= busiest * 0.6 ? [day] : []));
 });
+// == FUEL PLAN ==
+/**
+ * The energy planner reads whatever is on the calendar, so it normally needs no
+ * input at all. The exception is a plan you have just generated and not yet
+ * saved: those sessions exist only inside the builder, and being told "there's
+ * nothing scheduled" right after previewing sixteen weeks of training would be
+ * absurd — so the builder can hand them straight over.
+ */
+const showFuelPlan = ref(false);
+const previewedFuelSessions = ref<EnergySession[] | null>(null);
+
+/** Everything from this week's Monday on, in the shape the planner prices. */
+const scheduledEnergySessions = computed<EnergySession[]>(() => {
+  const from = format(startOfWeek(new Date(), { weekStartsOn: 1 }), 'yyyy-MM-dd');
+  return workouts.value.flatMap(w => {
+    if (w.date < from) return [];
+    const sport = energySport(w.type, w.name);
+    return sport ? [{ date: w.date, sport, km: w.distance, durationMin: w.duration }] : [];
+  });
+});
+
+const fuelSessions = computed(() => previewedFuelSessions.value ?? scheduledEnergySessions.value);
+const fuelSource = computed(() =>
+  previewedFuelSessions.value ? 'the plan you just built' : 'your schedule');
+
+/**
+ * Trend weight, not the last reading — a single morning moves a kilo on
+ * hydration alone, and a plan built on a bad Tuesday prescribes a bad week.
+ * The Home store computes the same thing, but this page never loads it.
+ */
+const trendWeightKg = computed<number | null>(() => {
+  const sorted = [...dailyWeights.value]
+    .filter(w => w.weight > 0)
+    .sort((a, b) => a.date.localeCompare(b.date));
+  return weightTrend(sorted).pop()?.weight ?? null;
+});
+
+function openFuelPlan() {
+  previewedFuelSessions.value = null;
+  showFuelPlan.value = true;
+}
+
+function fuelPlanFor(sessions: EnergySession[]) {
+  previewedFuelSessions.value = sessions;
+  showBuildPlan.value = false;
+  showFuelPlan.value = true;
+}
+
 const showActivityImport = ref(false);
 const importRawContent = ref('');
 

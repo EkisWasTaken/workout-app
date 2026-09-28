@@ -13,6 +13,13 @@
 					<template v-if="pendingMigration.script === 'supabase_goals_v2.sql'">
 						Everything below works, except goal dates, race results and the VDOT override.
 					</template>
+					<template v-else-if="pendingMigration.script === 'supabase_body_stats.sql'">
+						Everything below works, except that your height, year of birth, sex and daily
+						activity — the four the fuel planner needs — only save to this browser.
+					</template>
+					<template v-else-if="pendingMigration.script === 'supabase_goals_v3.sql'">
+						Everything below works, except a race's course terrain.
+					</template>
 					<template v-else>
 						Until then, preferences save to this browser only, and goal times can't be saved at all.
 					</template>
@@ -65,6 +72,42 @@
 						<p class="card-hint tight">
 							With a goal weight, the Body tab tracks whether your trend is heading toward it and
 							roughly when you'll get there.
+						</p>
+
+						<div class="sub-head">Body stats</div>
+						<p class="card-hint tight">
+							What the fuel planner needs to turn that goal weight into daily calories. Resting
+							metabolism depends on height, age and sex as well as weight, so without these it
+							would be guessing at an average person who doesn't exist.
+						</p>
+						<div class="hr-row">
+							<n-form-item label="Height (cm)">
+								<n-input v-model:value="form.heightCm" placeholder="e.g. 183" />
+							</n-form-item>
+							<n-form-item label="Year of birth">
+								<n-input v-model:value="form.birthYear" :placeholder="`e.g. ${thisYear - 30}`" />
+							</n-form-item>
+						</div>
+						<div class="hr-row">
+							<n-form-item label="Sex">
+								<n-select v-model:value="form.sex" :options="SEX_OPTIONS" clearable placeholder="Not set" />
+							</n-form-item>
+							<n-form-item label="Day outside training">
+								<n-select v-model:value="form.activityLevel" :options="ACTIVITY_OPTIONS" clearable
+									placeholder="Desk job, little walking" />
+							</n-form-item>
+						</div>
+						<p class="card-hint tight">
+							<strong>Sex</strong> is a term in the metabolic equation and nothing more — leave it
+							empty and the planner stays shut rather than guessing.
+							<strong>Day outside training</strong> covers your job and errands only: every session
+							on your schedule is counted separately, so picking "very active" here would count
+							your training twice.
+							<template v-if="bodyStats">
+								Right now that works out to a resting rate of about
+								<strong>{{ restingRate }}</strong> kcal a day<template v-if="baselineRate">, or
+								<strong>{{ baselineRate }}</strong> on a day with no training</template>.
+							</template>
 						</p>
 
 						<div class="sub-head">Heart rate</div>
@@ -298,10 +341,13 @@ import { FlagOutline, WarningOutline } from '@vicons/ionicons5'
 import { db, MISSING_GOALS_COLUMNS } from '@/db'
 import {
 	settings, distanceGoals, raceGoals, pendingMigration, activeTarget, targets, racesMissingGoalTime,
-	saveSettings, setDistanceGoal, clearDistanceGoal, refreshRaceGoals, hydrateSettings,
+	saveSettings, setDistanceGoal, clearDistanceGoal, refreshRaceGoals, hydrateSettings, bodyStats,
 } from '@/settings'
 import { currentVdot, derivedFitness, hydrateFitness } from '@/fitness'
-import { hrSettings, loaded as statsLoaded, loadStats } from '@/stats'
+import { currentWeightKg, hrSettings, loaded as statsLoaded, loadStats } from '@/stats'
+import {
+	ACTIVITY_LEVELS, baselineBurn, bmr, type ActivityLevel, type Sex,
+} from '@/utils/energy'
 import { auth, signOut } from '@/auth'
 import { isOwner, GENERIC_SCHEMA_MESSAGE } from '@/owner'
 import { activePalette, anyChanges, overrideCount as uiLabTokenCount, styleCount as uiLabStyleCount } from '@/uiLab'
@@ -347,7 +393,10 @@ const failed = (e: any, fallback: string) => {
 }
 
 // ─── preferences ──────────────────────────────────────────────────────────────
-const form = reactive({ userName: '', goalWeight: '', restingHR: '', maxHR: '', vdotOverride: '' })
+const form = reactive({
+	userName: '', goalWeight: '', restingHR: '', maxHR: '', vdotOverride: '',
+	heightCm: '', birthYear: '', sex: null as Sex | null, activityLevel: null as ActivityLevel | null,
+})
 
 function loadForm() {
 	form.userName = settings.userName
@@ -355,7 +404,40 @@ function loadForm() {
 	form.restingHR = settings.restingHR.toString()
 	form.maxHR = settings.maxHR?.toString() ?? ''
 	form.vdotOverride = settings.vdotOverride?.toString() ?? ''
+	form.heightCm = settings.heightCm?.toString() ?? ''
+	form.birthYear = settings.birthYear?.toString() ?? ''
+	form.sex = settings.sex
+	form.activityLevel = settings.activityLevel
 }
+
+// ─── body stats ───────────────────────────────────────────────────────────────
+
+const thisYear = new Date().getFullYear()
+
+const SEX_OPTIONS = [
+	{ label: 'Male', value: 'male' },
+	{ label: 'Female', value: 'female' },
+]
+
+const ACTIVITY_OPTIONS = ACTIVITY_LEVELS.map(a => ({ label: a.label, value: a.value }))
+
+/**
+ * The saved stats, echoed back as the numbers they produce.
+ *
+ * A birth year and a height are abstract; "1,810 kcal before you get out of
+ * bed" is the thing you can sanity-check against what you know about yourself.
+ */
+const restingRate = computed(() => {
+	const s = bodyStats.value
+	const kg = currentWeightKg.value
+	return s && kg ? bmr({ weightKg: kg, heightCm: s.heightCm, age: s.age, sex: s.sex }).toLocaleString() : null
+})
+
+const baselineRate = computed(() => {
+	const s = bodyStats.value
+	const kg = currentWeightKg.value
+	return s && kg ? baselineBurn({ weightKg: kg, ...s }).toLocaleString() : null
+})
 
 const num = (s: string) => {
 	const n = parseFloat(s)
@@ -395,6 +477,16 @@ async function savePrefs() {
 		message.error("Maximum heart rate should be well above resting — check those two numbers")
 		return
 	}
+	const height = num(form.heightCm)
+	const birthYear = num(form.birthYear)
+	if (height !== null && (height < 120 || height > 230)) {
+		message.error('Height should be between 120 and 230 cm')
+		return
+	}
+	if (birthYear !== null && (thisYear - birthYear < 14 || thisYear - birthYear > 100)) {
+		message.error('Year of birth should put you between 14 and 100')
+		return
+	}
 	saving.value = true
 	try {
 		await saveSettings({
@@ -403,6 +495,10 @@ async function savePrefs() {
 			restingHR: num(form.restingHR) ?? 60,
 			maxHR: num(form.maxHR),
 			vdotOverride: vdot,
+			heightCm: height,
+			birthYear: birthYear === null ? null : Math.round(birthYear),
+			sex: form.sex,
+			activityLevel: form.activityLevel,
 		})
 		message.success('Saved')
 	} catch (e) {

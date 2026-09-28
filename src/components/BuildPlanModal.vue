@@ -19,6 +19,7 @@ import {
 	type PlanInput,
 } from '@/utils/planBuilder'
 import { buildWorkoutFromTemplate } from '@/utils/templateSession'
+import type { EnergySession } from '@/utils/energy'
 import type { AddWorkoutPayload, RaceGoal, Workout, WorkoutTemplate } from '@/types'
 
 const props = defineProps<{
@@ -36,6 +37,8 @@ const props = defineProps<{
 const emit = defineEmits<{
 	(e: 'update:show', v: boolean): void
 	(e: 'created'): void
+	/** Hand the previewed sessions to the fuel planner, saved or not. */
+	(e: 'fuel', sessions: EnergySession[]): void
 }>()
 
 const message = useMessage()
@@ -188,6 +191,21 @@ function weekPreview(week: { startDate: string; sessions: typeof sessions.value 
 }
 
 const totalToAdd = computed(() => sessions.value.length + gymPlacements.value.length)
+
+/**
+ * The same plan, priced for the fuel planner.
+ *
+ * Volume is the decision this dialog exists to make, and it's also the thing
+ * that decides how much you have to eat — a jump from 40 to 60 km a week is
+ * another 1,300 kcal to find every week. Better to see that while the plan is
+ * still a preview than to discover it in month two.
+ */
+const energySessions = computed<EnergySession[]>(() => [
+	...sessions.value.map(s => ({ date: s.date, sport: 'running' as const, km: s.distanceKm })),
+	...gymPlacements.value.map(g => ({
+		date: g.date, sport: 'gym' as const, durationMin: g.template.duration ?? null,
+	})),
+])
 
 const weekLabel = (startDate: string) =>
 	`${format(parseISO(startDate), 'd MMM')} – ${format(addDays(parseISO(startDate), 6), 'd MMM')}`
@@ -368,6 +386,10 @@ async function create() {
 
 			<div class="bp-actions">
 				<n-button size="small" @click="emit('update:show', false)">Cancel</n-button>
+				<n-button v-if="plan" size="small" :disabled="saving" @click="emit('fuel', energySessions)"
+					title="Daily calories and macros for this plan's training load">
+					Fuel this plan
+				</n-button>
 				<n-button
 					type="primary"
 					size="small"
