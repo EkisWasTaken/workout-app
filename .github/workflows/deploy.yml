@@ -39,8 +39,6 @@ jobs:
           VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
           # Who sees developer diagnostics (e.g. which SQL file to run). Unset = nobody.
           VITE_OWNER_EMAIL: ${{ secrets.VITE_OWNER_EMAIL }}
-          VITE_STRAVA_CLIENT_ID: ${{ secrets.VITE_STRAVA_CLIENT_ID }}
-          VITE_STRAVA_CLIENT_SECRET: ${{ secrets.VITE_STRAVA_CLIENT_SECRET }}
 
       - name: Setup Pages
         uses: actions/configure-pages@v4
