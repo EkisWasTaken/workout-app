@@ -46,7 +46,11 @@ export function syncClock(): void {
 	if (fresh.toDateString() !== today.value.toDateString()) today.value = fresh
 }
 
+/** Bumped on reset, so a load started by the previous account can't land after it. */
+let generation = 0
+
 export async function loadStats(): Promise<void> {
+	const gen = generation
 	loading.value = true
 	try {
 		const [w, dw, rg] = await Promise.all([
@@ -54,6 +58,7 @@ export async function loadStats(): Promise<void> {
 			db.getDailyWeights().catch(() => [] as DailyWeight[]),
 			db.getRaceGoals().catch(() => [] as RaceGoal[]),
 		])
+		if (gen !== generation) return
 		workouts.value = w
 		dailyWeights.value = dw
 		raceGoals.value = rg
@@ -61,6 +66,7 @@ export async function loadStats(): Promise<void> {
 
 		try {
 			const acts = await activityApi.getAllActivities()
+			if (gen !== generation) return
 			activities.value = acts
 			setActivities(acts) // share the fetch rather than have fitness.ts refetch
 		} catch {
@@ -75,6 +81,7 @@ export async function loadStats(): Promise<void> {
 
 /** Drop everything on sign-out so one account's numbers never show to another. */
 export function resetStats(): void {
+	generation++
 	workouts.value = []
 	activities.value = []
 	dailyWeights.value = []

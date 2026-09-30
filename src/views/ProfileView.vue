@@ -118,17 +118,8 @@
 					<n-button @click="savePrefs" type="primary" :loading="saving">Save</n-button>
 				</n-card>
 
-				<!-- Account -->
-				<n-card bordered class="settings-card">
-					<template #header><span class="card-title">Account</span></template>
-					<div class="account-row">
-						<div class="account-info">
-							<span class="account-label">Signed in as</span>
-							<span class="account-email">{{ auth.user?.email || '—' }}</span>
-						</div>
-						<n-button @click="handleSignOut" tertiary>Sign out</n-button>
-					</div>
-				</n-card>
+				<!-- Account: sign out, password, email, delete -->
+				<AccountCard />
 
 				<!-- Appearance. The sidebar carries the same toggle, but there is no
 				     sidebar on a phone, so this is where it lives there. -->
@@ -388,7 +379,7 @@ import { currentWeightKg, hrSettings, loaded as statsLoaded, loadStats } from '@
 import {
 	ACTIVITY_LEVELS, baselineBurn, bmr, type ActivityLevel, type Sex,
 } from '@/utils/energy'
-import { auth, signOut } from '@/auth'
+import AccountCard from '@/components/AccountCard.vue'
 import { isOwner, GENERIC_SCHEMA_MESSAGE } from '@/owner'
 import { setTheme, theme, type ThemeName } from '@/theme'
 
@@ -406,14 +397,6 @@ import type { RaceGoal, RacePriority } from '@/types'
 const message = useMessage()
 const saving = ref(false)
 const badTimeInput = ref(false)
-
-async function handleSignOut() {
-	try {
-		await signOut()
-	} catch (e: any) {
-		message.error(e?.message || 'Failed to sign out')
-	}
-}
 
 /**
  * Turn a migration sentinel into something actionable — for whoever can act on
@@ -780,9 +763,6 @@ onMounted(async () => {
 .account-row { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
 .account-info { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
 .account-label { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-muted); }
-/* A long address has no spaces to break at, so it must be allowed to break
-   anywhere — otherwise it forces the card wider than the phone. */
-.account-email { font-size: 0.9rem; color: var(--text-color); font-weight: 500; overflow-wrap: anywhere; }
 .card-hint { font-size: 0.8rem; color: var(--text-muted); margin: 0 0 14px; line-height: 1.5; }
 
 .schema-warning, .dg-inconsistent {

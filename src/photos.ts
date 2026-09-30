@@ -28,19 +28,28 @@ const bitmaps = new Map<string, Promise<ImageBitmap>>()
 
 export const photoCount = computed(() => photos.value.length)
 
+/** Bumped on reset, so a load started by the previous account can't land after it. */
+let generation = 0
+
 export async function loadPhotos(force = false): Promise<void> {
 	if (photosLoading.value || (photosLoaded.value && !force)) return
+	const gen = generation
 	photosLoading.value = true
 	try {
-		photos.value = await db.getProgressPhotos()
+		const rows = await db.getProgressPhotos()
+		if (gen !== generation) return
+		photos.value = rows
 		photosError.value = null
-		await signUrls(photos.value.map(p => p.path))
+		await signUrls(rows.map(p => p.path))
 	} catch (e) {
+		if (gen !== generation) return
 		photosError.value = e
 		photos.value = []
 	} finally {
-		photosLoaded.value = true
-		photosLoading.value = false
+		if (gen === generation) {
+			photosLoaded.value = true
+			photosLoading.value = false
+		}
 	}
 }
 
@@ -108,8 +117,10 @@ function forget(path: string) {
 
 /** Drop every photo, link and decoded image. Call on sign-out and account switch. */
 export function resetPhotos(): void {
+	generation++
 	for (const path of [...Object.keys(urls), ...bitmaps.keys()]) forget(path)
 	photos.value = []
 	photosLoaded.value = false
+	photosLoading.value = false
 	photosError.value = null
 }

@@ -687,6 +687,30 @@ export const db = {
     if (rm.error) console.warn('Photo row deleted but its file could not be removed', photo.path, rm.error)
   },
 
+  /**
+   * Remove every file in the signed-in user's photo folder. Used before deleting
+   * the account: storage files can't be deleted from SQL, so this has to happen
+   * while the user still has a session. A missing bucket means there's nothing
+   * to remove.
+   */
+  deleteAllMyPhotoFiles: async (): Promise<void> => {
+    const uid = currentUserId()
+    const bucket = supabase.storage.from(PHOTO_BUCKET)
+    for (;;) {
+      const { data, error } = await bucket.list(uid, { limit: 100 })
+      if (error) {
+        if (isMissingBucket(error)) return
+        throw error
+      }
+      if (!data?.length) return
+      const rm = await bucket.remove(data.map(f => `${uid}/${f.name}`))
+      if (rm.error) throw rm.error
+      // Storage reports a blocked delete as success with nothing removed; stop
+      // rather than list the same files forever.
+      if (!rm.data?.length) throw new Error('Could not remove your photo files.')
+    }
+  },
+
   /** Signed URLs for a batch of photos, keyed by path. Missing entries failed to sign. */
   signProgressPhotos: async (paths: string[], expiresInSecs = 3600): Promise<Record<string, string>> => {
     if (!paths.length) return {}

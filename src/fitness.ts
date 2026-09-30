@@ -24,12 +24,16 @@ const workouts = ref<Workout[]>([])
 export const fitnessLoaded = ref(false)
 
 let inflight: Promise<void> | null = null
+/** Bumped on reset, so a fetch started by the previous account can't land after it. */
+let generation = 0
 
 async function fetchAll(): Promise<void> {
+	const gen = generation
 	const [acts, ws] = await Promise.all([
 		activityApi.getAllActivities().catch(e => { console.warn('[fitness] no activity data', e); return [] }),
 		db.getWorkouts().catch(e => { console.warn('[fitness] no workout data', e); return [] as Workout[] }),
 	])
+	if (gen !== generation) return
 	activities.value = acts
 	workouts.value = ws
 	fitnessLoaded.value = true
@@ -48,6 +52,15 @@ export function hydrateFitness(): Promise<void> {
 export function refreshFitness(): Promise<void> {
 	inflight = fetchAll()
 	return inflight
+}
+
+/** Drop everything. Call on sign-out and account switch. */
+export function resetFitness(): void {
+	generation++
+	inflight = null
+	activities.value = []
+	workouts.value = []
+	fitnessLoaded.value = false
 }
 
 /** Let a view that already fetched activities share them rather than refetch. */

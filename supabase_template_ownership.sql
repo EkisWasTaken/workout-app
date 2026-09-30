@@ -53,13 +53,25 @@ begin
       'create policy "library delete own" on public.%I for delete using (auth.uid() = user_id)', tbl);
   end loop;
 
-  -- Legacy rows created before the multi-user migration may have a null owner,
-  -- which would make them undeletable by anyone. Hand them to the first account.
-  update public.workout_templates
-     set user_id = (select id from auth.users order by created_at limit 1)
-   where user_id is null;
+end $$;
 
-  update public.workout_template_exercises
-     set user_id = (select id from auth.users order by created_at limit 1)
-   where user_id is null;
+-- Legacy rows created before the multi-user migration may have a null owner,
+-- which would make them undeletable by anyone. Hand them to YOUR account —
+-- named by email, not "whoever signed up first", which is a guess that goes
+-- wrong the moment anyone else's account is older than yours.
+--
+-- Put your email in below. Left as the placeholder, this step is skipped.
+do $$
+declare
+  owner_email text := 'OWNER_EMAIL_HERE';   -- ⬅️  REPLACE with your sign-in email
+  owner uuid;
+begin
+  select id into owner from auth.users where lower(email) = lower(owner_email);
+  if owner is null then
+    raise notice 'No account with email %, so null-owner templates were left alone.', owner_email;
+    return;
+  end if;
+
+  update public.workout_templates          set user_id = owner where user_id is null;
+  update public.workout_template_exercises set user_id = owner where user_id is null;
 end $$;

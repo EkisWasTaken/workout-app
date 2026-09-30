@@ -6,9 +6,10 @@ import AuthGate from './components/AuthGate.vue'
 import { naiveTheme, themeOverrides } from './theme'
 import { auth, initAuth, onUserChange } from './auth'
 import { hydrateSettings, resetSettingsCache } from './settings'
-import { refreshFitness } from './fitness'
+import { refreshFitness, resetFitness } from './fitness'
 import { resetStats } from './stats'
 import { resetPhotos } from './photos'
+import { clearPlaceNameCache } from './utils/runPlaces'
 import type { User } from '@supabase/supabase-js'
 
 /** Wipe the previous user's cached settings/stats/fitness, then load the new user's. */
@@ -16,6 +17,8 @@ function applyUser(user: User | null) {
 	resetSettingsCache()
 	resetStats()
 	resetPhotos()
+	resetFitness()
+	clearPlaceNameCache()
 	if (user) {
 		hydrateSettings()
 		refreshFitness()
@@ -36,7 +39,9 @@ onMounted(async () => {
       <n-notification-provider>
         <n-dialog-provider>
           <n-message-provider>
-            <AuthGate v-if="auth.ready && !auth.user" />
+            <!-- A reset link signs you in, but the gate stays up until the new
+               password is set. -->
+          <AuthGate v-if="auth.ready && (!auth.user || auth.recovering)" />
             <MainLayout v-else-if="auth.ready && auth.user" />
           </n-message-provider>
         </n-dialog-provider>

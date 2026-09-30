@@ -157,6 +157,18 @@ function writeCache(cache: Record<string, CachedName>) {
 	}
 }
 
+/**
+ * Forget every cached place name. The cache is keyed by where someone runs, so
+ * it's dropped on sign-out rather than handed to the next account on this browser.
+ */
+export function clearPlaceNameCache(): void {
+	try {
+		localStorage.removeItem(CACHE_KEY)
+	} catch {
+		// Storage unavailable: nothing was cached either.
+	}
+}
+
 /** Pull the most recognisable name out of a Nominatim address block. */
 export function labelFromAddress(address: Record<string, string> | undefined): string | null {
 	if (!address) return null
