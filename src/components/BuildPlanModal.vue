@@ -263,7 +263,7 @@ async function create() {
 	<CustomModal :show="show" title="Build a training plan" @update:show="emit('update:show', $event)">
 		<div v-if="!raceOptions.length" class="bp-empty">
 			<p>A plan needs a race to aim at, with a date and a distance.</p>
-			<router-link to="/profile" class="stat-inline-link">Add a race goal in Profile →</router-link>
+			<router-link to="/profile?focus=races" class="stat-inline-link" @click="emit('update:show', false)">Add a race goal in Profile →</router-link>
 		</div>
 
 		<template v-else>

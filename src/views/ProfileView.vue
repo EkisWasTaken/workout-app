@@ -297,7 +297,7 @@
 
 				<!-- Full width: a row per race, each carrying a date, distance, goal,
 				     result and terrain. Halved, it wraps into unreadable stacks. -->
-				<n-card bordered class="settings-card board-wide">
+				<n-card id="profile-races" bordered class="settings-card board-wide">
 					<template #header><span class="card-title">Races</span></template>
 					<p class="card-hint">
 						Log what you actually ran in the <em>Result</em> field. A race is a maximal
@@ -366,7 +366,8 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted, nextTick } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { NCard, NInput, NButton, NFormItem, NSelect, useMessage, NIcon } from 'naive-ui'
 import { FlagOutline, MoonOutline, SunnyOutline, WarningOutline } from '@vicons/ionicons5'
 import { db, MISSING_GOALS_COLUMNS } from '@/db'
@@ -395,6 +396,8 @@ import {
 import type { RaceGoal, RacePriority } from '@/types'
 
 const message = useMessage()
+const route = useRoute()
+const router = useRouter()
 const saving = ref(false)
 const badTimeInput = ref(false)
 
@@ -731,11 +734,31 @@ onMounted(async () => {
 	loadForm()
 	loadDistanceInputs()
 	loadResultInputs()
+	focusFromQuery()
 })
+
+/**
+ * `?focus=races` scrolls to the Races card and highlights it for a moment. The
+ * Home checklist and the plan builder link here to add a race, and the card sits
+ * far below the fold.
+ */
+async function focusFromQuery() {
+	if (route.query.focus !== 'races') return
+	const { focus: _drop, ...rest } = route.query
+	router.replace({ query: rest })
+	await nextTick()
+	const el = document.getElementById('profile-races')
+	if (!el) return
+	el.scrollIntoView({ behavior: 'smooth', block: 'start' })
+	el.classList.add('focus-flash')
+	setTimeout(() => el.classList.remove('focus-flash'), 1800)
+}
 </script>
 
 <style scoped>
 .profile-view-wrapper { width: 100%; min-height: 100%; }
+#profile-races { scroll-margin-top: 16px; transition: box-shadow 0.4s; }
+#profile-races.focus-flash { box-shadow: 0 0 0 2px var(--primary-color); }
 /* 760px was a reading measure, and this page is panels rather than prose — on
    a laptop it left two thirds of the window empty and pushed the running half
    below the fold. Wide enough for two columns of cards, still capped so the

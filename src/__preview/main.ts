@@ -228,6 +228,21 @@ if (previewFlags.get('stats') === 'empty') {
 	Object.assign(profileRow, { birth_year: null, height_cm: null, sex: null, activity_level: null })
 }
 
+/**
+ * `?user=new` is a brand-new account: no sessions, recordings, weights or races,
+ * and only the name typed at sign-up. It's what a friend with an invite code
+ * sees first, so the onboarding checklist and empty schedule can be judged.
+ */
+if (previewFlags.get('user') === 'new') {
+	ws.length = 0
+	acts.length = 0
+	weights.length = 0
+	races.length = 0
+	Object.assign(profileRow, {
+		goal_weight: null, max_hr: null, birth_year: null, height_cm: null, sex: null, activity_level: null,
+	})
+}
+
 d.saveProfile = async (profile: any) => {
 	const dropped = unstorableFields(profile, schema)
 	Object.assign(profileRow, stripUnstorable(profile, schema))

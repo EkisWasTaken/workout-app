@@ -10,7 +10,7 @@
           <button @click="openAddWorkoutModal(null)" class="action-button primary">
             <n-icon :component="AddOutline" /> Add session
           </button>
-          <button @click="copyLastWeek" class="action-button" :disabled="isActionLoading"
+          <button v-if="hasSessions" @click="copyLastWeek" class="action-button" :disabled="isActionLoading"
             title="Duplicate last week's sessions onto this week">
             <n-icon :component="CopyOutline" /> Copy last week
           </button>
@@ -25,7 +25,7 @@
             title="Generate a phased training plan from now to a race on your calendar">
             <n-icon :component="TrendingUpOutline" /> Build plan
           </button>
-          <button @click="openFuelPlan" class="action-button"
+          <button v-if="hasSessions" @click="openFuelPlan" class="action-button"
             title="Work out daily calories and macros from your goal weight and what's on the schedule">
             <n-icon :component="FlameOutline" /> Fuel plan
           </button>
@@ -33,12 +33,43 @@
             title="Add or update many planned sessions at once from a spreadsheet">
             <n-icon :component="CloudUploadOutline" /> Import plan (CSV)
           </button>
-          <button @click="openClearPlanned" class="action-button"
+          <button v-if="hasSessions" @click="openClearPlanned" class="action-button"
             title="Remove planned sessions over a date range — sessions you've logged are kept">
             <n-icon :component="TrashOutline" /> Clear planned
           </button>
         </div>
       </div>
+
+      <!-- An empty schedule is the first thing a new account sees here. Three
+           ways to fill it, fastest first; the one-by-one route stays a link. -->
+      <section v-if="workoutsLoaded && !hasSessions" class="empty-start">
+        <h2>Let’s fill your schedule</h2>
+        <p class="es-sub">Pick a starting point. You can mix them, and move or edit anything afterwards.</p>
+        <div class="es-choices">
+          <button class="es-choice" @click="showBuildPlan = true">
+            <n-icon :component="TrendingUpOutline" class="es-icon" />
+            <span class="es-title">Build a plan</span>
+            <span class="es-text">
+              A phased plan from now to your race: easy runs, intervals, long runs and gym days, with paces
+              that follow your fitness.
+              <template v-if="!raceGoals.length"><br><em>Needs a race first. You'll be shown where to add one.</em></template>
+            </span>
+          </button>
+          <router-link to="/templates" class="es-choice">
+            <n-icon :component="CopyOutline" class="es-icon" />
+            <span class="es-title">Start from a template</span>
+            <span class="es-text">Ready-made gym splits and run sessions. Pick one and drop it on a day.</span>
+          </router-link>
+          <button class="es-choice" @click="showActivityImport = true">
+            <n-icon :component="WatchOutline" class="es-icon" />
+            <span class="es-title">Import watch files</span>
+            <span class="es-text">
+              Bring in past .fit, .gpx or .tcx recordings so your fitness and paces start from real data.
+            </span>
+          </button>
+        </div>
+        <button class="es-single" @click="openAddWorkoutModal(null)">or add a single session</button>
+      </section>
 
       <div class="calendar-container">
         <div class="calendar-header">
@@ -660,7 +691,7 @@
 
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onActivated, onUnmounted } from 'vue';
-import { useRouter } from 'vue-router';
+import { useRoute, useRouter } from 'vue-router';
 import { useMessage, NIcon } from 'naive-ui';
 import {
   AddOutline, BodyOutline, CloudUploadOutline, CopyOutline, ChevronBackOutline, ChevronForwardOutline,
@@ -672,6 +703,7 @@ import { db } from '@/db';
 import { isOwner } from '@/owner';
 
 const router = useRouter();
+const route = useRoute();
 import { 
   format, 
   startOfMonth, 
@@ -1778,6 +1810,9 @@ const weekDetailed = computed(() => {
 
 // == EXISTING DATA LOGIC ==
 const workouts = ref<Workout[]>([]);
+/** False until the first fetch lands, so the empty-schedule card never flashes. */
+const workoutsLoaded = ref(false);
+const hasSessions = computed(() => workouts.value.length > 0);
 const dailyWeights = ref<DailyWeight[]>([]);
 const raceGoals = ref<RaceGoal[]>([]);
 
@@ -1925,6 +1960,7 @@ async function loadRaceGoals() {
 
 async function loadWorkouts() {
   workouts.value = await db.getWorkouts();
+  workoutsLoaded.value = true;
   // A completed run is a VDOT sample. Keep the fitness store in step so paces,
   // projections and goal verdicts re-derive the moment a session is logged.
   setWorkouts(workouts.value);
@@ -1948,6 +1984,20 @@ const loadAll = () => {
 };
 onMounted(loadAll);
 onActivated(loadAll);
+
+/**
+ * `?open=import|plan|add` opens that dialog on arrival — the Home checklist
+ * links straight to the action instead of to the top of this page. The query
+ * is dropped once used, so a reload or Back doesn't reopen it.
+ */
+watch(() => route.query.open, open => {
+  if (!open) return;
+  if (open === 'import') showActivityImport.value = true;
+  else if (open === 'plan') showBuildPlan.value = true;
+  else if (open === 'add') openAddWorkoutModal(null);
+  const { open: _drop, ...rest } = route.query;
+  router.replace({ query: rest });
+}, { immediate: true });
 
 </script>
 
@@ -2068,6 +2118,38 @@ onActivated(loadAll);
 .action-button .n-icon { font-size: 1.1rem; }
 .action-button.primary { background: var(--primary-soft); border-color: transparent; color: var(--primary-color); font-weight: 600; }
 .action-button.primary:hover:not(:disabled) { background: var(--primary-soft); border-color: var(--primary-color); }
+
+/* Empty schedule: three ways in */
+.empty-start {
+  background: var(--surface-color);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  padding: 20px 22px;
+  margin-bottom: 16px;
+}
+.empty-start h2 { margin: 0; font-size: 1.05rem; font-weight: 600; font-family: var(--font-family); }
+.es-sub { margin: 4px 0 16px; font-size: 0.83rem; color: var(--text-secondary); }
+.es-choices { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+@media (max-width: 760px) { .es-choices { grid-template-columns: 1fr; } }
+.es-choice {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 6px;
+  text-align: left; padding: 16px; cursor: pointer;
+  background: var(--surface-2); border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm); color: var(--text-color);
+  font-family: var(--font-family);
+  transition: border-color 0.15s, background 0.15s;
+}
+.es-choice:hover { border-color: var(--primary-color); background: var(--primary-soft); }
+.es-icon { font-size: 1.4rem; color: var(--primary-color); }
+.es-title { font-size: 0.92rem; font-weight: 600; }
+.es-text { font-size: 0.8rem; line-height: 1.5; color: var(--text-muted); }
+.es-text em { color: var(--text-secondary); font-style: normal; }
+.es-single {
+  margin-top: 12px; background: none; border: none; padding: 2px 0; cursor: pointer;
+  font-family: inherit; font-size: 0.82rem; color: var(--text-secondary);
+  text-decoration: underline; text-underline-offset: 2px;
+}
+.es-single:hover { color: var(--text-color); }
 
 .calendar-container { border: 1px solid transparent; background: var(--surface-color); border-radius: var(--radius); overflow: hidden; }
 /* Gap-based, not space-between: the nav cluster stays together on the left and

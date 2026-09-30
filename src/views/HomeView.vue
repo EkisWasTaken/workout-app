@@ -115,27 +115,75 @@ const weekStreak = computed(() => {
 
 /** Dismissal is per account, so one user hiding it doesn't hide it for another. */
 const dismissKey = computed(() => `onboardingDismissed:${auth.user?.id ?? 'anon'}`)
+const noWatchKey = computed(() => `onboardingNoWatch:${auth.user?.id ?? 'anon'}`)
 const dismissed = ref(false)
+/** "I don't have a watch" — the import step counts as settled, not nagged about. */
+const noWatch = ref(false)
 
 function dismissOnboarding() {
 	dismissed.value = true
 	localStorage.setItem(dismissKey.value, '1')
 }
 
-const steps = computed(() => [
-	{ key: 'name', label: 'Tell us your name', done: !!settings.userName, to: '/profile' },
-	{ key: 'plan', label: 'Plan your first session', done: workouts.value.length > 0, to: '/schedule' },
-	{ key: 'done', label: 'Complete a session', done: completed.value.length > 0, to: '/schedule' },
-	{ key: 'weight', label: 'Log your weight', done: dailyWeights.value.length > 0, to: '/schedule' },
+function skipWatchImport() {
+	noWatch.value = true
+	localStorage.setItem(noWatchKey.value, '1')
+}
+
+interface Step {
+	key: string
+	label: string
+	/** Why it's worth doing: what switches on once it's done. */
+	why: string
+	done: boolean
+	to: string
+	/** A second, lighter way to do the same step. */
+	alt?: { label: string; to?: string; action?: () => void }
+}
+
+/**
+ * Ordered by payoff, fastest first. Importing watch history fills the running
+ * stats, fitness and race predictions in one go; a race is what the plan
+ * builder aims at, so it comes before the plan. Every link opens the exact
+ * dialog or section — landing at the top of a long page and hunting for the
+ * right button is where new people gave up.
+ */
+const steps = computed<Step[]>(() => [
+	{
+		key: 'import',
+		label: 'Import your watch history',
+		why: 'Past runs and rides fill your stats, fitness and race predictions straight away.',
+		done: activities.value.length > 0 || noWatch.value,
+		to: '/schedule?open=import',
+		alt: { label: 'No watch', action: skipWatchImport },
+	},
 	{
 		key: 'goal',
-		label: 'Set a goal',
+		label: 'Add a race or goal',
+		why: 'Sets your training paces and gives a plan something to aim at.',
 		done: raceGoals.value.length > 0 || Object.keys(distanceGoals).length > 0,
-		to: '/profile',
+		to: '/profile?focus=races',
+	},
+	{
+		key: 'plan',
+		label: 'Build your plan',
+		why: 'A full schedule to race day in one go, or add sessions from ready-made templates.',
+		done: workouts.value.length > 0,
+		to: '/schedule?open=plan',
+		alt: { label: 'Use templates', to: '/templates' },
+	},
+	{
+		key: 'done',
+		label: 'Complete your first session',
+		why: 'Log how it went and your progress, streak and trends start moving.',
+		done: completed.value.length > 0,
+		to: '/schedule',
 	},
 ])
 
 const stepsDone = computed(() => steps.value.filter(s => s.done).length)
+/** The first unfinished step is the one to do now; it gets the emphasis. */
+const nextStepKey = computed(() => steps.value.find(s => !s.done)?.key ?? null)
 
 /**
  * Shown until the checklist is finished or explicitly dismissed. It also
@@ -144,6 +192,9 @@ const stepsDone = computed(() => steps.value.filter(s => s.done).length)
  */
 const showOnboarding = computed(() =>
 	loaded.value && !dismissed.value && stepsDone.value < steps.value.length && completed.value.length < 5)
+
+/** Nothing done yet: this is someone's first look at the app. */
+const firstVisit = computed(() => stepsDone.value === 0)
 
 // ─── today ────────────────────────────────────────────────────────────────────
 
@@ -415,6 +466,7 @@ async function buildTodayCharts() {
 async function boot() {
 	syncClock()
 	dismissed.value = localStorage.getItem(dismissKey.value) === '1'
+	noWatch.value = localStorage.getItem(noWatchKey.value) === '1'
 	await hydrateSettings()
 	await loadStats()
 	await buildTodayCharts()
@@ -457,18 +509,33 @@ watch(completed, () => { if (tab.value === 'today') buildTodayCharts() })
 		<section v-if="showOnboarding" class="onboarding">
 			<div class="ob-head">
 				<div>
-					<h2>Get set up</h2>
-					<p>{{ stepsDone }} of {{ steps.length }} done — each one switches on more of your stats.</p>
+					<h2 v-if="firstVisit">Welcome to Trainlog<span v-if="userName">, {{ userName }}</span></h2>
+					<h2 v-else>Get set up</h2>
+					<p v-if="firstVisit">
+						Plan your training, log what you did, and watch your fitness change. Four steps switch
+						everything on.
+					</p>
+					<p v-else>{{ stepsDone }} of {{ steps.length }} done — each one switches on more of your stats.</p>
 				</div>
 				<button class="ob-dismiss" @click="dismissOnboarding">Dismiss</button>
 			</div>
-			<ul class="ob-steps">
-				<li v-for="s in steps" :key="s.key" :class="{ done: s.done }">
-					<span class="ob-check">{{ s.done ? '✓' : '' }}</span>
-					<router-link v-if="!s.done" :to="s.to">{{ s.label }}</router-link>
-					<span v-else>{{ s.label }}</span>
+			<ol class="ob-steps">
+				<li v-for="(s, i) in steps" :key="s.key" :class="{ done: s.done, next: s.key === nextStepKey }">
+					<span class="ob-check">{{ s.done ? '✓' : i + 1 }}</span>
+					<div class="ob-body">
+						<div class="ob-line">
+							<router-link v-if="!s.done" :to="s.to" class="ob-label">{{ s.label }}</router-link>
+							<span v-else class="ob-label">{{ s.label }}</span>
+							<template v-if="!s.done && s.alt">
+								<span class="ob-or">or</span>
+								<router-link v-if="s.alt.to" :to="s.alt.to" class="ob-alt">{{ s.alt.label }}</router-link>
+								<button v-else class="ob-alt" @click="s.alt.action?.()">{{ s.alt.label }}</button>
+							</template>
+						</div>
+						<p v-if="!s.done" class="ob-why">{{ s.why }}</p>
+					</div>
 				</li>
-			</ul>
+			</ol>
 		</section>
 
 		<nav class="tabbar" role="tablist">
@@ -802,16 +869,42 @@ watch(completed, () => { if (tab.value === 'today') buildTodayCharts() })
 	font-family: inherit; font-size: 0.78rem; color: var(--text-muted);
 }
 .ob-dismiss:hover { color: var(--text-secondary); }
-.ob-steps { list-style: none; margin: 12px 0 0; padding: 0; display: flex; flex-wrap: wrap; gap: 8px 18px; }
-.ob-steps li { display: flex; align-items: center; gap: 7px; font-size: 0.83rem; }
-.ob-steps li.done { color: var(--text-muted); }
+.ob-steps {
+	list-style: none; margin: 14px 0 0; padding: 0;
+	display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px;
+}
+@media (max-width: 900px) { .ob-steps { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 520px) { .ob-steps { grid-template-columns: 1fr; } }
+.ob-steps li {
+	display: flex; align-items: flex-start; gap: 9px;
+	padding: 10px 11px; border-radius: var(--radius-sm);
+	background: var(--surface-2); border: 1px solid transparent;
+	font-size: 0.83rem;
+}
+.ob-steps li.next { border-color: var(--primary-color); background: var(--primary-soft); }
+.ob-steps li.done { color: var(--text-muted); background: transparent; }
 .ob-check {
 	display: inline-flex; align-items: center; justify-content: center;
-	width: 17px; height: 17px; border-radius: 50%;
+	width: 19px; height: 19px; border-radius: 50%;
 	border: 1.5px solid var(--border-strong);
-	font-size: 0.66rem; color: var(--success-color); flex-shrink: 0;
+	font-size: 0.68rem; font-weight: 600; color: var(--text-muted); flex-shrink: 0;
 }
-.ob-steps li.done .ob-check { border-color: var(--success-color); background: var(--success-soft); }
+.ob-steps li.next .ob-check { border-color: var(--primary-color); color: var(--primary-color); }
+.ob-steps li.done .ob-check { border-color: var(--success-color); background: var(--success-soft); color: var(--success-color); }
+.ob-body { min-width: 0; }
+.ob-line { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 6px; }
+.ob-label { font-weight: 600; }
+a.ob-label { color: var(--text-color); }
+.ob-steps li.next a.ob-label { color: var(--primary-color); }
+a.ob-label:hover { text-decoration: underline; }
+.ob-or { font-size: 0.74rem; color: var(--text-muted); }
+.ob-alt {
+	background: none; border: none; padding: 0; cursor: pointer;
+	font-family: inherit; font-size: 0.76rem; color: var(--text-secondary);
+	text-decoration: underline; text-underline-offset: 2px;
+}
+.ob-alt:hover { color: var(--text-color); }
+.ob-why { margin: 3px 0 0; font-size: 0.76rem; line-height: 1.45; color: var(--text-muted); }
 
 /* Tabs */
 .tabbar { display: flex; gap: 2px; margin-bottom: 16px; border-bottom: 1px solid var(--border-color); overflow-x: auto; }

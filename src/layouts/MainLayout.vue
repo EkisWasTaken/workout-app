@@ -55,11 +55,14 @@
 			</ul>
 		</nav>
 
-		<main class="main-content">
+		<main ref="mainEl" class="main-content">
 			<!-- Home shows a full race hero of its own; this bar would repeat it. -->
 			<RaceCountdown v-if="$route.name !== 'Home'" />
 			<router-view v-slot="{ Component }">
-				<transition name="fade" mode="out-in">
+				<!-- The page scrolls inside <main>, not the window, so the router's own
+				     scroll handling never reaches it: every page used to open wherever
+				     the last one had been scrolled to. -->
+				<transition name="fade" mode="out-in" @before-enter="resetScroll">
 					<component :is="Component" />
 				</transition>
 			</router-view>
@@ -94,6 +97,12 @@ const menuOptions = [
 ]
 
 const collapsed = ref(false)
+
+const mainEl = ref<HTMLElement | null>(null)
+/** Start each page at the top. Profile's own `?focus=` scroll runs after this. */
+function resetScroll() {
+	mainEl.value?.scrollTo({ top: 0 })
+}
 const isMobile = ref(window.innerWidth <= 768)
 
 function toggleCollapse() {
