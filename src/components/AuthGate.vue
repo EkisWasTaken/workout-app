@@ -2,12 +2,7 @@
 	<div class="auth-gate">
 		<div class="auth-box" :class="{ shake: shaking }">
 			<div class="auth-logo">
-				<svg width="36" height="36" viewBox="0 0 36 36" fill="none">
-					<circle cx="18" cy="18" r="18" fill="var(--primary-color)" fill-opacity="0.15" />
-					<path d="M11 16V13a7 7 0 0 1 14 0v3" stroke="var(--primary-color)" stroke-width="2" stroke-linecap="round"/>
-					<rect x="8" y="16" width="20" height="13" rx="3" fill="var(--primary-color)" fill-opacity="0.25" stroke="var(--primary-color)" stroke-width="1.5"/>
-					<circle cx="18" cy="22.5" r="2" fill="var(--primary-color)"/>
-				</svg>
+				<BrandLogo :size="44" />
 			</div>
 			<h1 class="auth-title">{{ TITLES[mode] }}</h1>
 			<p class="auth-sub">
@@ -113,6 +108,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { auth, resetPassword, signIn, signOut, signUp, updatePassword } from '../auth'
+import BrandLogo from './BrandLogo.vue'
 
 type Mode = 'signin' | 'signup' | 'newpassword'
 
@@ -275,7 +271,7 @@ async function cancelReset() {
 	max-width: calc(100vw - 40px);
 }
 
-.auth-logo { margin-bottom: 20px; }
+.auth-logo { margin-bottom: 20px; display: flex; justify-content: center; }
 
 .auth-title {
 	font-size: 1.5rem;
