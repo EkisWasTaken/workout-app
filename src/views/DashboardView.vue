@@ -1,41 +1,52 @@
 <template>
   <div class="dashboard-view-wrapper">
     <div class="dashboard-view">
+      <!-- One compact toolbar. The everyday actions stay one click away; the
+           planning tools you reach for once a block live in the Plan menu. -->
       <div class="page-head">
-        <div>
-          <h1 class="page-title">Schedule</h1>
-          <p class="sub">Click a day to add a session, click a session to log it, drag to move it. Run paces update as your fitness changes.</p>
-        </div>
+        <h1 class="page-title">Schedule</h1>
         <div class="actions-bar">
+          <button @click="showLogWeightModal = true" class="icon-action" title="Log weight" aria-label="Log weight">
+            <n-icon :component="BodyOutline" />
+          </button>
+          <button @click="showActivityImport = true" class="icon-action"
+            title="Import watch files (.fit, .gpx, .tcx)" aria-label="Import watch files">
+            <n-icon :component="WatchOutline" />
+          </button>
+          <div ref="planMenuEl" class="menu-wrap">
+            <button class="action-button" :class="{ open: showPlanMenu }" @click="showPlanMenu = !showPlanMenu"
+              aria-haspopup="menu" :aria-expanded="showPlanMenu">
+              <n-icon :component="TrendingUpOutline" /> Plan
+              <n-icon :component="ChevronDownOutline" class="caret" />
+            </button>
+            <div v-if="showPlanMenu" class="menu" role="menu" @click="showPlanMenu = false">
+              <button role="menuitem" @click="showBuildPlan = true">
+                <n-icon :component="TrendingUpOutline" />
+                <span><strong>Build plan</strong><small>Phased plan up to a race</small></span>
+              </button>
+              <button v-if="hasSessions" role="menuitem" @click="openFuelPlan">
+                <n-icon :component="FlameOutline" />
+                <span><strong>Fuel plan</strong><small>Calories and macros from the schedule</small></span>
+              </button>
+              <button v-if="hasSessions" role="menuitem" :disabled="isActionLoading" @click="copyLastWeek">
+                <n-icon :component="CopyOutline" />
+                <span><strong>Copy last week</strong><small>Duplicate it onto this week</small></span>
+              </button>
+              <button role="menuitem" @click="handleImportSys">
+                <n-icon :component="CloudUploadOutline" />
+                <span><strong>Import plan (CSV)</strong><small>Add or update many sessions</small></span>
+              </button>
+              <template v-if="hasSessions">
+                <div class="menu-sep" />
+                <button role="menuitem" class="danger" @click="openClearPlanned">
+                  <n-icon :component="TrashOutline" />
+                  <span><strong>Clear planned</strong><small>Logged sessions are kept</small></span>
+                </button>
+              </template>
+            </div>
+          </div>
           <button @click="openAddWorkoutModal(null)" class="action-button primary">
-            <n-icon :component="AddOutline" /> Add session
-          </button>
-          <button v-if="hasSessions" @click="copyLastWeek" class="action-button" :disabled="isActionLoading"
-            title="Duplicate last week's sessions onto this week">
-            <n-icon :component="CopyOutline" /> Copy last week
-          </button>
-          <button @click="showLogWeightModal = true" class="action-button">
-            <n-icon :component="BodyOutline" /> Log weight
-          </button>
-          <button @click="showActivityImport = true" class="action-button"
-            title="Import .fit, .gpx or .tcx files exported from a watch or Strava">
-            <n-icon :component="WatchOutline" /> Import watch files
-          </button>
-          <button @click="showBuildPlan = true" class="action-button"
-            title="Generate a phased training plan from now to a race on your calendar">
-            <n-icon :component="TrendingUpOutline" /> Build plan
-          </button>
-          <button v-if="hasSessions" @click="openFuelPlan" class="action-button"
-            title="Work out daily calories and macros from your goal weight and what's on the schedule">
-            <n-icon :component="FlameOutline" /> Fuel plan
-          </button>
-          <button @click="handleImportSys" class="action-button"
-            title="Add or update many planned sessions at once from a spreadsheet">
-            <n-icon :component="CloudUploadOutline" /> Import plan (CSV)
-          </button>
-          <button v-if="hasSessions" @click="openClearPlanned" class="action-button"
-            title="Remove planned sessions over a date range — sessions you've logged are kept">
-            <n-icon :component="TrashOutline" /> Clear planned
+            <n-icon :component="AddOutline" /> <span class="add-label">Add session</span>
           </button>
         </div>
       </div>
@@ -73,11 +84,13 @@
 
       <div class="calendar-container">
         <div class="calendar-header">
-          <button @click="goPrev" class="nav-button" :aria-label="viewMode === 'week' ? 'Previous week' : 'Previous month'"><n-icon :component="ChevronBackOutline" /></button>
           <span class="month-display">{{ viewMode === 'week' ? weekRangeLabel : formattedCurrentMonth }}</span>
-          <button @click="goNext" class="nav-button" :aria-label="viewMode === 'week' ? 'Next week' : 'Next month'"><n-icon :component="ChevronForwardOutline" /></button>
           <!-- One click back to where you are, from anywhere in the calendar. -->
-          <button @click="goToToday" class="today-button">Today</button>
+          <div class="nav-group">
+            <button @click="goPrev" class="nav-button" :aria-label="viewMode === 'week' ? 'Previous week' : 'Previous month'"><n-icon :component="ChevronBackOutline" /></button>
+            <button @click="goToToday" class="today-button">Today</button>
+            <button @click="goNext" class="nav-button" :aria-label="viewMode === 'week' ? 'Next week' : 'Next month'"><n-icon :component="ChevronForwardOutline" /></button>
+          </div>
           <div class="view-toggle">
             <button :class="{ active: viewMode === 'month' }" @click="viewMode = 'month'">Month</button>
             <button :class="{ active: viewMode === 'week' }" @click="setWeekView">Week</button>
@@ -122,18 +135,26 @@
             @dragenter.prevent="onDragEnter(day.date)"
             @dragleave="onDragLeave(day.date)"
             @drop="onDrop($event, day.date)">
-            <div class="wv-dayhead">
+            <!-- The date gutter carries everything that belongs to the day rather
+                 than to a session: its calorie target and the add button. -->
+            <div class="wv-date">
               <span class="wv-dow">{{ day.dow }}</span>
               <span class="wv-datenum">{{ day.dayNum }}</span>
-              <span v-for="goal in day.raceGoals" :key="goal.id" class="wv-race"><n-icon :component="FlagOutline" /> {{ goal.name }}</span>
-              <!-- Calories lead: the macros are in the tooltip and the planner. -->
-              <span v-if="fuelKcal(day.key)" class="wv-fuel mono" :title="fuelTitle(day.key)">
-                <n-icon :component="FlameOutline" />{{ fuelKcal(day.key)!.toLocaleString() }}
+              <!-- One slot: the calorie target, swapped for + on hover. Calories
+                   lead; the macros are in the tooltip and the planner. -->
+              <span class="wv-slot">
+                <span v-if="fuelKcal(day.key)" class="wv-fuel mono" :title="fuelTitle(day.key)">
+                  {{ fuelKcal(day.key)!.toLocaleString() }}
+                </span>
+                <button class="wv-add" @click="openAddWorkoutModal(day.date)" aria-label="Add workout"><n-icon :component="AddOutline" /></button>
               </span>
-              <button class="wv-add" @click="openAddWorkoutModal(day.date)" aria-label="Add workout"><n-icon :component="AddOutline" /></button>
             </div>
-            <p v-if="day.workouts.length === 0" class="wv-restday">Nothing planned</p>
-            <div v-else class="wv-sessions">
+            <div class="wv-main">
+            <div v-if="!day.workouts.length || day.raceGoals.length" class="wv-dayhead">
+              <span v-if="!day.workouts.length && !day.raceGoals.length" class="wv-restday">Nothing planned</span>
+              <span v-for="goal in day.raceGoals" :key="goal.id" class="wv-race"><n-icon :component="FlagOutline" /> {{ goal.name }}</span>
+            </div>
+            <div v-if="day.workouts.length" class="wv-sessions">
               <!-- Draggable here as well as in month view: the page header has
                    always said "drag to move it", and in week view it didn't. -->
               <div v-for="w in day.workouts" :key="w.id" class="wv-card"
@@ -163,6 +184,7 @@
                   </ul>
                 </div>
               </div>
+            </div>
             </div>
           </div>
         </div>
@@ -697,7 +719,7 @@ import {
   AddOutline, BodyOutline, CloudUploadOutline, CopyOutline, ChevronBackOutline, ChevronForwardOutline,
   FlagOutline, CheckmarkCircle, TrashOutline, CreateOutline, CheckmarkOutline, MapOutline,
   WatchOutline, WalkOutline, BarbellOutline, BicycleOutline, BedOutline, FitnessOutline,
-  TrendingUpOutline, CameraOutline, FlameOutline,
+  TrendingUpOutline, CameraOutline, FlameOutline, ChevronDownOutline,
 } from '@vicons/ionicons5';
 import { db } from '@/db';
 import { isOwner } from '@/owner';
@@ -1643,6 +1665,25 @@ const onCalendarResize = () => { isNarrow.value = window.innerWidth <= 768; };
 onMounted(() => window.addEventListener('resize', onCalendarResize));
 onUnmounted(() => window.removeEventListener('resize', onCalendarResize));
 
+// == PLAN MENU ==
+const showPlanMenu = ref(false);
+const planMenuEl = ref<HTMLElement | null>(null);
+
+function onDocPointerDown(e: PointerEvent) {
+  if (showPlanMenu.value && !planMenuEl.value?.contains(e.target as Node)) showPlanMenu.value = false;
+}
+function onDocKeydown(e: KeyboardEvent) {
+  if (e.key === 'Escape') showPlanMenu.value = false;
+}
+onMounted(() => {
+  document.addEventListener('pointerdown', onDocPointerDown);
+  document.addEventListener('keydown', onDocKeydown);
+});
+onUnmounted(() => {
+  document.removeEventListener('pointerdown', onDocPointerDown);
+  document.removeEventListener('keydown', onDocKeydown);
+});
+
 const chipBudget = computed(() => (isNarrow.value ? Number.POSITIVE_INFINITY : MAX_MONTH_CHIPS));
 
 const days = computed(() => {
@@ -1797,8 +1838,8 @@ const weekDetailed = computed(() => {
     return {
       key,
       date,
-      dow: format(date, 'EEEE'),
-      dayNum: format(date, 'd MMM'),
+      dow: format(date, 'EEE'),
+      dayNum: format(date, 'd'),
       isToday: key === today,
       workouts: workoutsByDate.value[key] || [],
       raceGoals: raceGoalsByDate.value[key] || [],
@@ -2011,11 +2052,8 @@ watch(() => route.query.open, open => {
   align-items: center;
   flex-wrap: wrap;
   gap: 6px 18px;
-  padding: 10px 14px;
-  margin-bottom: 10px;
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius);
-  background: var(--surface-color);
+  padding: 10px 18px;
+  border-bottom: 1px solid var(--border-color);
   font-size: 0.78rem;
   color: var(--text-secondary);
 }
@@ -2036,11 +2074,9 @@ watch(() => route.query.open, open => {
 .wvs-fuel strong { color: var(--primary-color); }
 
 .wv-review {
-  padding: 12px 14px;
-  margin-bottom: 10px;
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius);
-  background: var(--surface-color);
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--border-color);
+  background: color-mix(in srgb, var(--surface-2) 40%, var(--surface-color));
 }
 
 /* Clear-planned dialog */
@@ -2087,23 +2123,58 @@ watch(() => route.query.open, open => {
 .dashboard-view { padding: 24px 28px 40px; max-width: 1100px; margin: 0 auto; width: 100%; box-sizing: border-box; color: var(--text-color); }
 @media (max-width: 768px) { .dashboard-view { padding: 16px 16px 32px; } }
 
-.page-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; flex-wrap: wrap; margin-bottom: 22px; }
-.sub { margin: 4px 0 0; color: var(--text-secondary); font-size: 0.9rem; }
+.page-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 18px; }
+.page-head .page-title { margin: 0; }
 
-.actions-bar { display: flex; gap: 10px; flex-wrap: wrap; }
-@media (max-width: 600px) {
-  .actions-bar { width: 100%; display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-  .actions-bar .action-button { justify-content: center; white-space: nowrap; font-size: 0.8rem; padding: 9px 8px; }
-  /* The primary action gets the full row. */
-  .actions-bar .action-button.primary { grid-column: 1 / -1; }
-  .action-button { flex: 1; justify-content: center; }
+.actions-bar { display: flex; align-items: center; gap: 6px; }
+@media (max-width: 480px) {
+  /* Icon-only Add on a phone keeps the whole toolbar on the title's row. */
+  .add-label { display: none; }
+  .actions-bar .action-button.primary { padding: 0 11px; }
 }
+
+.icon-action {
+  width: 36px; height: 36px; flex-shrink: 0;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: transparent; border: 1px solid transparent; border-radius: var(--radius-sm);
+  color: var(--text-secondary); font-size: 1.15rem; cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.icon-action:hover { background: var(--surface-2); color: var(--text-color); }
+
+/* Plan menu */
+.menu-wrap { position: relative; }
+.caret { font-size: 0.8rem !important; opacity: 0.7; transition: transform 0.15s; }
+.action-button.open .caret { transform: rotate(180deg); }
+.menu {
+  position: absolute; right: 0; top: calc(100% + 6px); z-index: 50;
+  min-width: 260px; padding: 6px;
+  background: var(--surface-elevated); border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm); box-shadow: var(--shadow-pop);
+  display: flex; flex-direction: column;
+  animation: menu-in 0.12s ease-out;
+}
+@keyframes menu-in { from { opacity: 0; transform: translateY(-4px); } }
+.menu button {
+  display: flex; align-items: flex-start; gap: 11px; width: 100%;
+  padding: 8px 10px; border: none; border-radius: 8px; background: none;
+  color: var(--text-color); font-family: var(--font-family); text-align: left; cursor: pointer;
+}
+.menu button:hover:not(:disabled) { background: var(--surface-hover); }
+.menu button .n-icon { font-size: 1.05rem; margin-top: 1px; color: var(--text-secondary); flex-shrink: 0; }
+.menu button span { display: flex; flex-direction: column; gap: 1px; }
+.menu button strong { font-size: 0.85rem; font-weight: 600; }
+.menu button small { font-size: 0.74rem; color: var(--text-muted); }
+.menu button.danger strong, .menu button.danger .n-icon { color: var(--danger-color); }
+.menu-sep { height: 1px; margin: 5px 4px; background: var(--border-color); }
 
 .action-button {
   background: var(--surface-2);
   border: 1px solid var(--border-color);
   color: var(--text-color);
-  padding: 11px 18px;
+  height: 36px;
+  padding: 0 14px;
+  white-space: nowrap;
   border-radius: var(--radius-sm);
   cursor: pointer;
   font-family: var(--font-family);
@@ -2116,8 +2187,8 @@ watch(() => route.query.open, open => {
 }
 .action-button:hover:not(:disabled) { background: var(--surface-hover); border-color: var(--border-strong); }
 .action-button .n-icon { font-size: 1.1rem; }
-.action-button.primary { background: var(--primary-soft); border-color: transparent; color: var(--primary-color); font-weight: 600; }
-.action-button.primary:hover:not(:disabled) { background: var(--primary-soft); border-color: var(--primary-color); }
+.action-button.primary { background: var(--primary-fill); border-color: transparent; color: var(--on-primary); font-weight: 600; }
+.action-button.primary:hover:not(:disabled) { background: var(--primary-fill-hover); border-color: transparent; }
 
 /* Empty schedule: three ways in */
 .empty-start {
@@ -2151,88 +2222,97 @@ watch(() => route.query.open, open => {
 }
 .es-single:hover { color: var(--text-color); }
 
-.calendar-container { border: 1px solid transparent; background: var(--surface-color); border-radius: var(--radius); overflow: hidden; }
-/* Gap-based, not space-between: the nav cluster stays together on the left and
-   the view toggle is pushed right, so the month label doesn't wander. */
-.calendar-header { display: flex; align-items: center; gap: 8px; padding: 11px 13px; border-bottom: 1px solid var(--border-color); flex-wrap: wrap; }
+.calendar-container { border: 1px solid var(--border-color); background: var(--surface-color); border-radius: var(--radius); overflow: hidden; }
+.calendar-header { display: flex; align-items: center; gap: 10px; padding: 12px 14px 12px 18px; border-bottom: 1px solid var(--border-color); flex-wrap: wrap; }
+.month-display { font-family: var(--font-display); font-weight: 600; font-size: 1.08rem; letter-spacing: -0.01em; color: var(--text-color); margin-right: auto; }
 @media (max-width: 480px) {
-  .month-display { min-width: 0; flex: 1; font-size: 0.92rem; }
-  .view-toggle { margin-left: 0; width: 100%; }
-  .view-toggle button { flex: 1; }
+  .calendar-header { padding: 10px 12px; }
+  .month-display { width: 100%; font-size: 1rem; }
+  .nav-group { flex: 1; }
+  .nav-group .today-button { flex: 1; }
 }
-.nav-button { background: transparent; border: 1px solid var(--border-color); color: var(--text-secondary); width: 30px; height: 30px; border-radius: var(--radius-sm); cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 1rem; flex-shrink: 0; transition: background 0.15s, color 0.15s; }
-.nav-button:hover { background: var(--surface-hover); color: var(--text-color); }
-.month-display { font-weight: 600; font-size: 1rem; color: var(--text-color); min-width: 10ch; text-align: center; }
 
-.today-button {
-  background: transparent;
-  border: 1px solid var(--border-color);
-  color: var(--text-secondary);
-  height: 30px;
-  padding: 0 12px;
-  border-radius: var(--radius-sm);
-  cursor: pointer;
-  font-family: var(--font-family);
-  font-size: 0.78rem;
-  font-weight: 600;
-  transition: color 0.15s, border-color 0.15s;
+/* Prev · Today · Next as one segmented control. */
+.nav-group { display: inline-flex; align-items: center; background: var(--surface-2); border-radius: var(--radius-sm); padding: 2px; gap: 2px; }
+.nav-button, .today-button {
+  background: transparent; border: none; color: var(--text-secondary); height: 30px;
+  border-radius: calc(var(--radius-sm) - 2px); cursor: pointer; font-family: var(--font-family);
+  display: flex; align-items: center; justify-content: center; transition: background 0.15s, color 0.15s;
 }
-.today-button:hover { color: var(--primary-color); border-color: var(--primary-color); }
+.nav-button { width: 30px; font-size: 1rem; flex-shrink: 0; }
+.today-button { padding: 0 12px; font-size: 0.8rem; font-weight: 600; }
+.nav-button:hover, .today-button:hover { background: var(--surface-hover); color: var(--text-color); }
 
-.view-toggle { margin-left: auto; display: inline-flex; background: var(--surface-2); border: 1px solid var(--border-color); border-radius: var(--radius-sm); padding: 2px; gap: 2px; }
-.view-toggle button { background: none; border: none; color: var(--text-secondary); font-family: var(--font-family); font-size: 0.8rem; font-weight: 500; padding: 5px 12px; border-radius: calc(var(--radius-sm) - 2px); cursor: pointer; transition: background 0.15s, color 0.15s; }
+.view-toggle { display: inline-flex; background: var(--surface-2); border-radius: var(--radius-sm); padding: 2px; gap: 2px; }
+.view-toggle button { background: none; border: none; color: var(--text-secondary); font-family: var(--font-family); font-size: 0.8rem; font-weight: 600; height: 30px; padding: 0 14px; border-radius: calc(var(--radius-sm) - 2px); cursor: pointer; transition: background 0.15s, color 0.15s, box-shadow 0.15s; }
 .view-toggle button:hover { color: var(--text-color); }
-.view-toggle button.active { background: var(--primary-fill); color: var(--on-primary); }
+.view-toggle button.active { background: var(--surface-elevated); color: var(--text-color); box-shadow: 0 1px 2px rgba(0,0,0,0.25), 0 0 0 1px var(--border-color); }
 
-/* Week view — full session detail */
+/* Week view — a date gutter on the left, the day's sessions on the right. */
 .week-view { display: flex; flex-direction: column; }
-.wv-day { padding: 19px 22px; border-top: 1px solid var(--border-color); }
+.wv-day { display: flex; gap: 18px; padding: 14px 18px; border-top: 1px solid var(--border-color); transition: background 0.15s; }
 .wv-day:first-child { border-top: none; }
-.wv-today { background: var(--primary-soft); }
-.wv-dayhead { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
-.wv-dow { font-weight: 700; font-size: 0.92rem; color: var(--text-color); }
-.wv-today .wv-dow { color: var(--primary-color); }
-.wv-datenum { font-size: 0.8rem; color: var(--text-muted); }
-.wv-race { display: inline-flex; align-items: center; gap: 4px; font-size: 0.74rem; font-weight: 600; color: var(--danger-color); background: var(--danger-soft); padding: 2px 8px; border-radius: 999px; }
-.wv-fuel {
-  margin-left: auto;
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  font-size: 0.76rem;
-  font-weight: 600;
-  color: var(--primary-color);
-  background: var(--primary-soft);
-  padding: 2px 9px;
-  border-radius: 999px;
-  cursor: default;
+.wv-date { width: 48px; flex-shrink: 0; display: flex; flex-direction: column; align-items: center; gap: 1px; }
+.wv-dow { font-size: 0.68rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-muted); }
+.wv-datenum {
+  font-family: var(--font-display); font-size: 1.25rem; font-weight: 600; color: var(--text-color);
+  width: 38px; height: 38px; border-radius: 50%; display: flex; align-items: center; justify-content: center;
+  font-variant-numeric: tabular-nums;
 }
-/* The add button takes the right edge back once the fuel chip has claimed it. */
-.wv-fuel + .wv-add { margin-left: 0; }
-.wv-add { margin-left: auto; width: 26px; height: 26px; border-radius: var(--radius-sm); border: 1px solid var(--border-color); background: var(--surface-2); color: var(--text-muted); cursor: pointer; display: flex; align-items: center; justify-content: center; opacity: 0; transition: opacity 0.15s, color 0.15s; }
-.wv-day:hover .wv-add { opacity: 1; }
-.wv-add:hover { color: var(--primary-color); border-color: var(--primary-color); }
-.wv-restday { margin: 0; font-size: 0.82rem; color: var(--text-muted); font-style: italic; }
-.wv-sessions { display: flex; flex-direction: column; gap: 10px; }
-.wv-card { display: flex; gap: 12px; padding: 16px 18px; border: 1px solid transparent; border-radius: var(--radius-sm); background: var(--surface-2); cursor: pointer; transition: background 0.15s, box-shadow 0.15s; }
-.wv-card:hover { background: var(--surface-2); box-shadow: 0 1px 6px rgba(0,0,0,0.08); }
-.wv-card.status-completed { background: color-mix(in srgb, var(--tag-color) 8%, transparent); }
-.wv-badge { width: 34px; height: 34px; border-radius: 9px; background: var(--tag-color); color: #fff; display: flex; align-items: center; justify-content: center; font-size: 1.1rem; flex-shrink: 0; }
+.wv-today .wv-dow { color: var(--primary-color); }
+.wv-today .wv-datenum { background: var(--primary-fill); color: var(--on-primary); }
+.wv-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 8px; }
+.wv-dayhead { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.wv-race { display: inline-flex; align-items: center; gap: 4px; font-size: 0.74rem; font-weight: 600; color: var(--danger-color); background: var(--danger-soft); padding: 3px 9px; border-radius: 999px; }
+.wv-fuel { font-size: 0.66rem; font-weight: 600; color: var(--text-muted); cursor: default; white-space: nowrap; }
+.wv-today .wv-fuel, .wv-day:hover .wv-fuel { color: var(--primary-color); }
+.wv-slot { display: grid; place-items: center; height: 22px; margin-top: 2px; }
+.wv-slot > * { grid-area: 1 / 1; }
+.wv-day:hover .wv-slot .wv-fuel { visibility: hidden; }
+.wv-add { width: 32px; height: 22px; border-radius: 7px; border: none; background: transparent; color: var(--text-muted); cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 1rem; opacity: 0; transition: opacity 0.15s, color 0.15s, background 0.15s; }
+.wv-day:hover .wv-add, .wv-add:focus-visible { opacity: 1; }
+.wv-add { color: var(--primary-color); background: var(--primary-soft); }
+.wv-add:hover { background: var(--primary-fill); color: var(--on-primary); }
+/* No hover on touch: show the calorie target and the add button one above the other. */
+@media (hover: none) {
+  .wv-slot { display: flex; flex-direction: column; gap: 4px; height: auto; }
+  .wv-add { opacity: 1; }
+}
+.wv-restday { font-size: 0.82rem; color: var(--text-muted); }
+/* An empty day's label lines up with the date number beside it. */
+.wv-dayhead { min-height: 38px; margin-top: 16px; }
+.wv-dayhead + .wv-sessions { margin-top: 0; }
+.wv-sessions { display: flex; flex-direction: column; gap: 8px; }
+.wv-card {
+  position: relative; display: flex; gap: 12px; padding: 12px 14px 12px 16px;
+  border: 1px solid var(--border-color); border-radius: var(--radius-sm);
+  background: var(--surface-2); cursor: pointer; overflow: hidden;
+  transition: border-color 0.15s, transform 0.15s, box-shadow 0.15s;
+}
+.wv-card::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 3px; background: var(--tag-color); }
+.wv-card:hover { border-color: color-mix(in srgb, var(--tag-color) 45%, var(--border-color)); box-shadow: 0 4px 14px rgba(0,0,0,0.12); }
+.wv-card.status-completed { background: color-mix(in srgb, var(--tag-color) 7%, var(--surface-2)); }
+.wv-badge { width: 32px; height: 32px; border-radius: 9px; background: color-mix(in srgb, var(--tag-color) 18%, transparent); color: var(--tag-color); display: flex; align-items: center; justify-content: center; font-size: 1.05rem; flex-shrink: 0; }
 .wv-body { flex: 1; min-width: 0; }
-.wv-cardtop { display: flex; align-items: center; gap: 6px; }
-.wv-name { font-weight: 600; font-size: 0.95rem; color: var(--text-color); }
-.wv-done { color: var(--tag-color); font-size: 1.05rem; display: flex; }
-.wv-pills { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 7px; }
-.wv-pill { font-size: 0.74rem; font-weight: 500; color: var(--text-secondary); background: var(--surface-2); border: 1px solid var(--border-color); padding: 2px 9px; border-radius: 999px; }
-.wv-pill-pace { color: var(--tag-color); border-color: color-mix(in srgb, var(--tag-color) 40%, transparent); background: color-mix(in srgb, var(--tag-color) 10%, transparent); font-family: var(--font-mono); }
+.wv-cardtop { display: flex; align-items: center; gap: 6px; min-height: 32px; }
+.wv-name { font-weight: 600; font-size: 0.93rem; color: var(--text-color); }
+.wv-done { color: var(--tag-color); font-size: 1.05rem; display: flex; margin-left: auto; }
+.wv-pills { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 2px; }
+.wv-pill { font-size: 0.74rem; font-weight: 500; color: var(--text-secondary); background: var(--surface-color); padding: 2px 9px; border-radius: 999px; }
+.wv-pill-pace { color: var(--tag-color); background: color-mix(in srgb, var(--tag-color) 12%, transparent); font-family: var(--font-mono); }
 /* Race-pace sessions track the goal (blue); everything else tracks current
    fitness (sport colour). Legacy rows with no recognisable zone stay muted. */
-.wv-pill-pace.basis-goal { color: var(--primary-color); border-color: color-mix(in srgb, var(--primary-color) 40%, transparent); background: var(--primary-soft); }
-.wv-pill-pace.basis-planned { color: var(--text-muted); border-color: var(--border-color); background: transparent; font-family: inherit; }
+.wv-pill-pace.basis-goal { color: var(--primary-color); background: var(--primary-soft); }
+.wv-pill-pace.basis-planned { color: var(--text-muted); background: transparent; box-shadow: inset 0 0 0 1px var(--border-color); font-family: inherit; }
 .wv-pill-pace { cursor: help; }
-.wv-steps { margin: 9px 0 0; padding-left: 0; list-style: none; display: flex; flex-direction: column; gap: 6px; }
-.wv-steps li { position: relative; padding-left: 16px; font-size: 0.82rem; color: var(--text-secondary); line-height: 1.4; }
-.wv-steps li::before { content: ''; position: absolute; left: 3px; top: 7px; width: 5px; height: 5px; border-radius: 50%; background: var(--tag-color); }
+.wv-steps { margin: 9px 0 0; padding-left: 0; list-style: none; display: flex; flex-direction: column; gap: 5px; }
+.wv-steps li { position: relative; padding-left: 14px; font-size: 0.81rem; color: var(--text-secondary); line-height: 1.4; }
+.wv-steps li::before { content: ''; position: absolute; left: 2px; top: 7px; width: 5px; height: 5px; border-radius: 50%; background: var(--tag-color); }
+@media (max-width: 480px) {
+  .wv-day { gap: 12px; padding: 14px 12px; }
+  .wv-date { width: 36px; }
+  .wv-datenum { width: 34px; height: 34px; font-size: 1.1rem; }
+}
 
 /*
  * One hairline system: a 1px grid gap over a border-coloured backdrop, instead
@@ -2256,7 +2336,7 @@ watch(() => route.query.open, open => {
 .dh-cell {
   text-align: center;
   font-weight: 700;
-  padding: 8px 4px;
+  padding: 10px 4px;
   color: var(--text-muted);
   font-size: 0.66rem;
   text-transform: uppercase;
@@ -2267,11 +2347,11 @@ watch(() => route.query.open, open => {
 
 /* Every row is exactly this tall. Rows used to grow with their busiest day, so
    the grid came out lumpy and you couldn't scan across a week. */
-.cal-body { grid-auto-rows: 150px; }
+.cal-body { grid-auto-rows: 140px; }
 
 .day-cell {
   background: var(--surface-color);
-  padding: 5px;
+  padding: 6px;
   display: flex;
   flex-direction: column;
   gap: 3px;
@@ -2281,7 +2361,7 @@ watch(() => route.query.open, open => {
   transition: background 0.13s;
 }
 .day-cell:hover { background: var(--surface-2); }
-.day-cell.we { background: color-mix(in srgb, var(--surface-2) 45%, var(--surface-color)); }
+.day-cell.we { background: color-mix(in srgb, var(--surface-2) 30%, var(--surface-color)); }
 .day-cell.we:hover { background: var(--surface-2); }
 
 /* Recessed rather than faded: blanket opacity muddied the chips too. */
@@ -2289,7 +2369,7 @@ watch(() => route.query.open, open => {
 .day-cell.not-current-month .day-number { color: var(--text-muted); opacity: 0.6; }
 
 /* A fixed-height head row keeps every cell's chips on the same baseline. */
-.day-head { height: 20px; display: flex; align-items: center; flex-shrink: 0; }
+.day-head { height: 24px; display: flex; align-items: center; flex-shrink: 0; }
 
 /* The day's calorie target. Quiet by default — it is reference, not an event —
    and it must never wrap, or the head row's fixed height breaks the grid. */
@@ -2306,12 +2386,12 @@ watch(() => route.query.open, open => {
 .is-today .day-fuel { color: var(--primary-color); }
 .not-current-month .day-fuel { opacity: 0.45; }
 .day-number {
-  font-size: 0.76rem;
+  font-size: 0.78rem;
   font-weight: 600;
   color: var(--text-secondary);
   font-variant-numeric: tabular-nums;
-  width: 20px;
-  height: 20px;
+  width: 24px;
+  height: 24px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -2319,15 +2399,8 @@ watch(() => route.query.open, open => {
 }
 
 /* Today gets a filled disc and a ring — findable without hunting for a tint. */
-.day-cell.is-today { background: color-mix(in srgb, var(--primary-color) 8%, var(--surface-color)); }
 .is-today .day-number { background: var(--primary-fill); color: var(--on-primary); font-weight: 700; }
-.is-today::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  border: 1.5px solid var(--primary-color);
-  pointer-events: none;
-}
+.day-cell.is-today { background: color-mix(in srgb, var(--primary-color) 6%, var(--surface-color)); }
 
 .day-cell.drag-over { background: var(--primary-soft); box-shadow: inset 0 0 0 2px var(--primary-color); }
 
@@ -2339,33 +2412,37 @@ watch(() => route.query.open, open => {
   display: flex;
   align-items: center;
   gap: 4px;
-  height: 19px;
-  padding: 0 5px;
-  border-radius: 4px;
-  font-size: 0.68rem;
+  height: 21px;
+  padding: 0 6px;
+  border-radius: 6px;
+  font-size: 0.7rem;
   line-height: 1;
-  background: var(--surface-2);
+  background: color-mix(in srgb, var(--tag-color, var(--text-muted)) 15%, transparent);
   color: var(--text-color);
   flex-shrink: 0;
-  border-left: 3px solid var(--tag-color, var(--text-muted));
   overflow: hidden;
-  transition: transform 0.1s, opacity 0.1s;
+  transition: transform 0.1s, opacity 0.1s, background 0.15s;
 }
+.chip.workout:hover { background: color-mix(in srgb, var(--tag-color) 26%, transparent); }
 .chip.workout { cursor: grab; }
 .chip-ico { font-size: 0.76rem; flex-shrink: 0; color: var(--tag-color); }
 .chip-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
 .chip-meta { flex-shrink: 0; font-size: 0.62rem; color: var(--text-muted); font-variant-numeric: tabular-nums; }
-.chip.done { background: color-mix(in srgb, var(--tag-color) 16%, transparent); }
-.chip.done .chip-name { color: var(--text-secondary); }
+/* In a narrow cell the name matters more than the distance. */
+.day-cell { container-type: inline-size; }
+@container (max-width: 120px) { .chip-meta { display: none; } }
+/* Done reads as settled: quieter fill, muted name, the tick carries the colour. */
+.chip.done { background: color-mix(in srgb, var(--tag-color) 7%, transparent); }
+.chip.done .chip-name { color: var(--text-muted); }
 .chip.dragging { opacity: 0.4; transform: scale(0.96); cursor: grabbing; }
 
 /* Week view gets the same drag affordances as the month grid. */
 .wv-day.wv-dragover { background: var(--primary-soft); box-shadow: inset 0 0 0 2px var(--primary-color); }
 .wv-card[draggable='true'] { cursor: grab; }
 .wv-card.dragging { opacity: 0.4; transform: scale(0.98); cursor: grabbing; }
-.chip.race { background: var(--danger-soft); color: var(--danger-color); border-left-color: var(--danger-color); font-weight: 600; }
+.chip.race { background: var(--danger-soft); color: var(--danger-color); font-weight: 600; }
 .chip.race .chip-ico { color: var(--danger-color); }
-.chip.weight { background: transparent; color: var(--text-muted); border-left-color: transparent; padding-left: 6px; }
+.chip.weight { background: transparent; color: var(--text-muted); }
 .chip.weight .chip-ico { color: var(--text-muted); }
 
 .more {
