@@ -74,7 +74,7 @@ const verdictClass = computed(() => {
 		</div>
 		<div v-else-if="usingPrediction" class="rp-verdict">
 			No goal time set, so this is paced to what your current fitness predicts.
-			Set a goal in <router-link to="/profile" class="stat-inline-link">Profile</router-link> to pace it differently.
+			Set a goal in <router-link to="/goals" class="stat-inline-link">Goals &amp; races</router-link> to pace it differently.
 		</div>
 
 		<!-- The two numbers that decide the race. -->

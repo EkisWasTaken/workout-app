@@ -162,7 +162,7 @@ const steps = computed<Step[]>(() => [
 		label: 'Add a race or goal',
 		why: 'Sets your training paces and gives a plan something to aim at.',
 		done: raceGoals.value.length > 0 || Object.keys(distanceGoals).length > 0,
-		to: '/profile?focus=races',
+		to: '/goals?focus=races',
 	},
 	{
 		key: 'plan',

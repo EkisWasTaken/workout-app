@@ -6,6 +6,32 @@
         <n-button type="primary" @click="showAddTemplateModal = true">New template</n-button>
       </n-space>
 
+      <!-- The exercise library used to be its own page in the menu. It only
+           exists to feed gym templates, so it lives here as a second tab. -->
+      <div class="tpl-tabs" role="tablist" aria-label="Templates sections">
+        <button class="tpl-tab" :class="{ on: tab === 'templates' }" role="tab"
+          :aria-selected="tab === 'templates'" @click="setTab('templates')">
+          Templates<span class="tpl-tab-count">{{ templates.length }}</span>
+        </button>
+        <button class="tpl-tab" :class="{ on: tab === 'exercises' }" role="tab"
+          :aria-selected="tab === 'exercises'" @click="setTab('exercises')">
+          Exercise library<span class="tpl-tab-count">{{ exerciseLibrary.length }}</span>
+        </button>
+      </div>
+
+      <ExerciseLibrary
+        v-if="tab === 'exercises'"
+        :exercises="exerciseLibrary"
+        :templates="templates"
+        :template-exercises="exercisesByTemplate"
+        :loading="loadingTemplates || loadingExercises"
+        :failed="exercisesFailed"
+        @open-template="openTemplateById"
+        @new-template="startNewGymTemplate"
+        @show-templates="setTab('templates')"
+      />
+
+      <template v-else>
       <p class="hint">
         A template is a session you do again and again — a push day, a threshold run. Build it once,
         then add it to any date from here or with "Add session" on the schedule.
@@ -72,6 +98,7 @@
           <n-button size="small" @click="showAddTemplateModal = true">New template</n-button>
         </template>
       </n-empty>
+      </template>
 
       <!-- Create template -->
       <n-modal v-model:show="showAddTemplateModal" preset="card" :style="{ width: '800px', maxWidth: '95vw' }"
@@ -155,15 +182,17 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted, h } from 'vue';
+import { useRoute, useRouter } from 'vue-router';
 import {
   NButton, NList, NListItem, NThing, NModal, NSpace, NInput, NInputNumber,
   useMessage, NDataTable, NPopconfirm, NFormItem, NRadioGroup, NRadioButton, NEmpty,
   NDatePicker, NSelect, NAutoComplete,
 } from 'naive-ui';
 import { addWeeks, format } from 'date-fns';
-import type { WorkoutTemplate, WorkoutTemplateExercise, TemplateKind } from '../types';
+import type { WorkoutTemplate, WorkoutTemplateExercise, TemplateKind, Exercise } from '../types';
 import { db, NOT_YOUR_TEMPLATE } from '@/db';
 import Skeleton from '@/components/Skeleton.vue';
+import ExerciseLibrary from '@/components/ExerciseLibrary.vue';
 import { auth } from '@/auth';
 import { buildWorkoutFromTemplate } from '@/utils/templateSession';
 
@@ -324,8 +353,15 @@ async function loadTemplates() {
   }
 }
 
-const exerciseNames = ref<string[]>([]);
-db.getExercises().then(list => { exerciseNames.value = list.map(e => e.name).sort(); }).catch(() => {});
+/** The shared exercise library: the second tab, and the name suggestions in the editor. */
+const exerciseLibrary = ref<Exercise[]>([]);
+const loadingExercises = ref(true);
+const exercisesFailed = ref(false);
+const exerciseNames = computed(() => exerciseLibrary.value.map(e => e.name).sort());
+db.getExercises()
+  .then(list => { exerciseLibrary.value = list; })
+  .catch(e => { console.error('Failed to load exercises', e); exercisesFailed.value = true; })
+  .finally(() => { loadingExercises.value = false; });
 
 const scheduleWeeks = ref(1);
 const repeatOptions = [
@@ -475,7 +511,45 @@ async function confirmSchedule() {
   }
 }
 
-onMounted(loadTemplates);
+const route = useRoute();
+const router = useRouter();
+
+type Tab = 'templates' | 'exercises';
+/** `?tab=exercises` is how the old /exercises page and its links land here. */
+const tab = ref<Tab>(route.query.tab === 'exercises' ? 'exercises' : 'templates');
+function setTab(next: Tab) {
+  tab.value = next;
+  const { tab: _drop, ...rest } = route.query;
+  router.replace({ query: next === 'exercises' ? { ...rest, tab: 'exercises' } : rest });
+}
+
+/** From the library: edit a template that uses an exercise. */
+function openTemplateById(id: number) {
+  const t = templates.value.find(t => t.id === id);
+  if (!t) return;
+  if (isOwn(t)) openEdit(t);
+  else setTab('templates');
+}
+
+function startNewGymTemplate() {
+  newTemplate.value.kind = 'gym';
+  showAddTemplateModal.value = true;
+}
+
+/**
+ * `?edit=<id>` opens that template's editor — the Exercises page links here from
+ * an exercise to the templates that use it. Someone else's template can't be
+ * edited, so for those the link just lands on the list.
+ */
+onMounted(async () => {
+  await loadTemplates();
+  const id = Number(route.query.edit);
+  if (!route.query.edit || !Number.isFinite(id)) return;
+  const { edit: _drop, ...rest } = route.query;
+  router.replace({ query: rest });
+  const t = templates.value.find(t => t.id === id);
+  if (t && isOwn(t)) openEdit(t);
+});
 </script>
 
 <style scoped>
@@ -499,6 +573,18 @@ onMounted(loadTemplates);
 }
 .tpl-skeleton-row + .tpl-skeleton-row { border-top: 1px solid var(--border-color); }
 .tpl-skeleton-main { flex: 1; display: flex; flex-direction: column; gap: 8px; }
+.tpl-tabs { display: flex; gap: 4px; margin-bottom: 16px; border-bottom: 1px solid var(--border-color); }
+.tpl-tab {
+  display: inline-flex; align-items: center; gap: 7px;
+  padding: 8px 12px; margin-bottom: -1px;
+  border: none; border-bottom: 2px solid transparent; background: none;
+  font: inherit; font-size: 0.86rem; color: var(--text-secondary); cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
+}
+.tpl-tab:hover { color: var(--text-color); }
+.tpl-tab.on { color: var(--text-color); font-weight: 600; border-bottom-color: var(--primary-color); }
+.tpl-tab:focus-visible { outline: 2px solid var(--primary-color); outline-offset: -2px; border-radius: 4px; }
+.tpl-tab-count { font-family: var(--font-mono); font-size: 0.7rem; color: var(--text-muted); font-weight: 400; }
 .hint { font-size: 0.82rem; color: var(--text-muted); margin: 0 0 18px; line-height: 1.5; }
 
 .tpl-kind {

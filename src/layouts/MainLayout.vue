@@ -90,7 +90,7 @@ import {
 	GridOutline,
 	CalendarOutline,
 	CopyOutline,
-	BarbellOutline,
+	FlagOutline,
 	PersonCircleOutline,
 	ChevronBackOutline,
 	ChevronForwardOutline,
@@ -102,8 +102,8 @@ import { isDark, toggleTheme } from '@/theme'
 const menuOptions = [
 	{ label: 'Home', key: 'Home', to: { name: 'Home' }, icon: markRaw(GridOutline) },
 	{ label: 'Schedule', key: 'Schedule', to: { name: 'Schedule' }, icon: markRaw(CalendarOutline) },
+	{ label: 'Goals', key: 'Goals', to: { name: 'Goals' }, icon: markRaw(FlagOutline) },
 	{ label: 'Templates', key: 'Templates', to: { name: 'Templates' }, icon: markRaw(CopyOutline) },
-	{ label: 'Exercises', key: 'Exercises', to: { name: 'Exercises' }, icon: markRaw(BarbellOutline) },
 ]
 
 // Remembered per browser: it is a layout preference, not account data.

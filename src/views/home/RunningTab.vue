@@ -416,7 +416,7 @@ const vdotGoals = computed<GoalLine[]>(() =>
 				title="No race prediction yet"
 				body="Log a race result or record a hard effort and a predicted finish time appears here."
 				action-label="Add a race"
-				action-to="/profile"
+				action-to="/goals?focus=races"
 			/>
 
 			<template v-if="showRaceDetail">

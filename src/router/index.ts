@@ -23,6 +23,11 @@ const routes = [
 		component: () => import("@/views/ProfileView.vue"),
 	},
 	{
+		path: "/goals",
+		name: "Goals",
+		component: () => import("@/views/GoalsView.vue"),
+	},
+	{
 		path: "/templates",
 		name: "Templates",
 		component: () => import("@/views/TemplatesView.vue"),
@@ -32,16 +37,12 @@ const routes = [
 		name: "ProgressPhotos",
 		component: () => import("@/views/ProgressPhotosView.vue"),
 	},
-	{
-		path: "/exercises",
-		name: "Exercises",
-		component: () => import("@/views/ExercisesView.vue"),
-	},
 	// Legacy redirects
 	{ path: "/overview", redirect: "/" },
 	{ path: "/progress", redirect: "/" },
 	{ path: "/dashboard", redirect: "/schedule" },
 	{ path: "/ui-lab", redirect: "/profile" },
+	{ path: "/exercises", redirect: { path: "/templates", query: { tab: "exercises" } } },
 ];
 
 const router = createRouter({
