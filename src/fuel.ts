@@ -265,6 +265,7 @@ export function useFuelPlan(src: FuelSources) {
 		goalWeightKg,
 		goalDate,
 		horizonEnd,
+		sessions: plannedSessions,
 		dayFuel,
 		todayFuel,
 		thisWeek,

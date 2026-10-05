@@ -751,7 +751,7 @@ import ImportActivitiesModal from '../components/ImportActivitiesModal.vue';
 import BuildPlanModal from '../components/BuildPlanModal.vue';
 import FuelPlanModal from '../components/FuelPlanModal.vue';
 import WeekFuelReview from '../components/WeekFuelReview.vue';
-import { energySport, type EnergySession } from '@/utils/energy';
+import type { EnergySession } from '@/utils/energy';
 import { useFuelPlan } from '@/fuel';
 import PhotoEditor from '../components/PhotoEditor.vue';
 import { loadPhotos, photos, photosError } from '@/photos';
@@ -874,14 +874,15 @@ const usualGymDays = computed(() => {
 const showFuelPlan = ref(false);
 const previewedFuelSessions = ref<EnergySession[] | null>(null);
 
-/** Everything from this week's Monday on, in the shape the planner prices. */
+/**
+ * Everything from this week's Monday on, in the shape the planner prices. Taken
+ * from the calendar's own fuel plan, so a recorded run is priced the same way
+ * in the dialog as on the calendar cell. (`fuel` is declared further down; that's
+ * fine, since a computed doesn't run until the template first reads it.)
+ */
 const scheduledEnergySessions = computed<EnergySession[]>(() => {
   const from = format(startOfWeek(new Date(), { weekStartsOn: 1 }), 'yyyy-MM-dd');
-  return workouts.value.flatMap(w => {
-    if (w.date < from) return [];
-    const sport = energySport(w.type, w.name);
-    return sport ? [{ date: w.date, sport, km: w.distance, durationMin: w.duration }] : [];
-  });
+  return fuel.sessions.value.filter(s => s.date >= from);
 });
 
 const fuelSessions = computed(() => previewedFuelSessions.value ?? scheduledEnergySessions.value);
