@@ -105,6 +105,23 @@ describe('sessionKcal', () => {
 			expect(sessionKcal({ date: '2026-07-06', sport }, 70)).toBeGreaterThan(0)
 		}
 	})
+
+	it("uses a run's recorded calories, less resting burn", () => {
+		// 850 gross − 1 MET (1.4 kcal/min at 80 kg) × 50 min = 780
+		const run = { date: '2026-07-06', sport: 'running' as const, km: 10, recordedKcal: 850, recordedMin: 50 }
+		expect(sessionKcal(run, 80)).toBe(780)
+	})
+
+	it('keeps a recording within reach of the estimate', () => {
+		const base = { date: '2026-07-06', sport: 'running' as const, km: 10, recordedMin: 50 }
+		expect(sessionKcal({ ...base, recordedKcal: 2000 }, 80)).toBe(1008)
+		expect(sessionKcal({ ...base, recordedKcal: 200 }, 80)).toBe(432)
+	})
+
+	it('ignores recorded calories for anything but runs', () => {
+		const gym = { date: '2026-07-06', sport: 'gym' as const, durationMin: 60, recordedKcal: 900, recordedMin: 60 }
+		expect(sessionKcal(gym, 80)).toBe(336)
+	})
 })
 
 describe('macrosFor', () => {

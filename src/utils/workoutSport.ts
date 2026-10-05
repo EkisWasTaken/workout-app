@@ -118,3 +118,16 @@ export function effectiveDistanceKm(workout: Workout, index: ActivityIndex): num
 	if (Number.isFinite(metres) && metres > 0) return Math.round((metres / 1000) * 100) / 100
 	return workout.distance
 }
+
+/**
+ * The calories the watch reported for a workout, with the minutes they cover.
+ * The linked recording wins over the copy made at import time.
+ */
+export function recordedEnergy(workout: Workout, index: ActivityIndex): { kcal: number; minutes: number } | undefined {
+	const activity = resolveActivity(workout, index)
+	const kcal = Number(activity?.calories ?? workout.caloriesBurned)
+	const seconds = Number(activity?.moving_time)
+	const minutes = Number.isFinite(seconds) && seconds > 0 ? seconds / 60 : Number(workout.actualDuration)
+	if (!(kcal > 0) || !(minutes > 0)) return undefined
+	return { kcal, minutes }
+}

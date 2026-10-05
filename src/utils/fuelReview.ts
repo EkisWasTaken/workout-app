@@ -45,6 +45,9 @@ export interface LoggedSession {
 	actualKm?: number | null
 	/** What it actually took, where the session was logged. Falls back to plan. */
 	actualMin?: number | null
+	/** Gross kcal the watch reported, and the minutes they cover. */
+	recordedKcal?: number | null
+	recordedMin?: number | null
 }
 
 /**
@@ -141,6 +144,8 @@ export function reviewFuelWeek(input: FuelWeekInput): FuelWeekReview {
 		sport: s.sport,
 		km: actual ? (s.actualKm ?? s.km) : s.km,
 		durationMin: actual ? (s.actualMin ?? s.durationMin) : s.durationMin,
+		recordedKcal: actual ? s.recordedKcal : null,
+		recordedMin: actual ? s.recordedMin : null,
 	}, weightKg)
 
 	const done = sessions.filter(s => s.done)

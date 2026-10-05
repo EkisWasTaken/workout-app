@@ -763,7 +763,7 @@ import { currentVdot, hydrateFitness, refreshFitness, setActivities, setWorkouts
 import { sessionPace, type SessionPace } from '@/utils/paceAdvice';
 import { TARGET_ZONES, isFreeformTarget, zoneOptionFor } from '@/utils/targetZones';
 import { canonicalWorkoutType, noteSteps, type SportType } from '@/utils/workouts';
-import { buildActivityIndex, effectiveDistanceKm, effectiveWorkoutType, toActivityId } from '@/utils/workoutSport';
+import { buildActivityIndex, effectiveDistanceKm, effectiveWorkoutType, recordedEnergy, toActivityId } from '@/utils/workoutSport';
 
 const isActionLoading = ref(false);
 const message = useMessage();
@@ -1896,6 +1896,7 @@ const fuel = useFuelPlan({
   dailyWeights,
   sportOf: getWorkoutType,
   kmOf: w => effectiveDistanceKm(w, activityIndex.value),
+  recordedOf: w => recordedEnergy(w, activityIndex.value),
   goalDate: nextRaceDate,
 });
 

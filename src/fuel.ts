@@ -53,6 +53,11 @@ export interface FuelSources {
 	/** Actual distance covered, where a recording says so. */
 	kmOf?: (w: Workout) => number | undefined
 	/**
+	 * Calories the watch reported, and over how many minutes. A completed run
+	 * that has them is priced from them instead of from the plan.
+	 */
+	recordedOf?: (w: Workout) => { kcal: number; minutes: number } | undefined
+	/**
 	 * The date the goal weight is wanted by — your next race, normally. Without
 	 * one the deadline is twelve weeks out, which is far enough to keep the
 	 * implied rate sane and near enough to mean something.
@@ -85,6 +90,7 @@ export function useFuelPlan(src: FuelSources) {
 		src.workouts.value.flatMap(w => {
 			const sport = energySport(src.sportOf?.(w) ?? w.type, w.name)
 			if (!sport) return []
+			const recorded = w.isCompleted === 1 ? src.recordedOf?.(w) : undefined
 			return [{
 				date: w.date,
 				sport,
@@ -93,13 +99,23 @@ export function useFuelPlan(src: FuelSources) {
 				done: w.isCompleted === 1,
 				actualKm: src.kmOf?.(w) ?? w.distance ?? null,
 				actualMin: w.actualDuration ?? w.duration ?? null,
+				recordedKcal: recorded?.kcal ?? null,
+				recordedMin: recorded?.minutes ?? null,
 			}]
 		}))
 
+	/**
+	 * What the targets are built from: the plan, except where a finished run has
+	 * a recording, which is priced from what actually happened — so a 10 km
+	 * plan that became 14 km raises that day's target.
+	 */
 	const plannedSessions = computed<EnergySession[]>(() =>
-		allSessions.value.map(s => ({
-			date: s.date, sport: s.sport, km: s.km, durationMin: s.durationMin,
-		})))
+		allSessions.value.map(s => s.recordedKcal
+			? {
+				date: s.date, sport: s.sport, km: s.actualKm ?? s.km, durationMin: s.actualMin ?? s.durationMin,
+				recordedKcal: s.recordedKcal, recordedMin: s.recordedMin,
+			}
+			: { date: s.date, sport: s.sport, km: s.km, durationMin: s.durationMin }))
 
 	const defaultDeadline = computed(() => format(addWeeks(monday.value, DEFAULT_HORIZON_WEEKS), 'yyyy-MM-dd'))
 

@@ -17,7 +17,7 @@ import { activityApi } from './activities'
 import { settings } from './settings'
 import { setActivities, setWorkouts } from './fitness'
 import { parseISO } from 'date-fns'
-import { buildActivityIndex, effectiveDistanceKm, effectiveWorkoutType, resolveActivity } from './utils/workoutSport'
+import { buildActivityIndex, effectiveDistanceKm, effectiveWorkoutType, recordedEnergy, resolveActivity } from './utils/workoutSport'
 import { activitySport } from './utils/activityStats'
 import { observedMaxHR, relativeEffort } from './utils/analysis'
 import { isDistanceSport, type SportType } from './utils/workouts'
@@ -98,6 +98,7 @@ export function resetStats(): void {
 export const activityIndex = computed(() => buildActivityIndex(activities.value))
 export const sportOf = (w: Workout): SportType => effectiveWorkoutType(w, activityIndex.value)
 export const kmOf = (w: Workout): number | undefined => effectiveDistanceKm(w, activityIndex.value)
+export const recordedOf = (w: Workout) => recordedEnergy(w, activityIndex.value)
 
 export const completed = computed(() => workouts.value.filter(w => w.isCompleted === 1))
 

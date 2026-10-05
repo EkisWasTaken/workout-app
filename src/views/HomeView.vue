@@ -42,7 +42,7 @@ import { sessionPace } from '@/utils/paceAdvice'
 import { fmtTime } from '@/utils/vdot'
 import {
 	activities, completed, dailyWeights, effortPoints, kmOf, loadStats, loaded,
-	raceGoals, ramp, recentActivities, sportOf, sportTabs, syncClock, today, workouts,
+	raceGoals, recordedOf, ramp, recentActivities, sportOf, sportTabs, syncClock, today, workouts,
 } from '@/stats'
 import { weekReview } from '@/utils/weekReview'
 import { useFuelPlan } from '@/fuel'
@@ -353,6 +353,7 @@ const fuel = useFuelPlan({
 	dailyWeights,
 	sportOf,
 	kmOf,
+	recordedOf,
 	goalDate: nextRaceDate,
 	today,
 })

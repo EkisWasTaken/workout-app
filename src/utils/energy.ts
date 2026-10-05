@@ -103,7 +103,22 @@ export interface EnergySession {
 	sport: EnergySport
 	km?: number | null
 	durationMin?: number | null
+	/**
+	 * Gross kcal the watch reported for a completed session, and the minutes it
+	 * covered. Only runs use it — see `sessionKcal`.
+	 */
+	recordedKcal?: number | null
+	recordedMin?: number | null
 }
+
+/**
+ * How far a watch's figure may pull a run away from the model's estimate.
+ * Wrist-based calorie numbers are loose; a bad HR strap or a GPS-less treadmill
+ * file can be off by half, and one bogus recording shouldn't move a day's target
+ * by a thousand kcal.
+ */
+export const RECORDED_KCAL_MIN_RATIO = 0.6
+export const RECORDED_KCAL_MAX_RATIO = 1.4
 
 /** kcal per minute from a MET value, the standard ACSM conversion. */
 const metKcalPerMin = (mets: number, kg: number) => (mets * 3.5 * kg) / 200
@@ -116,6 +131,15 @@ const metKcalPerMin = (mets: number, kg: number) => (mets * 3.5 * kg) / 200
  * while a duration with no pace attached could be anything.
  */
 export function sessionKcal(session: EnergySession, weightKg: number): number {
+	const estimate = estimatedKcal(session, weightKg)
+	const recorded = recordedNetKcal(session, weightKg)
+	if (recorded === null) return estimate
+	return Math.round(Math.min(
+		estimate * RECORDED_KCAL_MAX_RATIO,
+		Math.max(estimate * RECORDED_KCAL_MIN_RATIO, recorded)))
+}
+
+function estimatedKcal(session: EnergySession, weightKg: number): number {
 	const { sport } = session
 	if (sport === 'running' && session.km && session.km > 0) {
 		return Math.round(RUN_KCAL_PER_KG_KM * weightKg * session.km)
@@ -124,6 +148,24 @@ export function sessionKcal(session: EnergySession, weightKg: number): number {
 		? session.durationMin
 		: DEFAULT_MINUTES[sport]
 	return Math.round(metKcalPerMin(NET_METS[sport], weightKg) * minutes)
+}
+
+/**
+ * A run's watch-reported calories, made net.
+ *
+ * Watches report gross energy — everything burned during the session, resting
+ * metabolism included. The baseline already pays for that, so one MET for the
+ * session's minutes comes off before the figure stands in for the estimate.
+ *
+ * Runs only: running watch numbers come from pace and heart rate and land close
+ * to measured cost. Gym figures are heart rate alone and run 20–40% high.
+ */
+function recordedNetKcal(session: EnergySession, weightKg: number): number | null {
+	if (session.sport !== 'running') return null
+	const kcal = session.recordedKcal
+	const minutes = session.recordedMin
+	if (!kcal || !(kcal > 0) || !minutes || !(minutes > 0)) return null
+	return Math.max(0, kcal - metKcalPerMin(1, weightKg) * minutes)
 }
 
 // ─── resting and baseline burn ────────────────────────────────────────────────
