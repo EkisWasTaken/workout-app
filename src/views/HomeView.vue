@@ -32,6 +32,7 @@ const DonutChart = defineAsyncComponent(() => import('@/components/charts/DonutC
 import EmptyState from '@/components/stats/EmptyState.vue'
 import RacePlanCard from '@/components/RacePlanCard.vue'
 import SectionHead from '@/components/stats/SectionHead.vue'
+import Skeleton from '@/components/Skeleton.vue'
 import { db } from '@/db'
 import { auth } from '@/auth'
 import { refreshFitness, currentVdot } from '@/fitness'
@@ -554,8 +555,8 @@ watch(completed, () => { if (tab.value === 'today') buildTodayCharts() })
 
 		<!-- ─── Today ─────────────────────────────────────────────────────── -->
 		<template v-if="tab === 'today'">
-			<!-- Today beside the race: both answer "where do I stand right now", and
-			     neither is wide enough to earn a full row on a laptop. -->
+			<!-- The day and its week on the left, the race they build towards on the
+			     right. Neither column is wide enough to earn a full row on a laptop. -->
 			<div class="board">
 			<div class="board-stack">
 			<section class="panel today-card">
@@ -648,31 +649,6 @@ watch(completed, () => { if (tab.value === 'today') buildTodayCharts() })
 				/>
 			</section>
 
-			<section v-if="nextRace" class="hero" :class="{ urgent: nextRaceDays !== null && nextRaceDays <= 14 }">
-				<div class="hero-left">
-					<span class="hero-kicker"><n-icon :component="FlagOutline" /> Next race</span>
-					<h2 class="hero-race">{{ nextRace.name }}</h2>
-					<p class="hero-sub">{{ formatRaceDate(nextRace.date) }}</p>
-					<div v-if="goalRaceSecs !== null" class="hero-chips">
-						<span class="hero-chip"><span class="hc-lbl">Goal</span><span class="mono">{{ fmtTime(goalRaceSecs) }}</span></span>
-					</div>
-				</div>
-				<div class="hero-count">
-					<span class="hero-days mono">{{ nextRaceDays }}</span>
-					<span class="hero-days-lbl">days to go</span>
-					<span class="hero-weeks">{{ Math.ceil((nextRaceDays || 0) / 7) }} weeks</span>
-				</div>
-			</section>
-
-			<RacePlanCard
-				v-if="nextRace && nextRace.distance_km && nextRaceDays !== null"
-				:race="nextRace"
-				:current-vdot="currentVdot"
-				:days-out="nextRaceDays"
-			/>
-			</div>
-
-			<div class="board-stack">
 			<section class="panel week-panel">
 				<div class="panel-head">
 					<h2>This week</h2>
@@ -737,6 +713,58 @@ watch(completed, () => { if (tab.value === 'today') buildTodayCharts() })
 					:blocked="fuel.blocked.value"
 					title="Last week"
 				/>
+			</section>
+			</div>
+
+			<div class="board-stack">
+			<section v-if="nextRace" class="hero" :class="{ urgent: nextRaceDays !== null && nextRaceDays <= 14 }">
+				<div class="hero-left">
+					<span class="hero-kicker"><n-icon :component="FlagOutline" /> Next race</span>
+					<h2 class="hero-race">{{ nextRace.name }}</h2>
+					<p class="hero-sub">{{ formatRaceDate(nextRace.date) }}</p>
+					<div v-if="goalRaceSecs !== null" class="hero-chips">
+						<span class="hero-chip"><span class="hc-lbl">Goal</span><span class="mono">{{ fmtTime(goalRaceSecs) }}</span></span>
+					</div>
+				</div>
+				<div class="hero-count">
+					<span class="hero-days mono">{{ nextRaceDays }}</span>
+					<span class="hero-days-lbl">days to go</span>
+					<span class="hero-weeks">{{ Math.ceil((nextRaceDays || 0) / 7) }} weeks</span>
+				</div>
+			</section>
+
+			<RacePlanCard
+				v-if="nextRace && nextRace.distance_km && nextRaceDays !== null"
+				:race="nextRace"
+				:current-vdot="currentVdot"
+				:days-out="nextRaceDays"
+			/>
+
+			<!-- No race yet: the same card, greyed out, so the column keeps its
+			     shape and says what would fill it. -->
+			<section v-if="loaded && !nextRace" class="hero hero-empty">
+				<div class="hero-left">
+					<span class="hero-kicker"><n-icon :component="FlagOutline" /> Next race</span>
+					<h2 class="hero-race">No race planned</h2>
+					<p class="hero-sub">
+						<router-link to="/goals" class="hero-link">Add a race</router-link>
+						to see a countdown and a pacing plan here.
+					</p>
+				</div>
+				<div class="hero-count">
+					<Skeleton width="56px" height="2.3rem" />
+					<span class="hero-days-lbl">days to go</span>
+				</div>
+			</section>
+			<section v-if="loaded && !nextRace" class="panel race-plan-ghost" aria-hidden="true">
+				<Skeleton width="38%" height="1.05rem" />
+				<div class="rpg-keys">
+					<div v-for="i in 3" :key="i" class="rpg-key">
+						<Skeleton width="50%" height="0.66rem" :delay="i * 120" />
+						<Skeleton width="72%" height="1.3rem" :delay="i * 120" />
+					</div>
+				</div>
+				<Skeleton v-for="i in 5" :key="'r' + i" height="0.85rem" :delay="i * 90" />
 			</section>
 			</div>
 			</div>
@@ -1017,6 +1045,16 @@ a.ob-label:hover { text-decoration: underline; }
 .hero-days { font-size: 2.3rem; font-weight: 700; line-height: 1; color: var(--text-color); }
 .hero-days-lbl { font-size: 0.72rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.04em; }
 .hero-weeks { font-size: 0.72rem; color: var(--text-muted); margin-top: 3px; }
+.hero-empty { background: var(--surface-color); border-style: dashed; }
+.hero-empty .hero-race { color: var(--text-secondary); }
+.hero-empty .hero-count { gap: 5px; }
+.hero-link { color: var(--primary-color); font-weight: 600; }
+.hero-link:hover { text-decoration: underline; }
+
+/* The race plan's outline, standing in until there is a race to pace. */
+.race-plan-ghost { padding: 17px 19px; display: flex; flex-direction: column; gap: 10px; }
+.rpg-keys { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin: 4px 0 6px; }
+.rpg-key { display: flex; flex-direction: column; gap: 6px; }
 
 /* PR banner */
 .pr-banner {
