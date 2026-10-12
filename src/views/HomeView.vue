@@ -220,12 +220,60 @@ async function reload() {
 	await refreshFitness()
 }
 
-async function completeToday(w: Workout) {
+/**
+ * A gym session's only number is the load lifted, and the gym trends are built
+ * from it — so completing one asks for it inline first. Leaving it blank still
+ * saves. The same form edits the figure on a session that's already done.
+ */
+const loadFormId = ref<number | null>(null)
+const loadKg = ref<number | null>(null)
+
+function startComplete(w: Workout) {
+	if (sportOf(w) !== 'gym') return completeToday(w)
+	openLoadForm(w)
+}
+
+function openLoadForm(w: Workout) {
+	loadFormId.value = w.id
+	loadKg.value = w.totalWeightLifted ?? null
+	nextTick(() => (document.getElementById(`load-${w.id}`) as HTMLInputElement | null)?.focus())
+}
+
+function cancelLoadForm() {
+	loadFormId.value = null
+	loadKg.value = null
+}
+
+function submitLoadForm(w: Workout) {
+	return w.isCompleted === 1 ? saveLoad(w, loadKg.value) : completeToday(w, loadKg.value)
+}
+
+/** Blank clears the figure — on a done session that's the only way to remove a typo. */
+async function saveLoad(w: Workout, kg: number | null) {
+	if (busyId.value !== null) return
+	busyId.value = w.id
+	busyKind.value = 'complete'
+	try {
+		await db.completeWorkout({ id: w.id, totalWeightLifted: kg != null && kg > 0 ? Math.round(kg) : null })
+		cancelLoadForm()
+		await reload()
+	} catch (e) {
+		console.error('Failed to save weight lifted', e)
+		message.error("Couldn't save that. Check your connection and try again.")
+	} finally {
+		busyId.value = null
+		busyKind.value = null
+	}
+}
+
+async function completeToday(w: Workout, kg?: number | null) {
 	if (w.isCompleted === 1 || busyId.value !== null) return
 	busyId.value = w.id
 	busyKind.value = 'complete'
 	try {
-		await db.completeWorkout({ id: w.id, isCompleted: 1 })
+		const load = kg != null && kg > 0 ? { totalWeightLifted: Math.round(kg) } : {}
+		await db.completeWorkout({ id: w.id, isCompleted: 1, ...load })
+		cancelLoadForm()
 		await reload()
 	} catch (e) {
 		console.error('Failed to complete workout', e)
@@ -577,7 +625,7 @@ watch(completed, () => { if (tab.value === 'today') buildTodayCharts() })
 						v-for="w in todaysWorkouts"
 						:key="w.id"
 						class="today-session"
-						:class="{ done: w.isCompleted === 1 }"
+						:class="{ done: w.isCompleted === 1, editing: loadFormId === w.id }"
 					>
 						<span class="ts-dot" :style="{ background: sportColor(w) }"></span>
 						<div class="ts-body">
@@ -599,19 +647,55 @@ watch(completed, () => { if (tab.value === 'today') buildTodayCharts() })
 									}}<template v-if="todayPace(w)!.basis !== 'planned'">/km</template>
 								</span>
 								<span v-if="w.gymType" class="ts-pill">{{ w.gymType }}</span>
+								<span v-if="w.isCompleted === 1 && w.totalWeightLifted" class="ts-pill mono">
+									{{ w.totalWeightLifted.toLocaleString() }} kg lifted
+								</span>
 							</div>
 							<ul v-if="sessionSteps(w).length" class="ts-steps">
 								<li v-for="(step, i) in sessionSteps(w)" :key="i">{{ step }}</li>
 							</ul>
+							<form
+								v-if="loadFormId === w.id"
+								class="ts-load"
+								@submit.prevent="submitLoadForm(w)"
+							>
+								<label class="ts-load-lbl" :for="`load-${w.id}`">Total weight lifted</label>
+								<div class="ts-load-row">
+									<input
+										:id="`load-${w.id}`"
+										v-model.number="loadKg"
+										type="number" min="0" step="5" inputmode="numeric"
+										:placeholder="w.isCompleted === 1 ? 'Not logged' : 'Optional'"
+										class="ts-load-input"
+										@keydown.esc="cancelLoadForm"
+									/>
+									<span class="ts-load-unit">kg</span>
+									<button type="submit" class="ts-complete" :disabled="busyId !== null">
+										{{ busyId === w.id && busyKind === 'complete' ? 'Saving…' : 'Save' }}
+									</button>
+									<button type="button" class="ts-file" :disabled="busyId !== null" @click="cancelLoadForm">
+										Cancel
+									</button>
+								</div>
+							</form>
 						</div>
 						<div class="ts-actions">
 							<button
-								v-if="w.isCompleted !== 1"
+								v-if="w.isCompleted !== 1 && loadFormId !== w.id"
 								class="ts-complete"
 								:disabled="busyId !== null"
-								@click="completeToday(w)"
+								@click="startComplete(w)"
 							>
 								{{ busyId === w.id && busyKind === 'complete' ? 'Saving…' : 'Complete' }}
+							</button>
+							<button
+								v-if="w.isCompleted === 1 && sportOf(w) === 'gym' && loadFormId !== w.id"
+								class="ts-file"
+								:disabled="busyId !== null"
+								:title="w.totalWeightLifted ? 'Change the weight lifted' : 'Add the weight lifted'"
+								@click="openLoadForm(w)"
+							>
+								<span class="ts-file-lbl">{{ w.totalWeightLifted ? 'Edit kg' : 'Add kg' }}</span>
 							</button>
 							<button
 								v-if="canAttach(w)"
@@ -979,6 +1063,7 @@ a.ob-label:hover { text-decoration: underline; }
 	border-radius: var(--radius-sm);
 }
 .today-session.done { opacity: 0.62; }
+.today-session.done.editing { opacity: 1; }
 .ts-dot { width: 10px; height: 10px; border-radius: 50%; margin-top: 8px; flex-shrink: 0; }
 .ts-body { flex: 1; min-width: 0; }
 .ts-top { display: flex; align-items: baseline; gap: 9px; flex-wrap: wrap; }
@@ -1019,6 +1104,16 @@ a.ob-label:hover { text-decoration: underline; }
 .ts-complete { background: var(--primary-soft); border-color: transparent; color: var(--primary-color); }
 .ts-complete:disabled, .ts-file:disabled { opacity: 0.55; cursor: default; }
 .ts-file-lbl { white-space: nowrap; }
+.ts-load { margin-top: 12px; display: flex; flex-direction: column; gap: 6px; }
+.ts-load-lbl { font-size: 0.74rem; font-weight: 600; color: var(--text-secondary); }
+.ts-load-row { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; }
+.ts-load-input {
+	width: 110px; padding: 6px 9px; border-radius: var(--radius-sm);
+	border: 1px solid var(--border-strong); background: var(--surface-color);
+	color: var(--text-color); font-family: var(--font-mono, inherit); font-size: 0.85rem;
+}
+.ts-load-input:focus { outline: none; border-color: var(--primary-color); }
+.ts-load-unit { font-size: 0.78rem; color: var(--text-muted); margin-right: 4px; }
 
 /* Race hero */
 .hero {
