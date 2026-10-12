@@ -326,7 +326,7 @@ d.deleteProgressPhoto = async (ph: any) => { photoRows.splice(photoRows.findInde
  * at all. Wrapping the reads in a round-trip-ish delay makes this behave like
  * the app talking to Supabase over a network.
  */
-const LATENCY_MS = 450
+const LATENCY_MS = Number(new URLSearchParams(location.search).get('latency') ?? 450)
 for (const name of [
 	'getWorkouts', 'getDailyWeights', 'getRaceGoals', 'getImportedActivities',
 	'getImportedActivityById', 'getWorkoutById', 'getExercises', 'getProfile',

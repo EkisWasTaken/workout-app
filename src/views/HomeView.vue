@@ -603,6 +603,98 @@ watch(completed, () => { if (tab.value === 'today') buildTodayCharts() })
 
 		<!-- ─── Today ─────────────────────────────────────────────────────── -->
 		<template v-if="tab === 'today'">
+			<!-- First load: every card in its real shape, so the page reads as
+			     loading at a glance and nothing moves when the data lands. -->
+			<div v-if="!loaded" class="today-skeleton" role="status" aria-label="Loading today">
+				<div class="board">
+					<div class="board-stack">
+						<section class="panel today-card">
+							<div class="today-head">
+								<Skeleton width="64px" height="1.05rem" />
+							</div>
+							<div class="sk-session">
+								<Skeleton width="8px" height="8px" radius="50%" />
+								<div class="sk-col">
+									<Skeleton width="46%" height="0.95rem" :delay="80" />
+									<div class="sk-row">
+										<Skeleton width="54px" height="1.3rem" radius="999px" :delay="160" />
+										<Skeleton width="62px" height="1.3rem" radius="999px" :delay="200" />
+										<Skeleton width="96px" height="1.3rem" radius="999px" :delay="240" />
+									</div>
+								</div>
+								<Skeleton width="84px" height="2rem" :delay="120" />
+							</div>
+							<div class="sk-fuel">
+								<Skeleton width="34%" height="0.8rem" :delay="300" />
+								<Skeleton width="22%" height="0.8rem" :delay="340" />
+							</div>
+						</section>
+
+						<section class="panel week-panel">
+							<div class="panel-head">
+								<Skeleton width="80px" height="1.05rem" />
+							</div>
+							<div class="week-review">
+								<div v-for="i in 3" :key="i" class="wr-stat">
+									<Skeleton :width="i === 3 ? '60%' : '72px'" height="1.25rem" :delay="i * 100" />
+									<Skeleton width="64px" height="0.66rem" :delay="i * 100" />
+								</div>
+							</div>
+							<Skeleton width="78%" height="0.8rem" :delay="200" />
+							<div class="week-strip sk-week">
+								<div v-for="i in 7" :key="i" class="day-col">
+									<Skeleton width="22px" height="0.62rem" :delay="i * 60" />
+									<Skeleton height="52px" :delay="i * 60" />
+								</div>
+							</div>
+						</section>
+					</div>
+
+					<div class="board-stack">
+						<section class="hero hero-empty sk-hero">
+							<div class="sk-col">
+								<Skeleton width="76px" height="0.72rem" />
+								<Skeleton width="180px" height="1.35rem" :delay="80" />
+								<Skeleton width="120px" height="0.8rem" :delay="160" />
+							</div>
+							<div class="hero-count">
+								<Skeleton width="56px" height="2.3rem" :delay="120" />
+							</div>
+						</section>
+						<section class="panel race-plan-ghost">
+							<Skeleton width="38%" height="1.05rem" />
+							<div class="rpg-keys">
+								<div v-for="i in 3" :key="i" class="rpg-key">
+									<Skeleton width="50%" height="0.66rem" :delay="i * 120" />
+									<Skeleton width="72%" height="1.3rem" :delay="i * 120" />
+								</div>
+							</div>
+							<Skeleton v-for="i in 5" :key="'r' + i" height="0.85rem" :delay="i * 90" />
+						</section>
+					</div>
+				</div>
+
+				<div class="sk-section"><Skeleton width="110px" height="0.95rem" /></div>
+				<section class="panel stat-card">
+					<Skeleton height="112px" />
+				</section>
+
+				<div class="sk-section"><Skeleton width="110px" height="0.95rem" :delay="100" /></div>
+				<section class="mix-row">
+					<div class="panel stat-card mix-card sk-donut">
+						<Skeleton width="150px" height="150px" radius="50%" :delay="150" />
+					</div>
+					<div class="panel recent-panel">
+						<div v-for="i in 6" :key="i" class="recent-row">
+							<Skeleton width="7px" height="7px" radius="50%" :delay="i * 70" />
+							<Skeleton :width="`${70 - (i % 3) * 12}%`" height="0.84rem" :delay="i * 70" />
+							<Skeleton width="68px" height="0.74rem" :delay="i * 70" />
+						</div>
+					</div>
+				</section>
+			</div>
+
+			<div v-else class="today-content">
 			<!-- The day and its week on the left, the race they build towards on the
 			     right. Neither column is wide enough to earn a full row on a laptop. -->
 			<div class="board">
@@ -923,6 +1015,7 @@ watch(completed, () => { if (tab.value === 'today') buildTodayCharts() })
 				action-label="Go to schedule"
 				action-to="/schedule"
 			/>
+			</div>
 		</template>
 
 		<RunningTab v-else-if="tab === 'running'" />
@@ -1282,4 +1375,23 @@ a.ob-label:hover { text-decoration: underline; }
 }
 .recent-date { font-size: 0.74rem; color: var(--text-muted); white-space: nowrap; }
 .recent-chev { color: var(--text-muted); flex-shrink: 0; }
+
+/* Today, before the first load */
+.sk-session {
+	display: flex; align-items: center; gap: 12px; padding: 12px 14px;
+	border: 1px solid var(--border-color); border-radius: var(--radius-sm);
+}
+.sk-col { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 8px; }
+.sk-row { display: flex; gap: 6px; flex-wrap: wrap; }
+.sk-fuel { display: flex; justify-content: space-between; margin-top: 14px; }
+.sk-week { margin-top: 13px; }
+.sk-week .day-col { align-items: stretch; }
+.sk-week .day-col > .skeleton:first-child { align-self: center; }
+.sk-hero .sk-col { gap: 7px; }
+.sk-section { margin: 22px 0 10px; }
+.sk-donut { display: flex; align-items: center; justify-content: center; min-height: 190px; }
+
+/* The real cards arrive with a short fade rather than a hard swap. */
+.today-content { animation: today-in 0.28s ease-out; }
+@keyframes today-in { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
 </style>
