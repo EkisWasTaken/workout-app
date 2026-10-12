@@ -616,7 +616,7 @@ watch(completed, () => { if (tab.value === 'today') buildTodayCharts() })
 
 				<p v-if="todayState === 'rest'" class="today-note">Rest day on the plan. Recovery is training.</p>
 				<div v-else-if="todayState === 'empty'" class="today-empty">
-					<p class="today-note">Nothing planned for today.</p>
+					<p class="today-note">Nothing planned. A rest day, unless you add something.</p>
 					<router-link to="/schedule" class="text-link">Add a session →</router-link>
 				</div>
 

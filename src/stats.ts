@@ -100,7 +100,12 @@ export const sportOf = (w: Workout): SportType => effectiveWorkoutType(w, activi
 export const kmOf = (w: Workout): number | undefined => effectiveDistanceKm(w, activityIndex.value)
 export const recordedOf = (w: Workout) => recordedEnergy(w, activityIndex.value)
 
-export const completed = computed(() => workouts.value.filter(w => w.isCompleted === 1))
+/**
+ * Completed training. An empty day is the rest day; an old "Rest" entry is
+ * left out so it can't count as a session in streaks, the heatmap or the mix.
+ */
+export const completed = computed(() =>
+	workouts.value.filter(w => w.isCompleted === 1 && sportOf(w) !== 'rest'))
 
 /**
  * Max and resting HR, shared by every heart-rate number in the app — Home and

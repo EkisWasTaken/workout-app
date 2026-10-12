@@ -279,7 +279,6 @@
               <option>Running</option>
               <option>Gym</option>
               <option>Bike</option>
-              <option>Rest</option>
               <option>Other</option>
             </select>
           </div>
@@ -503,7 +502,8 @@
               <option>Running</option>
               <option>Gym</option>
               <option>Bike</option>
-              <option>Rest</option>
+              <!-- Only for old entries: a rest day is now just an empty day. -->
+              <option v-if="selectedWorkout.type === 'Rest'">Rest</option>
               <option>Other</option>
             </select>
           </div>
