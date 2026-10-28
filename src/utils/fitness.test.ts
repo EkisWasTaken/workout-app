@@ -135,6 +135,17 @@ describe('currentVdot', () => {
 		expect(c.vdot).toBeCloseTo(44.1, 1)
 	})
 
+	it('lets a training effort that beats the race take over — you got fitter', () => {
+		const c = currentVdot(races, [sample(daysAgo(5), 47)], null, TODAY)!
+		expect(c).toMatchObject({ vdot: 47, source: 'effort' })
+	})
+
+	it('scores a race on its flat-equivalent time when the course is hilly', () => {
+		const flat = raceVdotSamples([race({ distance_km: 30, result_time_secs: 9900 })])[0]
+		const hilly = raceVdotSamples([race({ distance_km: 30, result_time_secs: 9900, terrain_factor: 1.08 })])[0]
+		expect(hilly.vdot).toBeGreaterThan(flat.vdot)
+	})
+
 	it('falls back to training efforts once the race goes stale', () => {
 		const old = raceVdotSamples([race({ date: daysAgo(300), distance_km: 21.097, result_time_secs: 6120 })])
 		const c = currentVdot(old, efforts, null, TODAY)!

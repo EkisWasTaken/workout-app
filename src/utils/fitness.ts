@@ -12,7 +12,7 @@
  *   3. Best efforts inside training runs. Always an underestimate — nobody
  *      time-trials a Tuesday — but it's real data and it decays honestly.
  */
-import { vdotFromRace } from './vdot'
+import { vdotFromRace, vdotForCourse } from './vdot'
 import type { RaceGoal } from '@/types'
 
 /** Daniels' tables are meaningless below ~1500 m; a fast km inside a run is not a VDOT. */
@@ -61,7 +61,8 @@ export function raceVdotSamples(races: RaceGoal[]): VdotSample[] {
 	const out: VdotSample[] = []
 	for (const r of races) {
 		if (!r.result_time_secs || !r.distance_km) continue
-		const v = vdotFromRace(r.distance_km * 1000, r.result_time_secs)
+		// A hilly course's time reads as lower fitness unless converted to flat first.
+		const v = vdotForCourse(r.distance_km * 1000, r.result_time_secs, r.terrain_factor)
 		if (v === null) continue
 		out.push({ date: iso(r.date), vdot: v, source: 'race', label: r.name })
 	}
@@ -130,8 +131,8 @@ export function loggedRunVdotSamples(runs: LoggedRun[]): VdotSample[] {
 }
 
 /**
- * Your current VDOT. `override` wins outright; otherwise the best recent race,
- * then the best recent training effort. Null when there's nothing to go on.
+ * Your current VDOT. `override` wins outright; otherwise the higher of the best
+ * recent race and the best recent training effort. Null when there's nothing to go on.
  */
 export function currentVdot(
 	races: VdotSample[],
@@ -148,20 +149,16 @@ export function currentVdot(
 		xs.length ? xs.reduce((b, s) => (s.vdot > b.vdot ? s : b)) : null
 
 	const race = best(races.filter(s => within(s, RACE_WINDOW_DAYS)))
-	if (race) {
-		const stale = !within(race, EFFORT_FRESH_DAYS)
-		return { vdot: race.vdot, source: 'race', label: race.label, date: race.date, stale }
-	}
-
 	// Best effort over the whole window, not the freshest — an easy run from
 	// yesterday tells you less than a hard one from two months ago.
 	const effort = best(efforts.filter(s => within(s, EFFORT_WINDOW_DAYS)))
-	if (effort) {
-		const stale = !within(effort, EFFORT_FRESH_DAYS)
-		return { vdot: effort.vdot, source: 'effort', label: effort.label, date: effort.date, stale }
-	}
 
-	return null
+	// Efforts only ever underestimate, so one that beats the race is proof you've
+	// improved since — letting the race win outright froze VDOT for six months.
+	const pick = race && (!effort || race.vdot >= effort.vdot) ? race : effort
+	if (!pick) return null
+	const stale = !within(pick, EFFORT_FRESH_DAYS)
+	return { vdot: pick.vdot, source: pick.source, label: pick.label, date: pick.date, stale }
 }
 
 // ─── trend ────────────────────────────────────────────────────────────────────
