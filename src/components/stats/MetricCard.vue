@@ -116,9 +116,8 @@ const compareIndex = computed(() => {
 .mc-label {
 	font-size: 0.78rem;
 	font-weight: 600;
-	letter-spacing: 0.02em;
 	color: var(--text-secondary);
-	text-transform: uppercase;
+	
 }
 
 .mc-chip {
@@ -174,7 +173,7 @@ const compareIndex = computed(() => {
 	margin: auto 0 0;
 	padding-top: 6px;
 	border-top: 1px solid var(--border-subtle, var(--border-color));
-	font-size: 0.68rem;
+	font-size: 0.74rem;
 	color: var(--text-muted);
 }
 

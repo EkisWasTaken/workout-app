@@ -140,19 +140,17 @@ const verdictClass = computed(() => {
 </template>
 
 <style scoped>
-.race-plan { padding: 15px 17px; }
-.panel-head h2 { display: flex; align-items: center; gap: 7px; }
+.race-plan { padding: 20px 22px; }
+.panel-head h2 { display: flex; align-items: center; gap: 7px; font-size: 1rem; font-weight: 600; margin: 0; }
 .rp-sub { font-size: 0.8rem; color: var(--text-muted); margin-left: auto; }
 
 .rp-verdict {
-	font-size: 0.82rem;
-	line-height: 1.5;
+	font-size: 0.88rem;
+	line-height: 1.55;
 	color: var(--text-secondary);
-	background: var(--surface-2);
 	border-left: 2px solid var(--border-strong);
-	border-radius: var(--radius-sm);
-	padding: 9px 12px;
-	margin-bottom: 14px;
+	padding: 2px 0 2px 12px;
+	margin-bottom: 16px;
 }
 .rp-verdict.good { border-left-color: var(--success-color); }
 .rp-verdict.warn { border-left-color: var(--warning-color); }
@@ -161,26 +159,24 @@ const verdictClass = computed(() => {
 .rp-keys {
 	display: grid;
 	grid-template-columns: repeat(3, 1fr);
-	gap: 10px;
-	margin-bottom: 14px;
+	gap: 14px;
+	margin: 4px 0 18px;
 }
 .rp-key {
 	display: flex;
 	flex-direction: column;
-	gap: 2px;
-	background: var(--surface-2);
-	border: 1px solid var(--border-color);
-	border-radius: var(--radius-sm);
-	padding: 10px 12px;
+	gap: 3px;
+	padding: 2px 0 2px 14px;
+	border-left: 1px solid var(--border-color);
 }
+.rp-key:first-child { padding-left: 0; border-left: none; }
 .rp-lbl {
-	font-size: 0.66rem;
-	text-transform: uppercase;
-	letter-spacing: 0.05em;
+	font-size: 0.72rem;
+	
 	color: var(--text-muted);
 }
 .rp-val { font-size: 1.35rem; font-weight: 700; line-height: 1.1; }
-.rp-unit { font-size: 0.7rem; color: var(--text-muted); }
+.rp-unit { font-size: 0.76rem; color: var(--text-muted); }
 
 .rp-strategy { display: flex; gap: 6px; margin-bottom: 12px; flex-wrap: wrap; }
 .rp-tab {
@@ -216,9 +212,8 @@ const verdictClass = computed(() => {
 .rp-row + .rp-row { border-top: 1px solid var(--border-subtle); }
 .rp-head {
 	background: var(--surface-2);
-	font-size: 0.66rem;
-	text-transform: uppercase;
-	letter-spacing: 0.05em;
+	font-size: 0.72rem;
+	
 	color: var(--text-muted);
 }
 .rp-dim { color: var(--text-muted); }

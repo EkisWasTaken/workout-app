@@ -654,7 +654,7 @@ const exportSize = frameSize(720)
 
 .panel {
 	background: var(--surface-color);
-	border: 1px solid var(--border-color);
+	border: 1px solid var(--card-edge);
 	border-radius: var(--radius);
 	box-shadow: var(--shadow-card);
 	margin-bottom: 8px;
@@ -781,7 +781,7 @@ const exportSize = frameSize(720)
 .pv-thumb-date, .pv-thumb-kg {
 	position: absolute;
 	bottom: 5px;
-	font-size: 0.66rem;
+	font-size: 0.72rem;
 	padding: 1px 6px;
 	border-radius: 999px;
 	background: rgba(0, 0, 0, 0.6);

@@ -317,7 +317,7 @@ onMounted(async () => {
 @media (max-width: 768px) { .profile-content { padding: 16px 16px 32px; } }
 
 .page-title { margin-bottom: 6px; }
-.page-hint { font-size: 0.82rem; color: var(--text-muted); margin: 0 0 18px; line-height: 1.5; max-width: 620px; }
+.page-hint { font-size: 0.9rem; color: var(--text-muted); margin: 0 0 18px; line-height: 1.5; max-width: 620px; }
 .card-title { font-size: 1rem; font-weight: 600; color: var(--text-color); }
 .settings-card { border-radius: var(--radius) !important; }
 /* Naive's default 24px card gutter costs a seventh of a 375px screen. */
@@ -329,8 +329,8 @@ onMounted(async () => {
 
 .account-row { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
 .account-info { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
-.account-label { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-muted); }
-.card-hint { font-size: 0.8rem; color: var(--text-muted); margin: 0 0 14px; line-height: 1.5; }
+.account-label { font-size: 0.7rem;  color: var(--text-muted); }
+.card-hint { font-size: 0.86rem; color: var(--text-muted); margin: 0 0 14px; line-height: 1.5; }
 
 .schema-warning {
 	display: flex; gap: 10px; align-items: flex-start;

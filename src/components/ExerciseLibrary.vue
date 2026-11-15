@@ -281,7 +281,7 @@ function toggle(key: string) {
   flex-shrink: 0; min-width: 18px; height: 18px; padding: 0 5px; box-sizing: border-box;
   display: inline-flex; align-items: center; justify-content: center;
   border-radius: 999px; background: var(--primary-soft); color: var(--primary-color);
-  font-size: 0.68rem; font-weight: 700; font-family: var(--font-mono);
+  font-size: 0.74rem; font-weight: 700; font-family: var(--font-mono);
 }
 
 .ex-detail { display: flex; flex-direction: column; gap: 2px; padding: 0 0 8px; }

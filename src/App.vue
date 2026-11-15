@@ -8,6 +8,7 @@ import { auth, initAuth, onUserChange } from './auth'
 import { hydrateSettings, resetSettingsCache } from './settings'
 import { refreshFitness, resetFitness } from './fitness'
 import { resetStats } from './stats'
+import { invalidateActivityCache } from './db'
 import { resetPhotos } from './photos'
 import { clearPlaceNameCache } from './utils/runPlaces'
 import type { User } from '@supabase/supabase-js'
@@ -18,6 +19,7 @@ function applyUser(user: User | null) {
 	resetStats()
 	resetPhotos()
 	resetFitness()
+	invalidateActivityCache()
 	clearPlaceNameCache()
 	if (user) {
 		hydrateSettings()

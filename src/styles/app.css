@@ -27,10 +27,10 @@
   /* ── Dark: warm charcoal ────────────────────────────────────────────────── */
 
   /* Surfaces */
-  --background-color: #0d0c0a;
-  --surface-color: #161512;
-  --card-background-color: #161512;
-  --surface-2: #201e1a;
+  --background-color: #0b0a09;
+  --surface-color: #181613;
+  --card-background-color: #181613;
+  --surface-2: #221f1b;
   --surface-hover: #2d2925;
   --surface-elevated: #24211e;
 
@@ -43,6 +43,9 @@
   --border-color: #2c2824;
   --border-strong: #514a43;
   --border-subtle: rgba(255, 255, 255, 0.05);
+  /* The one edge every card gets: enough to say "this is an object", too
+     quiet to read as a frame. */
+  --card-edge: rgba(255, 255, 255, 0.06);
 
   /* Text */
   --text-color: #f3f2f2;
@@ -96,8 +99,8 @@
   --color-elevation: #8ba1c0;
 
   /* Shape — soft corners throughout. */
-  --radius-sm: 11px;
-  --radius: 18px;
+  --radius-sm: 10px;
+  --radius: 16px;
   --radius-lg: 26px;
   /* Panels are flat: they separate by fill, not by a frame or a drop shadow.
      --shadow-pop is still real, because a modal genuinely floats. */
@@ -144,7 +147,7 @@
  * unreadable on white.
  */
 html[data-theme='light'] {
-  --background-color: #f6f4f1;
+  --background-color: #f2efea;
   --surface-color: #ffffff;
   --card-background-color: #ffffff;
   --surface-2: #f1eee9;
@@ -157,6 +160,7 @@ html[data-theme='light'] {
   --border-color: #eae4dc;
   --border-strong: #c5b7a6;
   --border-subtle: rgba(41, 39, 36, 0.09);
+  --card-edge: rgba(41, 39, 36, 0.08);
 
   --text-color: #292724;
   --text-secondary: #655d53;
@@ -303,7 +307,7 @@ a { color: var(--primary-color); text-decoration: none; }
  * shifts by a pixel when a component turns one on for its own reasons. */
 .card {
   background-color: var(--surface-color);
-  border: 1px solid transparent;
+  border: 1px solid var(--card-edge);
   border-radius: var(--radius);
   box-shadow: var(--shadow-card);
 }
@@ -350,7 +354,7 @@ a { color: var(--primary-color); text-decoration: none; }
 /* Naive UI light-touch overrides (theme.ts handles most colours) */
 .n-card {
   background-color: var(--surface-color) !important;
-  border: 1px solid transparent !important;
+  border: 1px solid var(--card-edge) !important;
   border-radius: var(--radius) !important;
   box-shadow: var(--shadow-card) !important;
 }

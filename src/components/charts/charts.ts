@@ -76,3 +76,35 @@ export function paddedDomain(values: number[], pad = 0.08, minSpan = 0): [number
 	const p = (hi - lo) * pad
 	return [lo - p, hi + p]
 }
+
+export type Direction = 'up' | 'down'
+export type ProgressVerdict = 'better' | 'worse' | 'steady'
+
+/**
+ * First and last real value of a series from `from` onward, and the change
+ * between them. Fed the smoothed line rather than raw dots, so one good day
+ * can't masquerade as progress.
+ */
+export function windowProgress(points: { x: number; y: number | null }[], from = -Infinity) {
+	const v = points
+		.filter((p): p is { x: number; y: number } => p.x >= from && p.y !== null && Number.isFinite(p.y))
+		.sort((a, b) => a.x - b.x)
+	if (v.length < 2) return null
+	const start = v[0], end = v[v.length - 1]
+	return { startX: start.x, start: start.y, endX: end.x, end: end.y, delta: end.y - start.y }
+}
+
+/** Whether a change counts as better, worse or noise, given which way is good. */
+export function progressVerdict(delta: number, better: Direction, flat = 0): ProgressVerdict {
+	if (Math.abs(delta) <= flat) return 'steady'
+	return (delta > 0) === (better === 'up') ? 'better' : 'worse'
+}
+
+/** Mean of the last `n` complete weeks against the `n` before them; null without enough weeks. */
+export function recentVsPrior(totals: number[], n = 4, skipLast = true) {
+	const done = skipLast ? totals.slice(0, -1) : totals
+	if (done.length < n * 2) return null
+	const mean = (a: number[]) => a.reduce((s, v) => s + v, 0) / a.length
+	const recent = mean(done.slice(-n)), prior = mean(done.slice(-n * 2, -n))
+	return { recent, prior, pct: prior > 0 ? ((recent - prior) / prior) * 100 : null }
+}

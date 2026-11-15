@@ -243,6 +243,47 @@ if (previewFlags.get('user') === 'new') {
 	})
 }
 
+const meals: any[] = previewFlags.get('user') === 'new' ? [] : [
+	{ id: 1, date: day(0), meal: 'breakfast', name: 'Oatmeal with banana', kcal: 420, protein_g: 14, carbs_g: 72, fat_g: 8 },
+	{ id: 2, date: day(0), meal: 'breakfast', name: 'Coffee with milk', kcal: 45, protein_g: 2, carbs_g: 4, fat_g: 2 },
+	{ id: 3, date: day(0), meal: 'lunch', name: 'Chicken, rice and broccoli', kcal: 640, protein_g: 48, carbs_g: 78, fat_g: 12 },
+	{ id: 4, date: day(1), meal: 'dinner', name: 'Salmon pasta', kcal: 780, protein_g: 42, carbs_g: 85, fat_g: 26 },
+	{ id: 5, date: day(1), meal: 'snack', name: 'Greek yoghurt', kcal: 160, protein_g: 17, carbs_g: 6, fat_g: 8 },
+	// Five logged days last week, so the week review's diary bar has something to show.
+	...[8, 9, 10, 12, 13].map((n, i) => ({ id: 20 + i, date: day(n), meal: 'dinner', name: 'Logged day', kcal: 2050 + i * 40, protein_g: 140, carbs_g: 230, fat_g: 65 })),
+]
+let mealId = 100
+d.getMealEntries = async (from: string, to: string) => meals.filter(m => m.date >= from && m.date <= to)
+d.getRecentMealEntries = async () => [...meals].reverse()
+d.addMealEntry = async (m: any) => { const row = { ...m, id: mealId++ }; meals.push(row); return row }
+d.deleteMealEntry = async (id: number) => { const i = meals.findIndex(m => m.id === id); if (i >= 0) meals.splice(i, 1) }
+const foodLib: any[] = previewFlags.get('user') === 'new' ? [] : [
+	{ id: 1, name: 'Oats', kcal_per_100g: 389, protein_per_100g: 13.2, carbs_per_100g: 60, fat_per_100g: 7 },
+	{ id: 2, name: 'Banana', kcal_per_100g: 89, protein_per_100g: 1.1, carbs_per_100g: 23, fat_per_100g: 0.3 },
+	{ id: 3, name: 'Milk 1.5%', kcal_per_100g: 47, protein_per_100g: 3.5, carbs_per_100g: 4.9, fat_per_100g: 1.5 },
+	{ id: 4, name: 'Chicken breast', kcal_per_100g: 120, protein_per_100g: 23, carbs_per_100g: 0, fat_per_100g: 2.6 },
+	{ id: 5, name: 'Basmati rice, cooked', kcal_per_100g: 130, protein_per_100g: 2.7, carbs_per_100g: 28, fat_per_100g: 0.3 },
+]
+const savedLib: any[] = previewFlags.get('user') === 'new' ? [] : [
+	{ id: 1, name: 'Oat porridge', items: [{ food_id: 1, grams: 80 }, { food_id: 3, grams: 250 }, { food_id: 2, grams: 120 }] },
+]
+let libId = 500
+d.getFoods = async () => [...foodLib].sort((a, b) => a.name.localeCompare(b.name))
+d.saveFood = async (f: any, id?: number) => {
+	if (id) { const row = foodLib.find(x => x.id === id); Object.assign(row, f); return { ...row } }
+	const row = { ...f, id: libId++ }; foodLib.push(row); return row
+}
+d.deleteFood = async (id: number) => {
+	foodLib.splice(foodLib.findIndex(x => x.id === id), 1)
+	for (const m of savedLib) m.items = m.items.filter((i: any) => i.food_id !== id)
+}
+d.getSavedMeals = async () => savedLib.map(m => ({ ...m, items: [...m.items] }))
+d.saveSavedMeal = async (m: any, id?: number) => {
+	if (id) { Object.assign(savedLib.find(x => x.id === id), m); return id }
+	const nid = libId++; savedLib.push({ ...m, id: nid }); return nid
+}
+d.deleteSavedMeal = async (id: number) => { savedLib.splice(savedLib.findIndex(x => x.id === id), 1) }
+
 d.saveProfile = async (profile: any) => {
 	const dropped = unstorableFields(profile, schema)
 	Object.assign(profileRow, stripUnstorable(profile, schema))

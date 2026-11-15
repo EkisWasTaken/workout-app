@@ -178,7 +178,7 @@ function removeAccount() {
 
 .account-row { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
 .account-info { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
-.account-label { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-muted); }
+.account-label { font-size: 0.7rem;  color: var(--text-muted); }
 /* A long address has no spaces to break at, so it must be allowed to break
    anywhere — otherwise it forces the card wider than the phone. */
 .account-email { font-size: 0.9rem; color: var(--text-color); font-weight: 500; overflow-wrap: anywhere; }

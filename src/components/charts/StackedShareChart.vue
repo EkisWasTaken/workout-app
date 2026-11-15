@@ -55,21 +55,28 @@ function template(d: Row | undefined) {
 
 <template>
 	<div class="ss-chart">
+		<div class="vc-head">
+			<ul class="vc-legend">
+				<li v-for="c in categories" :key="c.label">
+					<span class="vc-sw bar" :style="{ '--c': c.color }"></span>{{ c.label }}
+				</li>
+			</ul>
+		</div>
 		<VisXYContainer
 			:data="rows"
 			:height="chartHeight"
 			:y-domain="[0, 100]"
 			:x-domain="[-0.5, values.length - 0.5]"
 			:margin="{ top: 6, right: 8 }"
-			:duration="500"
+			:duration="0"
 		>
 			<VisStackedBar
 				:x="(d: Row) => d.i"
 				:y="ys"
 				:color="color"
 				:rounded-corners="3"
-				:bar-max-width="26"
-				:bar-padding="0.28"
+				:bar-max-width="22"
+				:bar-padding="0.4"
 			/>
 			<VisAxis type="x" :tick-values="rows.map(r => r.i)" :tick-format="tickLabel" :grid-line="false" />
 			<VisAxis type="y" :tick-values="[0, 25, 50, 75, 100]" :tick-format="(v: number | Date) => `${v}%`" />
@@ -77,21 +84,9 @@ function template(d: Row | undefined) {
 			<VisTooltip :horizontal-shift="14" :vertical-shift="14" />
 		</VisXYContainer>
 
-		<ul class="ss-legend">
-			<li v-for="c in categories" :key="c.label">
-				<span class="sw" :style="{ background: c.color }"></span>{{ c.label }}
-			</li>
-		</ul>
 	</div>
 </template>
 
 <style scoped>
 .ss-chart { width: 100%; }
-.ss-legend {
-	display: flex; flex-wrap: wrap; justify-content: center; gap: 4px 14px;
-	list-style: none; margin: 8px 0 0; padding: 0;
-	font-size: 0.72rem; color: var(--text-secondary);
-}
-.ss-legend li { display: inline-flex; align-items: center; gap: 6px; }
-.sw { width: 9px; height: 9px; border-radius: 2px; display: inline-block; }
 </style>

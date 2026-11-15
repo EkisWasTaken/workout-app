@@ -712,7 +712,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch, onMounted, onActivated, onUnmounted } from 'vue';
+import { ref, computed, watch, onMounted, onActivated, onUnmounted, nextTick, defineAsyncComponent } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { useMessage, NIcon } from 'naive-ui';
 import {
@@ -747,7 +747,7 @@ import { buildWorkoutFromTemplate } from '@/utils/templateSession';
 import { templatesFromWorkoutRows } from '@/utils/templateDerive';
 import CustomModal from '../components/CustomModal.vue';
 import ImportEditor from '../components/ImportEditor.vue';
-import ImportActivitiesModal from '../components/ImportActivitiesModal.vue';
+const ImportActivitiesModal = defineAsyncComponent(() => import('../components/ImportActivitiesModal.vue'));
 import BuildPlanModal from '../components/BuildPlanModal.vue';
 import FuelPlanModal from '../components/FuelPlanModal.vue';
 import WeekFuelReview from '../components/WeekFuelReview.vue';
@@ -757,7 +757,6 @@ import PhotoEditor from '../components/PhotoEditor.vue';
 import { loadPhotos, photos, photosError } from '@/photos';
 import { dueLabel, framesFor, nextPhotoDue, POSES, type Pose } from '@/utils/progressPhotos';
 import { activityApi } from '../activities';
-import { parseActivityFile } from '@/import/parseActivityFile';
 import { targetForDate, hydrateSettings } from '@/settings';
 import { currentVdot, hydrateFitness, refreshFitness, setActivities, setWorkouts } from '@/fitness';
 import { sessionPace, type SessionPace } from '@/utils/paceAdvice';
@@ -1096,6 +1095,7 @@ async function onCompletionFitPicked(e: Event) {
   if (!file) return;
   isFitImporting.value = true;
   try {
+    const { parseActivityFile } = await import('@/import/parseActivityFile');
     const activity = await parseActivityFile(file);
     const res = await db.addImportedActivity(activity);
     await loadStravaActivities();
@@ -2003,7 +2003,10 @@ async function loadRaceGoals() {
 
 async function loadWorkouts() {
   workouts.value = await db.getWorkouts();
+  const first = !workoutsLoaded.value;
   workoutsLoaded.value = true;
+  // One day per row on a phone means today can be a screen or two down; start there.
+  if (first && isNarrow.value) nextTick(() => document.querySelector('.day-cell.is-today')?.scrollIntoView({ block: 'center' }));
   // A completed run is a VDOT sample. Keep the fitness store in step so paces,
   // projections and goal verdicts re-derive the moment a session is logged.
   setWorkouts(workouts.value);
@@ -2255,7 +2258,7 @@ watch(() => route.query.open, open => {
 .wv-day { display: flex; gap: 18px; padding: 14px 18px; border-top: 1px solid var(--border-color); transition: background 0.15s; }
 .wv-day:first-child { border-top: none; }
 .wv-date { width: 48px; flex-shrink: 0; display: flex; flex-direction: column; align-items: center; gap: 1px; }
-.wv-dow { font-size: 0.68rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-muted); }
+.wv-dow { font-size: 0.74rem; font-weight: 700;  color: var(--text-muted); }
 .wv-datenum {
   font-family: var(--font-display); font-size: 1.25rem; font-weight: 600; color: var(--text-color);
   width: 38px; height: 38px; border-radius: 50%; display: flex; align-items: center; justify-content: center;
@@ -2266,7 +2269,7 @@ watch(() => route.query.open, open => {
 .wv-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 8px; }
 .wv-dayhead { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .wv-race { display: inline-flex; align-items: center; gap: 4px; font-size: 0.74rem; font-weight: 600; color: var(--danger-color); background: var(--danger-soft); padding: 3px 9px; border-radius: 999px; }
-.wv-fuel { font-size: 0.66rem; font-weight: 600; color: var(--text-muted); cursor: default; white-space: nowrap; }
+.wv-fuel { font-size: 0.72rem; font-weight: 600; color: var(--text-muted); cursor: default; white-space: nowrap; }
 .wv-today .wv-fuel, .wv-day:hover .wv-fuel { color: var(--primary-color); }
 .wv-slot { display: grid; place-items: center; height: 22px; margin-top: 2px; }
 .wv-slot > * { grid-area: 1 / 1; }
@@ -2340,9 +2343,8 @@ watch(() => route.query.open, open => {
   font-weight: 700;
   padding: 10px 4px;
   color: var(--text-muted);
-  font-size: 0.66rem;
-  text-transform: uppercase;
-  letter-spacing: 0.07em;
+  font-size: 0.72rem;
+  
 }
 /* Weekends read slightly brighter so the week's shape is obvious at a glance. */
 .dh-cell.we { color: var(--text-secondary); }
@@ -2377,7 +2379,7 @@ watch(() => route.query.open, open => {
    and it must never wrap, or the head row's fixed height breaks the grid. */
 .day-fuel {
   margin-left: auto;
-  font-size: 0.66rem;
+  font-size: 0.72rem;
   font-weight: 600;
   color: var(--text-muted);
   white-space: nowrap;
@@ -2429,7 +2431,7 @@ watch(() => route.query.open, open => {
 .chip.workout { cursor: grab; }
 .chip-ico { font-size: 0.76rem; flex-shrink: 0; color: var(--tag-color); }
 .chip-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
-.chip-meta { flex-shrink: 0; font-size: 0.62rem; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.chip-meta { flex-shrink: 0; font-size: 0.72rem; color: var(--text-muted); font-variant-numeric: tabular-nums; }
 /* In a narrow cell the name matters more than the distance. */
 .day-cell { container-type: inline-size; }
 @container (max-width: 120px) { .chip-meta { display: none; } }
@@ -2449,7 +2451,7 @@ watch(() => route.query.open, open => {
 
 .more {
   height: 15px;
-  font-size: 0.62rem;
+  font-size: 0.72rem;
   color: var(--text-muted);
   padding-left: 8px;
   background: none;
@@ -2477,7 +2479,7 @@ watch(() => route.query.open, open => {
   .day-cell.not-current-month { display: none; }
   /* The head becomes a left gutter rather than a top row, so the day's calorie
      target stacks under the date instead of colliding with it. */
-  .day-head { height: auto; padding-top: 1px; flex-direction: column; align-items: center; gap: 2px; }
+  .day-head { height: auto; padding-top: 1px; flex-direction: column; align-items: center; gap: 2px; width: 40px; flex-shrink: 0; }
   .day-fuel { margin-left: 0; font-size: 0.6rem; }
   .events { flex: 1; overflow: visible; gap: 4px; }
   .chip { height: 22px; font-size: 0.72rem; }
@@ -2555,7 +2557,7 @@ textarea { min-height: 70px; resize: vertical; }
 .wt-title { display: flex; align-items: center; gap: 4px; min-width: 0; }
 .wt-title .event-name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; }
 .wt-ico { color: var(--tag-color); font-size: 0.82rem; flex-shrink: 0; }
-.wt-meta { font-size: 0.63rem; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; letter-spacing: 0.01em; }
+.wt-meta { font-size: 0.72rem; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; letter-spacing: 0.01em; }
 
 /* Runna-style workout card (details view) */
 .rn-card { border: 1px solid var(--border-color); border-radius: var(--radius); overflow: hidden; background: var(--surface-color); }
@@ -2571,12 +2573,12 @@ textarea { min-height: 70px; resize: vertical; }
 .rn-num { font-family: var(--font-mono); font-size: 1.3rem; font-weight: 700; line-height: 1.05; color: var(--text-color); }
 .rn-num-sm { font-size: 1.02rem; }
 .rn-unit { font-size: 0.72rem; color: var(--text-muted); font-weight: 500; }
-.rn-lbl { font-size: 0.66rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; }
+.rn-lbl { font-size: 0.72rem; color: var(--text-muted);  }
 .rn-stat-pace { cursor: help; }
 .rn-stat-pace.basis-goal .rn-num { color: var(--primary-color); }
 .rn-stat-pace.basis-planned .rn-num { color: var(--text-secondary); font-size: 0.9rem; }
 .rn-plan { padding: 2px 16px 16px; }
-.rn-plan-h { font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted); font-weight: 600; }
+.rn-plan-h { font-size: 0.74rem;  color: var(--text-muted); font-weight: 600; }
 .rn-steps { margin: 9px 0 0; padding-left: 0; list-style: none; display: flex; flex-direction: column; gap: 8px; }
 .rn-steps li { position: relative; padding-left: 18px; font-size: 0.85rem; color: var(--text-secondary); line-height: 1.45; }
 .rn-steps li::before { content: ''; position: absolute; left: 4px; top: 8px; width: 6px; height: 6px; border-radius: 50%; background: var(--tag-color); }

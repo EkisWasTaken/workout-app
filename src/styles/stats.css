@@ -24,7 +24,7 @@
    specific card never shifts the layout by a pixel. */
 .stat-panel {
 	background: var(--surface-color);
-	border: 1px solid transparent;
+	border: 1px solid var(--card-edge);
 	border-radius: var(--radius);
 	box-shadow: none;
 }
@@ -62,7 +62,7 @@
 /* The sentence under a chart explaining what to take from it. */
 .stat-note {
 	margin: 12px 0 0;
-	font-size: 0.78rem;
+	font-size: 0.84rem;
 	line-height: 1.55;
 	color: var(--text-muted);
 }
@@ -86,9 +86,8 @@
 
 .stat-badge .b-lbl {
 	color: var(--text-muted);
-	font-size: 0.68rem;
-	text-transform: uppercase;
-	letter-spacing: 0.03em;
+	font-size: 0.74rem;
+	text-transform: capitalize;
 }
 
 .stat-badge.good { color: var(--success-color); background: var(--success-soft); }

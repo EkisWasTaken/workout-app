@@ -10,13 +10,13 @@
  * are merged into rows keyed by timestamp here. A line with no value on a row is
  * simply undefined there — either a gap, or bridged when `connectGaps` is set.
  */
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { useMediaQuery } from '@vueuse/core'
 import {
-	VisAxis, VisCrosshair, VisLine, VisPlotline, VisScatter, VisTooltip, VisXYContainer,
+	VisArea, VisAxis, VisCrosshair, VisLine, VisPlotline, VisScatter, VisTooltip, VisXYContainer,
 } from '@unovis/vue'
 import { format } from 'date-fns'
-import { chartTooltip, paddedDomain, timeTickFormat, timeTickValues, type TipRow } from './charts'
+import { chartTooltip, paddedDomain, progressVerdict, timeTickFormat, timeTickValues, windowProgress, type Direction, type TipRow } from './charts'
 
 export interface SeriesPoint {
 	x: number
@@ -49,6 +49,22 @@ export interface GoalLine {
 	color: string
 }
 
+/**
+ * Which series measures progress and which way is good. The chart then marks
+ * where you started in the visible range, shades the distance travelled since,
+ * and says it in words: green when better, amber when worse.
+ */
+export interface ProgressSpec {
+	series: string
+	better: Direction
+	/** Words for [improved, worsened], e.g. ['faster', 'slower']. */
+	words: [string, string]
+	/** Formats the size of the change; defaults to the axis format. */
+	format?: (delta: number) => string
+	/** Changes this small read as holding steady. */
+	flat?: number
+}
+
 const props = withDefaults(defineProps<{
 	series: ChartSeries[]
 	goals?: GoalLine[]
@@ -62,6 +78,7 @@ const props = withDefaults(defineProps<{
 	zeroBased?: boolean
 	dateFormat?: string
 	legend?: boolean
+	progress?: ProgressSpec | null
 }>(), {
 	goals: () => [],
 	height: 230,
@@ -70,6 +87,7 @@ const props = withDefaults(defineProps<{
 	zeroBased: false,
 	dateFormat: 'EEE d MMM yyyy',
 	legend: true,
+	progress: null,
 })
 
 type Row = { x: number; [k: string]: number | string | boolean | undefined }
@@ -95,17 +113,78 @@ const rows = computed<Row[]>(() => {
 	return [...byX.values()].sort((a, b) => a.x - b.x)
 })
 
+// ─── range ────────────────────────────────────────────────────────────────────
+
+const DAY = 86_400_000
+const RANGES = [{ label: '3M', days: 91 }, { label: '6M', days: 182 }, { label: '1Y', days: 365 }]
+/** null = everything. */
+const rangeDays = ref<number | null>(null)
+const spanDays = computed(() => {
+	const r = rows.value
+	return r.length > 1 ? (r[r.length - 1].x - r[0].x) / DAY : 0
+})
+/** Only the ranges that would actually show less than everything. */
+const rangeOptions = computed(() => RANGES.filter(r => r.days < spanDays.value * 0.9))
+const cutoff = computed(() => {
+	const r = rows.value
+	return rangeDays.value && r.length ? r[r.length - 1].x - rangeDays.value * DAY : -Infinity
+})
+const visible = computed(() => rows.value.filter(r => r.x >= cutoff.value))
+
+// ─── progress ─────────────────────────────────────────────────────────────────
+
+const progressSeries = computed(() => props.progress ? props.series.find(s => s.key === props.progress!.series) : undefined)
+const change = computed(() => {
+	const spec = props.progress, s = progressSeries.value
+	if (!spec || !s) return null
+	const w = windowProgress(s.points, cutoff.value)
+	if (!w) return null
+	const verdict = progressVerdict(w.delta, spec.better, spec.flat ?? 0)
+	const size = (spec.format ?? props.yFormat)(Math.abs(w.delta))
+	const since = format(new Date(w.startX), spanDays.value > 330 ? 'd MMM yyyy' : 'd MMM')
+	const text = verdict === 'steady' ? `Holding steady since ${since}`
+		: `${size} ${verdict === 'better' ? spec.words[0] : spec.words[1]} since ${since}`
+	return { ...w, verdict, text }
+})
+const changeColor = computed(() =>
+	change.value?.verdict === 'better' ? 'var(--success-color)'
+		: change.value?.verdict === 'worse' ? 'var(--warning-color)' : 'var(--text-muted)')
+/** Up or down on screen, which flips for a reversed axis like pace. */
+const arrow = computed(() => {
+	const c = change.value
+	if (!c || c.verdict === 'steady') return '→'
+	return (c.delta > 0) !== props.reverseY ? '↑' : '↓'
+})
+
+/**
+ * The progress line, carried forward across gaps, from where the range starts:
+ * the shaded band between it and the start level is the change itself.
+ */
+const fillKey = '__progress'
+const data = computed<Row[]>(() => {
+	const c = change.value, key = props.progress?.series
+	if (!c || !key) return visible.value
+	let last: number | undefined
+	return visible.value.map(r => {
+		const v = r[key]
+		if (typeof v === 'number' && r.x >= c.startX) last = v
+		// Unovis stacks an area on its baseline, so it takes the change from the start, not the value.
+		return last === undefined || r.x > c.endX ? r : { ...r, [fillKey]: last - c.start }
+	})
+})
+const isEnd = (d: Row) => !!change.value && d.x === change.value.endX
+
 const lines = computed(() => props.series.filter(s => s.kind === 'line'))
 const dots = computed(() => props.series.filter(s => s.kind === 'dots'))
 const loud = computed(() => props.series.filter(s => !s.quiet))
 
 const xDomain = computed<[number, number] | undefined>(() => {
-	const r = rows.value
+	const r = visible.value
 	return r.length ? [r[0].x, r[r.length - 1].x] : undefined
 })
 
 const yDomain = computed(() => {
-	const vals = props.series.flatMap(s => s.points.map(p => p.y).filter((v): v is number => v !== null))
+	const vals = props.series.flatMap(s => s.points.filter(p => p.x >= cutoff.value).map(p => p.y).filter((v): v is number => v !== null))
 	vals.push(...props.goals.map(g => g.value))
 	if (props.zeroBased) vals.push(0)
 	const d = paddedDomain(vals)
@@ -148,15 +227,56 @@ const legendItems = computed(() => [
 
 <template>
 	<div class="ts-chart">
+		<div v-if="change || rangeOptions.length" class="vc-progress">
+			<p v-if="change" class="vc-change" :class="change.verdict">
+				<span class="vc-arrow" aria-hidden="true">{{ arrow }}</span>
+				{{ change.text }}
+			</p>
+			<div v-if="rangeOptions.length" class="vc-range" role="group" aria-label="Time range">
+				<button v-for="r in rangeOptions" :key="r.label" type="button"
+					:aria-pressed="rangeDays === r.days" :class="{ on: rangeDays === r.days }"
+					@click="rangeDays = r.days">{{ r.label }}</button>
+				<button type="button" :aria-pressed="rangeDays === null" :class="{ on: rangeDays === null }"
+					@click="rangeDays = null">All</button>
+			</div>
+		</div>
+		<div v-if="yLabel || (legend && legendItems.length > 1)" class="vc-head">
+			<span v-if="yLabel" class="vc-unit">{{ yLabel }}</span>
+			<ul v-if="legend && legendItems.length > 1" class="vc-legend">
+				<li v-for="item in legendItems" :key="item.label">
+					<span class="vc-sw" :class="[item.kind, { dash: item.dash }]" :style="{ '--c': item.color }"></span>
+					{{ item.label }}
+				</li>
+			</ul>
+		</div>
 		<VisXYContainer
-			:data="rows"
+			:data="data"
 			:height="chartHeight"
 			:x-domain="xDomain"
 			:y-domain="yDomain"
 			:y-direction="reverseY ? 'south' : 'north'"
 			:margin="{ top: 6, right: 8 }"
-			:duration="500"
+			:duration="0"
 		>
+			<VisArea
+				v-if="change && change.verdict !== 'steady'"
+				:x="x"
+				:y="accessor(fillKey)"
+				:baseline="() => change!.start"
+				:color="changeColor"
+				:opacity="0.14"
+				curve-type="monotoneX"
+			/>
+			<VisPlotline
+				v-if="change"
+				axis="y"
+				:value="change.start"
+				color="var(--text-muted)"
+				line-style="dash"
+				:label-text="'Start ' + yFormat(change.start)"
+				label-position="bottom-left"
+				label-color="var(--text-muted)"
+			/>
 			<VisLine
 				v-for="s in lines"
 				:key="s.key"
@@ -174,9 +294,18 @@ const legendItems = computed(() => [
 				:x="x"
 				:y="accessor(s.key)"
 				:color="s.color"
-				:size="(d: Row) => (d[`${s.key}:em`] ? (s.size ?? 5) * 2.2 : (s.size ?? 5))"
+				:size="(d: Row) => (d[`${s.key}:em`] ? (s.size ?? 7) * 1.8 : (s.size ?? 7))"
 				:stroke-color="(d: Row) => (d[`${s.key}:em`] ? 'var(--text-color)' : 'transparent')"
 				:stroke-width="(d: Row) => (d[`${s.key}:em`] ? 2 : 0)"
+			/>
+			<VisScatter
+				v-if="change && progressSeries"
+				:x="x"
+				:y="(d: Row) => (isEnd(d) ? change!.end : undefined)"
+				:color="progressSeries.color"
+				:size="11"
+				stroke-color="var(--surface-color)"
+				:stroke-width="2.5"
 			/>
 			<VisPlotline
 				v-for="g in goals"
@@ -190,7 +319,7 @@ const legendItems = computed(() => [
 				:label-color="g.color"
 			/>
 			<VisAxis type="x" :tick-format="xTick" :tick-values="xTickValues" :grid-line="false" :tick-text-hide-overlapping="true" />
-			<VisAxis type="y" :tick-format="yTick" :num-ticks="5" :label="yLabel" :grid-line="true" />
+			<VisAxis type="y" :tick-format="yTick" :num-ticks="4" :grid-line="true" />
 			<VisCrosshair
 				:x="x"
 				:y="crosshairY"
@@ -201,38 +330,27 @@ const legendItems = computed(() => [
 			/>
 			<VisTooltip :horizontal-shift="14" :vertical-shift="14" />
 		</VisXYContainer>
-
-		<ul v-if="legend && legendItems.length > 1" class="ts-legend">
-			<li v-for="item in legendItems" :key="item.label">
-				<span
-					class="ts-swatch"
-					:class="[item.kind, { dash: item.dash }]"
-					:style="{ '--c': item.color }"
-				></span>
-				{{ item.label }}
-			</li>
-		</ul>
 	</div>
 </template>
 
 <style scoped>
 .ts-chart { width: 100%; }
 
-.ts-legend {
-	display: flex;
-	flex-wrap: wrap;
-	justify-content: center;
-	gap: 4px 16px;
-	list-style: none;
-	margin: 8px 0 0;
-	padding: 0;
-	font-size: 0.72rem;
-	color: var(--text-secondary);
+.vc-progress { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 14px; margin-bottom: 10px; }
+.vc-change {
+	display: inline-flex; align-items: center; gap: 6px; margin: 0;
+	padding: 5px 12px 5px 10px; border-radius: 999px;
+	font-size: 0.86rem; font-weight: 600; color: var(--text-secondary); background: var(--surface-2);
 }
-.ts-legend li { display: inline-flex; align-items: center; gap: 6px; }
-
-.ts-swatch { display: inline-block; flex-shrink: 0; }
-.ts-swatch.line, .ts-swatch.goal { width: 16px; height: 0; border-top: 2px solid var(--c); }
-.ts-swatch.dash { border-top-style: dashed; }
-.ts-swatch.dots { width: 7px; height: 7px; border-radius: 50%; background: var(--c); }
+.vc-change.better { color: var(--success-color); background: var(--success-soft); }
+.vc-change.worse { color: var(--warning-color); background: var(--warning-soft); }
+.vc-arrow { font-size: 1rem; line-height: 1; }
+.vc-range { display: inline-flex; margin-left: auto; padding: 2px; border-radius: 999px; background: var(--surface-2); }
+.vc-range button {
+	border: none; background: none; cursor: pointer; font: inherit;
+	font-size: 0.78rem; font-weight: 600; color: var(--text-muted);
+	padding: 4px 10px; border-radius: 999px; min-width: 36px;
+}
+.vc-range button:hover { color: var(--text-color); }
+.vc-range button.on { background: var(--surface-color); color: var(--text-color); box-shadow: 0 0 0 1px var(--card-edge); }
 </style>

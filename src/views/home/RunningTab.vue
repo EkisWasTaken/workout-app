@@ -173,7 +173,7 @@ const volumeAverage = computed(() =>
 
 const paceSeries = computed<ChartSeries[]>(() => [
 	{
-		key: 'run', label: 'Each steady run', kind: 'dots', color: 'var(--text-muted)', size: 5,
+		key: 'run', label: 'Each steady run', kind: 'dots', color: 'var(--text-muted)', size: 7,
 		points: pacePoints.value.map(p => ({ x: t(p.date), y: p.paceSec })),
 	},
 	{
@@ -185,7 +185,7 @@ const fmtPaceTick = (v: number) => fmtTime(Math.round(v))
 
 const vdotSeries = computed<ChartSeries[]>(() => [
 	{
-		key: 'sample', label: 'Each run (races ringed)', kind: 'dots', color: RUN, size: 5,
+		key: 'sample', label: 'Each run (races ringed)', kind: 'dots', color: RUN, size: 7,
 		points: vdotSamples.value.map(s => ({
 			x: t(s.date), y: s.vdot, note: s.label, emphasis: s.source === 'race',
 		})),
@@ -251,6 +251,7 @@ const vdotGoals = computed<GoalLine[]>(() =>
 					:series="paceSeries"
 					:y-format="fmtPaceTick"
 					:y-label="`min/km at ${refBpm} bpm`"
+					:progress="{ series: 'median', better: 'down', words: ['faster', 'slower'], format: (d: number) => `${Math.round(d)} s/km`, flat: 2 }"
 					reverse-y
 					date-format="EEE d MMM yyyy"
 				/>
@@ -284,7 +285,14 @@ const vdotGoals = computed<GoalLine[]>(() =>
 						</span>
 					</div>
 				</div>
-				<TimeSeriesChart :series="loadSeries" :y-format="(v: number) => String(Math.round(v))" date-format="EEE d MMM" />
+				<!-- While fitness is still filling up from zero it rises whatever you do,
+				     so a "fitter" badge would be flattery; it appears once it means something. -->
+				<TimeSeriesChart
+					:series="loadSeries"
+					:y-format="(v: number) => String(Math.round(v))"
+					:progress="load.warmingUp ? null : { series: 'fitness', better: 'up', words: ['fitter', 'less fit'], format: (d: number) => `${Math.round(d)} points`, flat: 2 }"
+					date-format="EEE d MMM"
+				/>
 				<div v-if="load.warmingUp" class="stat-banner info">
 					<span>
 						Fitness starts from zero at your first recording and takes about six weeks to settle, so
@@ -313,7 +321,7 @@ const vdotGoals = computed<GoalLine[]>(() =>
 
 			<SectionHead title="Volume" note="last 12 weeks" />
 			<section class="stat-panel stat-card">
-				<div class="stat-head"><h3>Weekly distance</h3><span class="hint">km</span></div>
+				<div class="stat-head"><h3>Weekly distance</h3></div>
 				<WeeklyBarsChart
 					:labels="volumeWeeks.map(w => w.label)"
 					:totals="runKmByWeek"
@@ -444,6 +452,7 @@ const vdotGoals = computed<GoalLine[]>(() =>
 						:goals="vdotGoals"
 						:y-format="(v: number) => (Math.round(v * 10) / 10).toString()"
 						y-label="VDOT"
+						:progress="{ series: 'line', better: 'up', words: ['higher', 'lower'], format: (d: number) => `${d.toFixed(1)} VDOT`, flat: 0.2 }"
 					/>
 				</section>
 			</template>
@@ -465,7 +474,7 @@ const vdotGoals = computed<GoalLine[]>(() =>
 	font-size: 0.78rem; color: var(--text-secondary); font-weight: 600;
 }
 .pb-tag {
-	font-size: 0.62rem; font-weight: 700; letter-spacing: 0.06em;
+	font-size: 0.72rem; font-weight: 700; letter-spacing: 0.06em;
 	color: var(--success-color); background: var(--success-soft);
 	padding: 2px 7px; border-radius: 999px;
 }
@@ -482,7 +491,7 @@ const vdotGoals = computed<GoalLine[]>(() =>
 	display: flex; align-items: baseline; justify-content: space-between;
 	gap: 12px; flex-wrap: wrap; margin-bottom: 12px;
 }
-.r-lbl { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-muted); margin-right: 9px; }
+.r-lbl { font-size: 0.72rem;  color: var(--text-muted); margin-right: 9px; }
 .r-val { font-size: 1.5rem; font-weight: 600; color: var(--text-color); }
 .r-source { font-size: 0.78rem; color: var(--text-muted); }
 
@@ -493,7 +502,7 @@ const vdotGoals = computed<GoalLine[]>(() =>
 }
 .equiv-lbl { font-size: 0.7rem; color: var(--text-muted); }
 .equiv-val { font-size: 1rem; font-weight: 600; color: var(--text-color); }
-.equiv-delta { font-size: 0.68rem; color: var(--text-muted); }
+.equiv-delta { font-size: 0.74rem; color: var(--text-muted); }
 .equiv-delta.good { color: var(--success-color); }
 
 /* Goal cards */

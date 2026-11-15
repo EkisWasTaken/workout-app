@@ -32,11 +32,14 @@ const props = withDefaults(defineProps<{
 	 * outrank the session the day is actually about.
 	 */
 	strip?: boolean
+	/** What the food diary says was eaten today; shown on the strip when known. */
+	eatenKcal?: number | null
 }>(), {
 	label: 'Today',
 	blocked: null,
 	compact: false,
 	strip: false,
+	eatenKcal: null,
 })
 
 const sports = computed(() => {
@@ -68,7 +71,10 @@ const kcal = (n: number) => Math.round(n).toLocaleString()
 		<!-- The strip drops the kicker: whatever panel it sits in has already
 		     said which day this is, and saying it twice is noise. -->
 		<template v-else-if="day && strip">
-			<span class="fc-strip-main">
+			<span v-if="eatenKcal != null" class="fc-strip-main">
+				<strong class="mono">{{ kcal(eatenKcal) }}</strong> of {{ kcal(day.intakeKcal) }} kcal eaten
+			</span>
+			<span v-else class="fc-strip-main">
 				<strong class="mono">{{ kcal(day.intakeKcal) }}</strong> kcal to eat
 			</span>
 			<span class="fc-strip-rest">
@@ -77,6 +83,7 @@ const kcal = (n: number) => Math.round(n).toLocaleString()
 				{{ day.macros.fatG }}<abbr title="fat">F</abbr>
 			</span>
 			<span class="fc-strip-rest">burn ~{{ kcal(day.burnKcal) }}</span>
+			<router-link to="/food" class="fc-link fc-strip-log">Log food</router-link>
 		</template>
 
 		<template v-else-if="day">
@@ -120,10 +127,9 @@ const kcal = (n: number) => Math.round(n).toLocaleString()
 	display: inline-flex;
 	align-items: center;
 	gap: 5px;
-	font-size: 0.68rem;
+	font-size: 0.74rem;
 	font-weight: 600;
-	text-transform: uppercase;
-	letter-spacing: 0.05em;
+	
 	color: var(--text-secondary);
 }
 .fc-burn { margin-left: auto; font-size: 0.74rem; color: var(--text-muted); }
@@ -167,6 +173,7 @@ const kcal = (n: number) => Math.round(n).toLocaleString()
 .fc-strip-main strong { font-size: 1.05rem; font-weight: 600; color: var(--text-color); }
 .fc-strip-rest { color: var(--text-muted); }
 .strip abbr { text-decoration: none; }
+.fc-strip-log { margin-left: auto; }
 .strip .fc-blocked { margin: 0; font-size: 0.78rem; }
 .strip .fc-kicker { display: none; }
 

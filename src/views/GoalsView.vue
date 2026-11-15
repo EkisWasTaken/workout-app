@@ -543,7 +543,7 @@ async function focusFromQuery() {
 @media (max-width: 768px) { .goals-content { padding: 16px 16px 32px; } }
 
 .page-title { margin-bottom: 6px; }
-.page-hint { font-size: 0.82rem; color: var(--text-muted); margin: 0 0 18px; line-height: 1.5; max-width: 620px; }
+.page-hint { font-size: 0.9rem; color: var(--text-muted); margin: 0 0 18px; line-height: 1.5; max-width: 620px; }
 .card-title { font-size: 1rem; font-weight: 600; color: var(--text-color); }
 .card-badge {
 	margin-left: 10px; font-size: 0.72rem; font-weight: 600; color: var(--primary-color);
@@ -556,7 +556,7 @@ async function focusFromQuery() {
 	.settings-card :deep(.n-card-header) { padding-left: 14px; padding-right: 14px; }
 }
 
-.card-hint { font-size: 0.8rem; color: var(--text-muted); margin: 0 0 14px; line-height: 1.5; }
+.card-hint { font-size: 0.86rem; color: var(--text-muted); margin: 0 0 14px; line-height: 1.5; }
 
 .schema-warning, .dg-inconsistent {
 	display: flex; gap: 10px; align-items: flex-start;
@@ -582,7 +582,7 @@ async function focusFromQuery() {
 /* Distance goals */
 .dg-list { display: flex; flex-direction: column; gap: 8px; }
 .dg-row { display: grid; grid-template-columns: 1.15fr 1fr 150px 52px 60px; gap: 10px; align-items: center; }
-.dg-head { font-size: 0.66rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted); }
+.dg-head { font-size: 0.72rem;  color: var(--text-muted); }
 .dg-label { font-size: 0.88rem; color: var(--text-color); }
 .dg-date { width: 100%; }
 .dg-vdot { font-size: 0.8rem; font-weight: 600; color: var(--primary-color); text-align: right; }
@@ -635,10 +635,10 @@ async function focusFromQuery() {
 .pace-unit { font-size: 0.72rem; color: var(--text-muted); margin-left: 2px; font-weight: 400; }
 
 .equiv { margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--border-color); }
-.equiv-title { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-muted); }
+.equiv-title { font-size: 0.72rem;  color: var(--text-muted); }
 .equiv-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-top: 10px; }
 .equiv-cell { display: flex; flex-direction: column; gap: 3px; }
-.equiv-lbl { font-size: 0.68rem; color: var(--text-muted); }
+.equiv-lbl { font-size: 0.74rem; color: var(--text-muted); }
 .equiv-val { font-size: 0.88rem; font-weight: 600; color: var(--text-color); }
 @media (max-width: 560px) { .equiv-row { grid-template-columns: repeat(2, 1fr); } }
 
@@ -659,7 +659,7 @@ async function focusFromQuery() {
 .race-goal-info { display: flex; align-items: center; gap: 8px; font-size: 0.9rem; color: var(--text-color); flex-wrap: wrap; min-width: 0; }
 .rg-goal-name { font-weight: 500; }
 .rg-prio-tag {
-	font-size: 0.66rem; font-weight: 700; width: 18px; height: 18px;
+	font-size: 0.72rem; font-weight: 700; width: 18px; height: 18px;
 	display: inline-flex; align-items: center; justify-content: center;
 	border-radius: 4px; flex-shrink: 0;
 }
@@ -701,7 +701,7 @@ async function focusFromQuery() {
 }
 .gp-head {
 	background: transparent; padding-top: 0; padding-bottom: 4px;
-	font-size: 0.66rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted);
+	font-size: 0.72rem;  color: var(--text-muted);
 }
 .gp-row.reached { background: var(--success-soft); }
 .gp-name { font-weight: 500; color: var(--text-color); }

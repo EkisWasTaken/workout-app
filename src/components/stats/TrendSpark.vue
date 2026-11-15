@@ -203,7 +203,7 @@ svg { display: block; width: 100%; overflow: visible; cursor: crosshair; }
 	bottom: calc(100% + 4px);
 	transform: translateX(-50%);
 	white-space: nowrap;
-	font-size: 0.68rem;
+	font-size: 0.74rem;
 	font-family: var(--font-mono);
 	color: var(--text-color);
 	background: var(--surface-2);
@@ -217,7 +217,7 @@ svg { display: block; width: 100%; overflow: visible; cursor: crosshair; }
 .ts-empty {
 	display: flex;
 	align-items: center;
-	font-size: 0.68rem;
+	font-size: 0.74rem;
 	color: var(--text-muted);
 	border-top: 1px dashed var(--border-color);
 }

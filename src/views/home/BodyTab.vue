@@ -22,7 +22,7 @@ import { format, parseISO } from 'date-fns'
 import MetricCard from '@/components/stats/MetricCard.vue'
 import EmptyState from '@/components/stats/EmptyState.vue'
 import SectionHead from '@/components/stats/SectionHead.vue'
-import TimeSeriesChart, { type ChartSeries, type GoalLine } from '@/components/charts/TimeSeriesChart.vue'
+import TimeSeriesChart, { type ChartSeries, type GoalLine, type ProgressSpec } from '@/components/charts/TimeSeriesChart.vue'
 import { body, dailyWeights, today } from '@/stats'
 import { settings } from '@/settings'
 
@@ -32,7 +32,7 @@ const t = (d: string) => parseISO(d).getTime()
 
 const weightSeries = computed<ChartSeries[]>(() => [
 	{
-		key: 'weighin', label: 'Weigh-in', kind: 'dots', color: 'var(--text-muted)', size: 5,
+		key: 'weighin', label: 'Weigh-in', kind: 'dots', color: 'var(--text-muted)', size: 7,
 		points: [...dailyWeights.value]
 			.sort((a, b) => a.date.localeCompare(b.date))
 			.map(w => ({ x: t(w.date), y: w.weight })),
@@ -47,6 +47,22 @@ const weightGoals = computed<GoalLine[]>(() =>
 	goalWeight.value === null ? [] : [{ label: `Goal ${goalWeight.value.toFixed(1)} kg`, value: goalWeight.value, color: 'var(--success-color)' }])
 
 const kg = (v: number) => v.toFixed(1)
+
+/**
+ * Which way is progress depends on the goal: toward it is better. With no goal
+ * set, lighter is assumed — say otherwise by setting one in Profile.
+ */
+const weightProgress = computed<ProgressSpec>(() => {
+	const now = body.value.smoothed[body.value.smoothed.length - 1]?.weight
+	const up = goalWeight.value !== null && now !== undefined && goalWeight.value > now
+	return {
+		series: 'trend',
+		better: up ? 'up' : 'down',
+		words: up ? ['heavier', 'lighter'] : ['lighter', 'heavier'],
+		format: (d: number) => `${d.toFixed(1)} kg`,
+		flat: 0.2,
+	}
+})
 
 // ─── progress photos ──────────────────────────────────────────────────────────
 
@@ -125,7 +141,7 @@ const goalDate = computed(() =>
 					<h3>Body weight</h3>
 					<span class="hint">{{ dailyWeights.length }} weigh-in{{ dailyWeights.length === 1 ? '' : 's' }}</span>
 				</div>
-				<TimeSeriesChart :series="weightSeries" :goals="weightGoals" :y-format="kg" y-label="kg" />
+				<TimeSeriesChart :series="weightSeries" :goals="weightGoals" :y-format="kg" y-label="kg" :progress="weightProgress" />
 				<p class="stat-note">
 					The dots are individual weigh-ins and the line is your trend weight — a moving average that
 					accounts for the days between readings, so it means the same whether you weigh in daily or
@@ -199,8 +215,7 @@ const goalDate = computed(() =>
 .gc-lbl {
 	font-size: 0.78rem;
 	font-weight: 600;
-	letter-spacing: 0.02em;
-	text-transform: uppercase;
+	
 	color: var(--text-secondary);
 }
 .gc-val { font-size: 1.6rem; font-weight: 600; line-height: 1.1; color: var(--text-color); }
@@ -245,7 +260,7 @@ a.photo-cta:hover, .photo-preview:hover { border-color: var(--primary-color); }
 .pp-pair { display: flex; gap: 8px; flex-shrink: 0; }
 .pp-pair figure { margin: 0; width: 110px; }
 .pp-pair :deep(.aligned-photo) { border-radius: var(--radius-sm); }
-.pp-pair figcaption { margin-top: 5px; font-size: 0.68rem; color: var(--text-muted); text-align: center; }
+.pp-pair figcaption { margin-top: 5px; font-size: 0.74rem; color: var(--text-muted); text-align: center; }
 .pp-side { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
 .pp-gap { font-size: 0.95rem; font-weight: 600; color: var(--text-color); }
 .pp-ready { display: flex; flex-direction: column; gap: 5px; font-size: 0.78rem; line-height: 1.45; color: var(--text-secondary); }

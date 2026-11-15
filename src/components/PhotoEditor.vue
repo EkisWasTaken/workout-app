@@ -510,9 +510,8 @@ const ghostDate = computed(() => ghost.value ? format(parseISO(ghost.value.photo
 .pe-field { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
 .pe-wide { grid-column: 1 / -1; }
 .pe-lbl {
-	font-size: 0.68rem;
-	text-transform: uppercase;
-	letter-spacing: 0.05em;
+	font-size: 0.74rem;
+	
 	color: var(--text-muted);
 }
 .pe-poses { display: flex; gap: 4px; }

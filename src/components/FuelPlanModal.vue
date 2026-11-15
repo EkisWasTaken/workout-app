@@ -224,7 +224,7 @@ async function saveStats() {
 		<div class="fp-stats">
 			<button class="fp-stats-head" @click="showStats = !showStats">
 				<span>About you</span>
-				<span v-if="!statsReady" class="fp-needed">needed</span>
+				<span v-if="!statsReady" class="fp-needed">Needed</span>
 				<span v-else class="fp-stats-sum">
 					{{ heightCm }} cm · {{ age }} · {{ sex === 'male' ? 'male' : 'female' }}
 				</span>
@@ -306,7 +306,7 @@ async function saveStats() {
 					<button class="fp-week-head" @click="expanded = expanded === w.index ? null : w.index">
 						<span class="fp-wk">Wk {{ w.index }}</span>
 						<span class="fp-dates">{{ weekLabel(w.startDate) }}</span>
-						<span v-if="w.capped" class="fp-capped" title="Held back to a safe rate">capped</span>
+						<span v-if="w.capped" class="fp-capped" title="Held back to a safe rate">Capped</span>
 						<span class="fp-weight mono">{{ kg(w.startWeightKg) }} → {{ kg(w.endWeightKg) }}</span>
 						<span class="fp-def mono" :class="{ surplus: w.deficitPerDay < 0 }">
 							{{ signed(w.deficitPerDay) }}
@@ -365,9 +365,8 @@ async function saveStats() {
 .fp-field { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
 .fp-wide { grid-column: 1 / -1; }
 .fp-lbl {
-	font-size: 0.68rem;
-	text-transform: uppercase;
-	letter-spacing: 0.05em;
+	font-size: 0.74rem;
+	
 	color: var(--text-muted);
 }
 .fp-hint { margin: 0 0 12px; font-size: 0.74rem; line-height: 1.5; color: var(--text-muted); }
@@ -410,9 +409,8 @@ async function saveStats() {
 .fp-stats-sum { margin-left: auto; font-size: 0.76rem; color: var(--text-muted); }
 .fp-needed {
 	margin-left: auto;
-	font-size: 0.62rem;
-	text-transform: uppercase;
-	letter-spacing: 0.04em;
+	font-size: 0.72rem;
+	
 	padding: 1px 7px;
 	border-radius: 999px;
 	background: var(--warning-soft);
@@ -440,9 +438,8 @@ async function saveStats() {
 }
 .fp-today-head { display: flex; align-items: baseline; gap: 10px; }
 .fp-today-lbl {
-	font-size: 0.68rem;
-	text-transform: uppercase;
-	letter-spacing: 0.05em;
+	font-size: 0.74rem;
+	
 	color: var(--text-secondary);
 }
 .fp-today-burn { margin-left: auto; font-size: 0.74rem; color: var(--text-muted); }
@@ -505,9 +502,8 @@ async function saveStats() {
 .fp-wk { color: var(--text-muted); font-size: 0.72rem; width: 38px; flex-shrink: 0; }
 .fp-dates { color: var(--text-secondary); font-size: 0.74rem; }
 .fp-capped {
-	font-size: 0.62rem;
-	text-transform: uppercase;
-	letter-spacing: 0.04em;
+	font-size: 0.72rem;
+	
 	padding: 1px 6px;
 	border-radius: 999px;
 	background: var(--warning-soft);
@@ -530,9 +526,8 @@ async function saveStats() {
 }
 .fp-day > :nth-child(n + 3) { text-align: right; }
 .fp-day-head {
-	font-size: 0.64rem;
-	text-transform: uppercase;
-	letter-spacing: 0.04em;
+	font-size: 0.72rem;
+	
 	color: var(--text-muted);
 	border-bottom: 1px solid var(--border-subtle);
 	padding-bottom: 4px;

@@ -397,6 +397,25 @@ const nextRaceDate = computed<string | null>(() =>
 		.filter(g => g.date >= todayStr.value)
 		.sort((a, b) => a.date.localeCompare(b.date))[0]?.date ?? null)
 
+/** Today's food-diary total; null until loaded or when the diary table is missing. */
+const eatenToday = ref<number | null>(null)
+/** Last week's diary, averaged over the days that have entries; null when nothing was logged. */
+const loggedLastWeek = ref<{ perDay: number; days: number } | null>(null)
+// One query covers today and the whole of last week.
+const loadEatenToday = () => {
+	const from = format(subWeeks(weekStart.value, 1), 'yyyy-MM-dd')
+	const lastSunday = format(addDays(weekStart.value, -1), 'yyyy-MM-dd')
+	return db.getMealEntries(from, todayStr.value)
+		.then(rows => {
+			eatenToday.value = rows.filter(r => r.date === todayStr.value).reduce((s, r) => s + r.kcal, 0)
+			const byDay = new Map<string, number>()
+			for (const r of rows) if (r.date <= lastSunday) byDay.set(r.date, (byDay.get(r.date) ?? 0) + r.kcal)
+			const total = [...byDay.values()].reduce((a, b) => a + b, 0)
+			loggedLastWeek.value = byDay.size ? { perDay: total / byDay.size, days: byDay.size } : null
+		})
+		.catch(() => { eatenToday.value = null; loggedLastWeek.value = null })
+}
+
 const fuel = useFuelPlan({
 	workouts,
 	dailyWeights,
@@ -518,6 +537,7 @@ async function boot() {
 	dismissed.value = localStorage.getItem(dismissKey.value) === '1'
 	noWatch.value = localStorage.getItem(noWatchKey.value) === '1'
 	await hydrateSettings()
+	loadEatenToday()
 	await loadStats()
 	await buildTodayCharts()
 }
@@ -822,6 +842,7 @@ watch(completed, () => { if (tab.value === 'today') buildTodayCharts() })
 					strip
 					:day="fuel.todayFuel.value"
 					:blocked="fuel.blocked.value"
+					:eaten-kcal="eatenToday"
 				/>
 			</section>
 
@@ -882,11 +903,12 @@ watch(completed, () => { if (tab.value === 'today') buildTodayCharts() })
 
 			<!-- Last week, graded. Weight and training together, because a shallow
 			     deficit is usually a missed long run rather than a dietary failure. -->
-			<section v-if="loaded && (fuel.lastWeek.value || fuel.blocked.value)" class="panel">
+			<section v-if="loaded && (fuel.lastWeek.value || fuel.blocked.value)" class="panel review-panel">
 				<WeekFuelReview
 					:review="fuel.lastWeek.value"
 					:trend="fuel.trend.value"
 					:blocked="fuel.blocked.value"
+					:logged="loggedLastWeek"
 					title="Last week"
 				/>
 			</section>
@@ -1092,7 +1114,7 @@ watch(completed, () => { if (tab.value === 'today') buildTodayCharts() })
 	display: inline-flex; align-items: center; justify-content: center;
 	width: 19px; height: 19px; border-radius: 50%;
 	border: 1.5px solid var(--border-strong);
-	font-size: 0.68rem; font-weight: 600; color: var(--text-muted); flex-shrink: 0;
+	font-size: 0.74rem; font-weight: 600; color: var(--text-muted); flex-shrink: 0;
 }
 .ob-steps li.next .ob-check { border-color: var(--primary-color); color: var(--primary-color); }
 .ob-steps li.done .ob-check { border-color: var(--success-color); background: var(--success-soft); color: var(--success-color); }
@@ -1127,13 +1149,13 @@ a.ob-label:hover { text-decoration: underline; }
    card turns one on for its own reasons. */
 .panel {
 	background: var(--surface-color);
-	border: 1px solid transparent;
+	border: 1px solid var(--card-edge);
 	border-radius: var(--radius);
 	box-shadow: none;
 }
 
 /* Today */
-.today-card { padding: 22px 24px; }
+.today-card { padding: 20px 22px; }
 /* The board's gap owns the spacing between its children, so their own bottom
    margins would add to it and break the rhythm. */
 .board { margin-bottom: 16px; }
@@ -1166,8 +1188,7 @@ a.ob-label:hover { text-decoration: underline; }
 	letter-spacing: -0.01em; color: var(--text-color);
 }
 .ts-sport {
-	font-size: 0.7rem; font-weight: 600; text-transform: uppercase;
-	letter-spacing: 0.06em; color: var(--text-muted);
+	font-size: 0.7rem; font-weight: 600; text-transform: capitalize; color: var(--text-muted);
 }
 .ts-name:hover { color: var(--primary-color); }
 .ts-done { color: var(--success-color); font-weight: 700; }
@@ -1218,7 +1239,7 @@ a.ob-label:hover { text-decoration: underline; }
 .hero.urgent { background: linear-gradient(135deg, var(--warning-soft) 0%, var(--surface-color) 62%); }
 .hero-kicker {
 	display: inline-flex; align-items: center; gap: 6px;
-	font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted);
+	font-size: 0.72rem;  color: var(--text-muted);
 }
 .hero-race { font-size: 1.25rem; margin: 5px 0 2px; }
 .hero-sub { margin: 0; font-size: 0.82rem; color: var(--text-secondary); }
@@ -1228,10 +1249,10 @@ a.ob-label:hover { text-decoration: underline; }
 	font-size: 0.76rem; padding: 3px 10px; border-radius: 999px;
 	background: var(--surface-2); color: var(--text-secondary);
 }
-.hc-lbl { color: var(--text-muted); font-size: 0.68rem; text-transform: uppercase; }
+.hc-lbl { color: var(--text-muted); font-size: 0.74rem;  }
 .hero-count { display: flex; flex-direction: column; align-items: flex-end; }
 .hero-days { font-size: 2.3rem; font-weight: 700; line-height: 1; color: var(--text-color); }
-.hero-days-lbl { font-size: 0.72rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.04em; }
+.hero-days-lbl { font-size: 0.72rem; color: var(--text-muted);  }
 .hero-weeks { font-size: 0.72rem; color: var(--text-muted); margin-top: 3px; }
 .hero-empty { background: var(--surface-color); border-style: dashed; }
 .hero-empty .hero-race { color: var(--text-secondary); }
@@ -1254,7 +1275,7 @@ a.ob-label:hover { text-decoration: underline; }
 .pr-banner-chip { font-size: 0.79rem; font-weight: 600; color: var(--success-color); }
 
 /* This week */
-.week-panel { padding: 15px 17px; margin-bottom: 4px; }
+.week-panel, .review-panel { padding: 20px 22px; margin-bottom: 4px; }
 
 /* Weekly review: the plan on the left, the body on the right. */
 .week-review {
@@ -1270,9 +1291,8 @@ a.ob-label:hover { text-decoration: underline; }
 .wr-val { font-size: 1.05rem; font-weight: 700; line-height: 1.2; white-space: nowrap; }
 .wr-unit { font-size: 0.72rem; font-weight: 500; color: var(--text-muted); }
 .wr-lbl {
-	font-size: 0.66rem;
-	text-transform: uppercase;
-	letter-spacing: 0.05em;
+	font-size: 0.72rem;
+	
 	color: var(--text-muted);
 }
 .wr-effort { min-width: 130px; }
@@ -1309,7 +1329,7 @@ a.ob-label:hover { text-decoration: underline; }
 .wr-marker.in-range { background: var(--success-color); }
 .wr-message {
 	margin: 0 0 13px;
-	font-size: 0.78rem;
+	font-size: 0.86rem;
 	line-height: 1.5;
 	color: var(--text-muted);
 }
@@ -1326,9 +1346,9 @@ a.ob-label:hover { text-decoration: underline; }
 
 .today-fuel { margin-top: 14px; }
 
-.week-strip { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; }
+.week-strip { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 6px; }
 .day-col { display: flex; flex-direction: column; align-items: center; gap: 6px; text-decoration: none; }
-.day-name { font-size: 0.68rem; color: var(--text-muted); text-transform: uppercase; }
+.day-name { font-size: 0.74rem; color: var(--text-muted);  }
 .day-col.today .day-name { color: var(--primary-color); font-weight: 700; }
 .day-box {
 	width: 100%; min-height: 52px; display: flex; flex-direction: column;
@@ -1338,7 +1358,7 @@ a.ob-label:hover { text-decoration: underline; }
 }
 .day-col.today .day-box { border-color: var(--primary-color); }
 .day-chip {
-	font-size: 0.63rem; font-weight: 600; padding: 1px 6px; border-radius: 999px;
+	font-size: 0.72rem; font-weight: 600; padding: 1px 6px; border-radius: 999px;
 	color: var(--c); background: color-mix(in srgb, var(--c) 16%, transparent);
 	max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
@@ -1355,14 +1375,14 @@ a.ob-label:hover { text-decoration: underline; }
 .hm-col { display: flex; flex-direction: column; gap: 3px; }
 .hm-month { height: 12px; font-size: 0.58rem; color: var(--text-muted); white-space: nowrap; }
 .hm-cell { width: 11px; height: 11px; border-radius: 2px; }
-.hm-legend { display: flex; align-items: center; gap: 4px; margin-top: 10px; font-size: 0.66rem; color: var(--text-muted); }
+.hm-legend { display: flex; align-items: center; gap: 4px; margin-top: 10px; font-size: 0.72rem; color: var(--text-muted); }
 .hm-legend i { width: 11px; height: 11px; border-radius: 2px; background: var(--color-running-primary); display: inline-block; }
 
 /* Mix + recent */
 .mix-row { display: grid; grid-template-columns: minmax(240px, 1fr) minmax(260px, 1.3fr); gap: 12px; }
 @media (max-width: 768px) { .mix-row { grid-template-columns: 1fr; } }
 .recent-panel { padding: 6px 4px; }
-.recent-head { margin: 8px 12px 4px; font-size: 0.72rem; font-weight: 600; font-family: var(--font-family); text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-muted); }
+.recent-head { margin: 8px 12px 4px; font-size: 0.72rem; font-weight: 600; font-family: var(--font-family);  color: var(--text-muted); }
 .recent-row {
 	display: flex; align-items: center; gap: 10px;
 	padding: 9px 12px; border-radius: var(--radius-sm); text-decoration: none;
@@ -1394,4 +1414,5 @@ a.ob-label:hover { text-decoration: underline; }
 /* The real cards arrive with a short fade rather than a hard swap. */
 .today-content { animation: today-in 0.28s ease-out; }
 @keyframes today-in { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+@media (max-width: 520px) { .today-card, .week-panel, .review-panel { padding: 16px; } }
 </style>

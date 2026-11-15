@@ -95,13 +95,15 @@ import {
 	ChevronBackOutline,
 	ChevronForwardOutline,
 	MoonOutline,
-	SunnyOutline
+	SunnyOutline,
+	RestaurantOutline
 } from '@vicons/ionicons5'
 import { isDark, toggleTheme } from '@/theme'
 
 const menuOptions = [
 	{ label: 'Home', key: 'Home', to: { name: 'Home' }, icon: markRaw(GridOutline) },
 	{ label: 'Schedule', key: 'Schedule', to: { name: 'Schedule' }, icon: markRaw(CalendarOutline) },
+	{ label: 'Food', key: 'Food', to: { name: 'Food' }, icon: markRaw(RestaurantOutline) },
 	{ label: 'Goals', key: 'Goals', to: { name: 'Goals' }, icon: markRaw(FlagOutline) },
 	{ label: 'Templates', key: 'Templates', to: { name: 'Templates' }, icon: markRaw(CopyOutline) },
 ]
@@ -371,7 +373,7 @@ onUnmounted(() => {
 	justify-content: center;
 	color: var(--text-muted);
 	text-decoration: none;
-	font-size: 0.62rem;
+	font-size: 0.72rem;
 	font-weight: 500;
 	gap: 3px;
 	height: 100%;

@@ -209,7 +209,7 @@ function reset() {
 .parsed-info { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; }
 .parsed-name { font-size: 0.86rem; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .parsed-meta { font-size: 0.74rem; color: var(--text-muted); }
-.parsed-sport { font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; flex-shrink: 0; }
+.parsed-sport { font-size: 0.72rem; font-weight: 700; text-transform: capitalize; flex-shrink: 0; }
 
 .create-workouts-toggle {
 	display: flex; align-items: center; gap: 8px;

@@ -50,7 +50,7 @@ const rollingKm = computed(() =>
 
 			<SectionHead title="Volume" note="last 12 weeks" />
 			<section class="stat-panel stat-card">
-				<div class="stat-head"><h3>Weekly distance</h3><span class="hint">km</span></div>
+				<div class="stat-head"><h3>Weekly distance</h3></div>
 				<WeeklyBarsChart
 					:labels="weeks.map(w => w.label)"
 					:totals="bikeKmByWeek"

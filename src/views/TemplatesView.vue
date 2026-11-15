@@ -554,7 +554,7 @@ onMounted(async () => {
 
 <style scoped>
 .templates-view-wrapper { width: 100%; min-height: 100%; }
-.templates-content { padding: 24px 28px 40px; max-width: 900px; margin: 0 auto; width: 100%; box-sizing: border-box; }
+.templates-content { padding: 24px 28px 40px; max-width: 1180px; margin: 0 auto; width: 100%; box-sizing: border-box; }
 @media (max-width: 768px) { .templates-content { padding: 16px 16px 32px; } }
 
 .page-title { margin: 0; }
@@ -585,14 +585,13 @@ onMounted(async () => {
 .tpl-tab.on { color: var(--text-color); font-weight: 600; border-bottom-color: var(--primary-color); }
 .tpl-tab:focus-visible { outline: 2px solid var(--primary-color); outline-offset: -2px; border-radius: 4px; }
 .tpl-tab-count { font-family: var(--font-mono); font-size: 0.7rem; color: var(--text-muted); font-weight: 400; }
-.hint { font-size: 0.82rem; color: var(--text-muted); margin: 0 0 18px; line-height: 1.5; }
+.hint { font-size: 0.9rem; color: var(--text-muted); margin: 0 0 18px; line-height: 1.5; }
 
 .tpl-kind {
   display: inline-block;
-  font-size: 0.62rem;
+  font-size: 0.72rem;
   font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
+  text-transform: capitalize;
   padding: 2px 7px;
   border-radius: 999px;
   margin-right: 8px;
@@ -617,10 +616,9 @@ onMounted(async () => {
   margin-left: 8px;
   padding: 1px 8px;
   border-radius: 999px;
-  font-size: 0.66rem;
+  font-size: 0.72rem;
   font-weight: 600;
-  letter-spacing: 0.03em;
-  text-transform: uppercase;
+  
   color: var(--text-muted);
   background: var(--surface-2);
   border: 1px solid var(--border-color);

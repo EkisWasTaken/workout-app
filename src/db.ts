@@ -1,7 +1,7 @@
 import { supabase } from './supabase'
 import { currentUserId } from './auth'
 import { PROFILE_COLUMNS, PROFILE_V4_BLANKS, stripUnstorable, unstorableFields } from './profileFields'
-import type { Workout, DailyWeight, WorkoutTemplate, WorkoutTemplateExercise, Exercise, RaceGoal, AddRaceGoalPayload, DistanceGoal, Profile, ProgressPhoto, ProgressPhotoMeta } from './types'
+import type { Workout, DailyWeight, WorkoutTemplate, WorkoutTemplateExercise, Exercise, RaceGoal, AddRaceGoalPayload, DistanceGoal, Profile, ProgressPhoto, ProgressPhotoMeta, MealEntry, AddMealEntryPayload, FoodItem, FoodItemPayload, SavedMeal } from './types'
 
 /** Thrown when supabase_goals.sql hasn't been run yet. */
 export const MISSING_GOALS_TABLES = 'MISSING_GOALS_TABLES'
@@ -11,6 +11,12 @@ export const MISSING_GOALS_COLUMNS = 'MISSING_GOALS_COLUMNS'
 export const NOT_YOUR_TEMPLATE = 'NOT_YOUR_TEMPLATE'
 /** Thrown when supabase_progress_photos.sql hasn't been run yet. */
 export const MISSING_PHOTOS = 'MISSING_PHOTOS'
+/** Thrown when supabase_meals.sql hasn't been run yet. */
+export const MISSING_MEALS = 'MISSING_MEALS'
+const MEAL_COLUMNS = 'id, date, meal, name, kcal, protein_g, carbs_g, fat_g, grams, food_id, saved_meal_id'
+const FOOD_COLUMNS = 'id, name, kcal_per_100g, protein_per_100g, carbs_per_100g, fat_per_100g'
+/** Every food-diary table shares one migration, so any missing one means the same fix. */
+const mealsError = (error: { code?: string } | null) => (isMissingTable(error) || isMissingColumn(error) ? new Error(MISSING_MEALS) : error)
 
 /** The private bucket progress photos live in. Never made public. */
 export const PHOTO_BUCKET = 'progress-photos'
@@ -39,6 +45,16 @@ export const schema = { v2: true, v3: true, v4: true }
 
 /** Which columns each migration added, and what an older schema can hold. */
 const { base: PROFILE_BASE, v2: PROFILE_V2, v4: PROFILE_V4 } = PROFILE_COLUMNS
+
+/**
+ * Every imported activity, with its full streams, is the heaviest payload in
+ * the app, and four stores used to download it separately on each navigation.
+ * One shared fetch, dropped on import/delete/sign-out and after a few minutes
+ * so an import made on another device still shows up.
+ */
+const ACTIVITY_CACHE_MS = 5 * 60_000
+let activityCache: { at: number; rows: Promise<any[]> } | null = null
+export const invalidateActivityCache = () => { activityCache = null }
 
 export const db = {
   // PROFILE (one row per user, keyed on user_id)
@@ -575,12 +591,20 @@ export const db = {
 
   // IMPORTED ACTIVITIES (FIT/GPX/TCX files)
   getImportedActivities: async (): Promise<any[]> => {
-    const { data, error } = await supabase
-      .from('imported_activities')
-      .select('id, data')
-      .order('start_date', { ascending: false })
-    if (error) throw error
-    return (data || []).map(row => ({ ...row.data, id: row.id, source: 'import' }))
+    if (!activityCache || Date.now() - activityCache.at > ACTIVITY_CACHE_MS) {
+      const rows = (async () => {
+        const { data, error } = await supabase
+          .from('imported_activities')
+          .select('id, data')
+          .order('start_date', { ascending: false })
+        if (error) throw error
+        return (data || []).map(row => ({ ...row.data, id: row.id, source: 'import' }))
+      })()
+      activityCache = { at: Date.now(), rows }
+      rows.catch(() => { if (activityCache?.rows === rows) activityCache = null })
+    }
+    // A copy of the list, so a caller's sort can't reorder everyone else's.
+    return [...await activityCache.rows]
   },
 
   getImportedActivityById: async (id: number): Promise<any | null> => {
@@ -607,6 +631,7 @@ export const db = {
       .from('imported_activities')
       .insert([row])
       .select('id')
+    invalidateActivityCache()
     if (error) {
       // 23505 = unique violation on (start_date, distance): already imported
       if (error.code === '23505') return { id: 0, duplicate: true }
@@ -726,11 +751,109 @@ export const db = {
     return out
   },
 
+  // FOOD DIARY — per-user rows, one per thing eaten.
+  getMealEntries: async (fromDate: string, toDate: string): Promise<MealEntry[]> => {
+    const { data, error } = await supabase
+      .from('meal_entries')
+      .select(MEAL_COLUMNS)
+      .gte('date', fromDate)
+      .lte('date', toDate)
+      .order('created_at', { ascending: true })
+    if (error) throw mealsError(error)
+    return (data ?? []) as MealEntry[]
+  },
+
+  /** The most recent entries, newest first — the source of "recent foods". */
+  getRecentMealEntries: async (limit = 300): Promise<MealEntry[]> => {
+    const { data, error } = await supabase
+      .from('meal_entries')
+      .select(MEAL_COLUMNS)
+      .order('created_at', { ascending: false })
+      .limit(limit)
+    if (error) throw mealsError(error)
+    return (data ?? []) as MealEntry[]
+  },
+
+  addMealEntry: async (entry: AddMealEntryPayload): Promise<MealEntry> => {
+    const { data, error } = await supabase
+      .from('meal_entries')
+      .insert([{ ...entry, user_id: currentUserId() }])
+      .select(MEAL_COLUMNS)
+      .single()
+    if (error) throw mealsError(error)
+    return data as MealEntry
+  },
+
+  deleteMealEntry: async (id: number): Promise<void> => {
+    const { error } = await supabase.from('meal_entries').delete().eq('id', id)
+    if (error) throw error
+  },
+
+  getFoods: async (): Promise<FoodItem[]> => {
+    const { data, error } = await supabase.from('food_items').select(FOOD_COLUMNS).order('name')
+    if (error) throw mealsError(error)
+    return (data ?? []) as FoodItem[]
+  },
+
+  saveFood: async (food: FoodItemPayload, id?: number): Promise<FoodItem> => {
+    const q = id
+      ? supabase.from('food_items').update(food).eq('id', id)
+      : supabase.from('food_items').insert([{ ...food, user_id: currentUserId() }])
+    const { data, error } = await q.select(FOOD_COLUMNS).single()
+    if (error) throw mealsError(error)
+    return data as FoodItem
+  },
+
+  /** Also removes it from saved meals (cascade); past diary entries keep their numbers. */
+  deleteFood: async (id: number): Promise<void> => {
+    const { error } = await supabase.from('food_items').delete().eq('id', id)
+    if (error) throw error
+  },
+
+  getSavedMeals: async (): Promise<SavedMeal[]> => {
+    const { data, error } = await supabase
+      .from('saved_meals')
+      .select('id, name, items:saved_meal_items(food_id, grams)')
+      .order('name')
+    if (error) throw mealsError(error)
+    return (data ?? []) as SavedMeal[]
+  },
+
+  /** Create or replace a saved meal and its ingredient list. */
+  saveSavedMeal: async (meal: { name: string; items: { food_id: number; grams: number }[] }, id?: number): Promise<number> => {
+    const uid = currentUserId()
+    const head = id
+      ? await supabase.from('saved_meals').update({ name: meal.name }).eq('id', id).select('id').single()
+      : await supabase.from('saved_meals').insert([{ name: meal.name, user_id: uid }]).select('id').single()
+    if (head.error) throw mealsError(head.error)
+    const mealId = (head.data as { id: number }).id
+    // Insert the new list before deleting the old one, so a failed save never empties the recipe.
+    const old = id ? await supabase.from('saved_meal_items').select('id').eq('meal_id', mealId) : null
+    if (old?.error) throw old.error
+    if (meal.items.length) {
+      const ins = await supabase.from('saved_meal_items')
+        .insert(meal.items.map(it => ({ ...it, meal_id: mealId, user_id: uid })))
+      if (ins.error) throw ins.error
+    }
+    const oldIds = (old?.data ?? []).map(r => (r as { id: number }).id)
+    if (oldIds.length) {
+      const del = await supabase.from('saved_meal_items').delete().in('id', oldIds)
+      if (del.error) throw del.error
+    }
+    return mealId
+  },
+
+  deleteSavedMeal: async (id: number): Promise<void> => {
+    const { error } = await supabase.from('saved_meals').delete().eq('id', id)
+    if (error) throw error
+  },
+
   deleteImportedActivity: async (id: number): Promise<number> => {
     const { error } = await supabase
       .from('imported_activities')
       .delete()
       .eq('id', id)
+    invalidateActivityCache()
     if (error) throw error
     return 1
   }

@@ -251,3 +251,41 @@ export interface ProgressPhoto {
 }
 
 export type ProgressPhotoMeta = Pick<ProgressPhoto, 'taken_on' | 'pose' | 'weight_kg' | 'note' | 'align_scale' | 'align_x' | 'align_y'>;
+
+export type MealSlot = 'breakfast' | 'lunch' | 'dinner' | 'snack';
+
+/** One thing eaten. Macros are optional: often all you know is the kcal. */
+export interface MealEntry {
+	id: number;
+	date: string;
+	meal: MealSlot;
+	name: string;
+	kcal: number;
+	protein_g: number | null;
+	carbs_g: number | null;
+	fat_g: number | null;
+	grams?: number | null;
+	food_id?: number | null;
+	saved_meal_id?: number | null;
+}
+
+export type AddMealEntryPayload = Omit<MealEntry, 'id'>;
+
+/** A food in your own library. Nutrition is per 100 g, as on a packet. */
+export interface FoodItem {
+	id: number;
+	name: string;
+	kcal_per_100g: number;
+	protein_per_100g: number | null;
+	carbs_per_100g: number | null;
+	fat_per_100g: number | null;
+}
+
+export type FoodItemPayload = Omit<FoodItem, 'id'>;
+
+/** A named recipe made of library foods. */
+export interface SavedMeal {
+	id: number;
+	name: string;
+	items: { food_id: number; grams: number }[];
+}

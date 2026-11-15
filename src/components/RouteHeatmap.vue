@@ -416,7 +416,7 @@ watch(drawn, draw)
 	color: var(--text-color);
 }
 .chip-n {
-	font-size: 0.66rem;
+	font-size: 0.72rem;
 	color: var(--text-muted);
 	font-variant-numeric: tabular-nums;
 }
@@ -468,7 +468,7 @@ watch(drawn, draw)
 }
 
 .heat-scale { display: inline-flex; align-items: center; gap: 6px; }
-.heat-scale-end { font-size: 0.66rem; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.heat-scale-end { font-size: 0.72rem; color: var(--text-muted); font-variant-numeric: tabular-nums; }
 .heat-swatches { display: inline-flex; border-radius: 3px; overflow: hidden; }
 .heat-swatches i { display: block; width: 14px; height: 7px; }
 

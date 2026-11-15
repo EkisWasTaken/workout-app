@@ -3,7 +3,6 @@
  * it implies. Shared by the Schedule completion dialog and the Home "today"
  * cards so binding a file behaves identically wherever it's offered.
  */
-import { parseActivityFile } from '@/import/parseActivityFile'
 import { db } from '@/db'
 import { toActivityId } from './workoutSport'
 
@@ -20,6 +19,8 @@ export interface ImportedFit {
 /** Parse a recording file, store it (or find the copy already imported), and
  *  return the imported-activity id a workout should link to. */
 export async function importFitFile(file: File): Promise<ImportedFit> {
+	// Loaded on demand: the parser and its Buffer polyfill are a third of the entry bundle.
+	const { parseActivityFile } = await import('@/import/parseActivityFile')
 	const activity = await parseActivityFile(file)
 	const res = await db.addImportedActivity(activity)
 	if (!res.duplicate) return { activityId: res.id, activity, duplicate: false }

@@ -100,7 +100,7 @@ onUnmounted(() => {
 .next-race { display: flex; align-items: center; gap: 10px; min-width: 0; }
 .race-flag { display: flex; align-items: center; color: var(--primary-color); font-size: 1.1rem; }
 .race-bar.urgent .race-flag { color: var(--danger-color); }
-.race-label { font-size: 0.72rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.04em; }
+.race-label { font-size: 0.72rem; color: var(--text-muted);  }
 .race-name { font-weight: 600; color: var(--text-color); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .race-count {
   font-size: 0.78rem; font-weight: 600; color: var(--primary-color);
@@ -109,7 +109,7 @@ onUnmounted(() => {
 .race-count.urgent { color: var(--danger-color); background: transparent; }
 
 .race-chain { display: flex; gap: 16px; color: var(--text-muted); font-size: 0.76rem; align-items: baseline; }
-.chain-label { font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.04em; }
+.chain-label { font-size: 0.74rem;  }
 
 @media (max-width: 768px) {
   .race-bar { padding: 8px 16px; }

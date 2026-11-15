@@ -200,7 +200,7 @@ watch(() => [props.polyline, props.color], drawRoute)
 .legend-dot + .legend-dot { margin-left: 10px; }
 .legend-finish { background: #e2e8f0; }
 
-.legend-hint { margin-left: auto; font-size: 0.68rem; opacity: 0.8; }
+.legend-hint { margin-left: auto; font-size: 0.74rem; opacity: 0.8; }
 
 /* The halo, direction arrows and end dots come up as the route traces itself.
    Global, because Leaflet's panes live outside this component's scoped tree. */

@@ -13,7 +13,7 @@ import { useMediaQuery } from '@vueuse/core'
 import {
 	VisAxis, VisCrosshair, VisLine, VisStackedBar, VisTooltip, VisXYContainer,
 } from '@unovis/vue'
-import { chartTooltip, paddedDomain } from './charts'
+import { chartTooltip, paddedDomain, recentVsPrior } from './charts'
 
 const props = withDefaults(defineProps<{
 	labels: string[]
@@ -24,10 +24,13 @@ const props = withDefaults(defineProps<{
 	unit: string
 	height?: number
 	dp?: number
+	/** Show how the last four complete weeks compare with the four before. */
+	compare?: boolean
 }>(), {
 	average: () => [],
 	height: 230,
 	dp: 1,
+	compare: true,
 })
 
 type Row = { i: number; total: number; avg?: number }
@@ -47,6 +50,21 @@ const fmt = (v: number) => {
 	const f = 10 ** props.dp
 	return String(Math.round(v * f) / f)
 }
+
+/**
+ * Last four complete weeks against the four before. A rise is shown as
+ * progress; a fall stays neutral, because less volume is often a planned
+ * taper or recovery block rather than going backwards.
+ */
+const trend = computed(() => {
+	const r = props.compare ? recentVsPrior(props.totals) : null
+	if (!r || r.pct === null) return null
+	const pct = Math.round(r.pct)
+	const kind = Math.abs(pct) < 3 ? 'steady' : pct > 0 ? 'better' : 'down'
+	const text = kind === 'steady' ? 'About the same as the 4 weeks before'
+		: `${Math.abs(pct)}% ${pct > 0 ? 'more' : 'less'} than the 4 weeks before`
+	return { kind, text, recent: r.recent }
+})
 
 const x = (d: Row) => d.i
 const barColor = (d: Row) =>
@@ -74,27 +92,40 @@ function template(d: Row | undefined) {
 
 <template>
 	<div class="wb-chart">
+		<p v-if="trend" class="wb-trend" :class="trend.kind">
+			<span aria-hidden="true">{{ trend.kind === 'better' ? '↑' : trend.kind === 'down' ? '↓' : '→' }}</span>
+			{{ trend.text }}
+			<span class="wb-trend-sub">{{ fmt(trend.recent) }} {{ unit }}/wk lately</span>
+		</p>
+		<div class="vc-head">
+			<span class="vc-unit">{{ unit }} per week</span>
+			<ul class="vc-legend">
+				<li><span class="vc-sw bar" :style="{ '--c': color }"></span>Week total</li>
+				<li><span class="vc-sw bar faded" :style="{ '--c': color }"></span>This week so far</li>
+				<li v-if="average.length"><span class="vc-sw line" style="--c: var(--text-secondary)"></span>4-week average</li>
+			</ul>
+		</div>
 		<VisXYContainer
 			:data="rows"
 			:height="chartHeight"
 			:y-domain="yDomain"
 			:x-domain="[-0.5, totals.length - 0.5]"
 			:margin="{ top: 6, right: 8 }"
-			:duration="500"
+			:duration="0"
 		>
 			<VisStackedBar
 				:x="x"
 				:y="(d: Row) => d.total"
 				:color="barColor"
 				:rounded-corners="4"
-				:bar-max-width="26"
-				:bar-padding="0.28"
+				:bar-max-width="22"
+				:bar-padding="0.4"
 			/>
 			<VisLine
 				v-if="average.length"
 				:x="x"
 				:y="(d: Row) => d.avg"
-				color="var(--text-color)"
+				color="var(--text-secondary)"
 				:line-width="2"
 				curve-type="monotoneX"
 			/>
@@ -104,7 +135,7 @@ function template(d: Row | undefined) {
 				:tick-format="tickLabel"
 				:grid-line="false"
 			/>
-			<VisAxis type="y" :num-ticks="4" :tick-format="(v: number | Date) => fmt(Number(v))" :label="unit" />
+			<VisAxis type="y" :num-ticks="4" :tick-format="(v: number | Date) => fmt(Number(v))" />
 			<VisCrosshair
 				:x="x"
 				:y="[(d: Row) => d.avg]"
@@ -115,24 +146,16 @@ function template(d: Row | undefined) {
 			<VisTooltip :horizontal-shift="14" :vertical-shift="14" />
 		</VisXYContainer>
 
-		<ul class="wb-legend">
-			<li><span class="sw bar" :style="{ background: color }"></span>Week total</li>
-			<li><span class="sw bar faded" :style="{ '--c': color }"></span>This week so far</li>
-			<li v-if="average.length"><span class="sw line"></span>4-week average</li>
-		</ul>
 	</div>
 </template>
 
 <style scoped>
 .wb-chart { width: 100%; }
-.wb-legend {
-	display: flex; flex-wrap: wrap; justify-content: center; gap: 4px 16px;
-	list-style: none; margin: 8px 0 0; padding: 0;
-	font-size: 0.72rem; color: var(--text-secondary);
+.wb-trend {
+	display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; margin: 0 0 10px;
+	padding: 5px 12px 5px 10px; border-radius: 999px;
+	font-size: 0.86rem; font-weight: 600; color: var(--text-secondary); background: var(--surface-2);
 }
-.wb-legend li { display: inline-flex; align-items: center; gap: 6px; }
-.sw { display: inline-block; flex-shrink: 0; }
-.sw.bar { width: 9px; height: 9px; border-radius: 2px; }
-.sw.bar.faded { background: color-mix(in srgb, var(--c) 38%, transparent); }
-.sw.line { width: 16px; border-top: 2px solid var(--text-color); }
+.wb-trend.better { color: var(--success-color); background: var(--success-soft); }
+.wb-trend-sub { font-weight: 400; color: var(--text-muted); }
 </style>

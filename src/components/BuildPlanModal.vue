@@ -414,9 +414,8 @@ async function create() {
 .bp-field { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
 .bp-wide { grid-column: 1 / -1; }
 .bp-lbl {
-	font-size: 0.68rem;
-	text-transform: uppercase;
-	letter-spacing: 0.05em;
+	font-size: 0.74rem;
+	
 	color: var(--text-muted);
 }
 .bp-hint { font-size: 0.72rem; color: var(--text-muted); }
@@ -487,9 +486,8 @@ async function create() {
 .bp-wk { color: var(--text-muted); font-size: 0.72rem; width: 38px; flex-shrink: 0; }
 .bp-dates { color: var(--text-secondary); font-size: 0.76rem; }
 .bp-phase {
-	font-size: 0.62rem;
-	text-transform: uppercase;
-	letter-spacing: 0.04em;
+	font-size: 0.72rem;
+	text-transform: capitalize;
 	padding: 1px 7px;
 	border-radius: 999px;
 	background: var(--surface-2);
@@ -497,7 +495,7 @@ async function create() {
 }
 .bp-phase.peak { background: var(--primary-soft); color: var(--primary-color); }
 .bp-phase.taper { background: var(--color-running-soft); color: var(--color-running-primary); }
-.bp-deload { font-size: 0.62rem; color: var(--text-muted); }
+.bp-deload { font-size: 0.72rem; color: var(--text-muted); }
 .bp-km { margin-left: auto; font-size: 0.78rem; }
 .bp-caret { color: var(--text-muted); width: 10px; text-align: center; }
 
