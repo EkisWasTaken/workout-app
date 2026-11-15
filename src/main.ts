@@ -17,3 +17,8 @@ app.use(router)
 
 // Auth is initialised in App.vue; per-user settings/fitness hydrate on sign-in.
 app.mount('#app')
+
+// Opens offline once visited. Production over http(s) only: dev would serve stale modules.
+if (import.meta.env.PROD && 'serviceWorker' in navigator && location.protocol.startsWith('http')) {
+	navigator.serviceWorker.register('./sw.js').catch(err => console.warn('Offline support unavailable', err))
+}

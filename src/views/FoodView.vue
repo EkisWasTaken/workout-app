@@ -84,24 +84,46 @@
 
 			<!-- One surface, four ruled sections: a day reads as one list, not four boxes. -->
 			<section class="day card">
+				<div v-if="!shown.length && prevEntries.length" class="copy-day">
+					<span>Nothing logged yet.</span>
+					<button class="copy-btn" :disabled="copying" @click="copy()">
+						<n-icon :component="CopyOutline" /> Copy {{ prevLabel }}, {{ fmt(prevTotal) }} kcal
+					</button>
+				</div>
 				<div v-for="slot in MEAL_SLOTS" :key="slot.key" class="meal">
 					<div class="meal-head">
 						<span class="meal-dot" :class="slot.key" />
 						<h2>{{ slot.label }}</h2>
 						<span class="meal-kcal mono">{{ bySlot[slot.key].total ? fmt(bySlot[slot.key].total) + ' kcal' : '' }}</span>
+						<button v-if="shown.length && !bySlot[slot.key].items.length && prevBySlot[slot.key].length && adding !== slot.key"
+							class="copy-btn" :disabled="copying" :title="prevBySlot[slot.key].map(e => e.name).join(', ')" @click="copy(slot.key)">
+							Same as {{ prevLabel }}
+						</button>
 						<button v-if="adding !== slot.key" class="add-btn" @click="openAdd(slot.key)">
 							<n-icon :component="AddOutline" /> Add
 						</button>
 					</div>
 
 					<ul v-if="bySlot[slot.key].items.length" class="entries">
-						<li v-for="e in bySlot[slot.key].items" :key="e.id" class="entry">
-							<span class="entry-name">{{ e.name }}</span>
-							<span class="entry-sub">{{ entrySub(e) }}</span>
-							<span class="entry-kcal mono">{{ fmt(e.kcal) }}</span>
-							<button class="del-btn" :aria-label="`Remove ${e.name}`" @click="remove(e)">
-								<n-icon :component="CloseOutline" />
-							</button>
+						<li v-for="e in bySlot[slot.key].items" :key="e.id" class="entry" :class="{ pending: e.id < 0 }">
+							<form v-if="editingId === e.id" class="edit-form" @submit.prevent="saveEdit(e)">
+								<span class="edit-name">{{ e.name }}</span>
+								<n-input-number ref="editRef" v-model:value="editAmount" :min="1" :max="10000" :show-button="false" class="edit-num">
+									<template #suffix>{{ e.grams ? 'g' : 'kcal' }}</template>
+								</n-input-number>
+								<n-select v-model:value="editSlot" :options="slotOptions" class="edit-slot" />
+								<span class="edit-kcal mono">{{ editPreview != null ? `${fmt(editPreview)} kcal` : '' }}</span>
+								<n-button size="small" quaternary @click="editingId = null">Cancel</n-button>
+								<n-button size="small" type="primary" attr-type="submit" :disabled="!editAmount">Save</n-button>
+							</form>
+							<template v-else>
+								<button class="entry-name" :disabled="e.id < 0" :title="e.id < 0 ? '' : 'Change amount or meal'" @click="startEdit(e)">{{ e.name }}</button>
+								<span class="entry-sub">{{ e.id < 0 ? 'Waiting for connection' : entrySub(e) }}</span>
+								<span class="entry-kcal mono">{{ fmt(e.kcal) }}</span>
+								<button class="del-btn" :aria-label="`Remove ${e.name}`" @click="remove(e)">
+									<n-icon :component="CloseOutline" />
+								</button>
+							</template>
 						</li>
 					</ul>
 
@@ -120,11 +142,13 @@
 								<template #suffix>kcal</template>
 							</n-input-number>
 						</template>
-						<template v-else>
-							<n-input-number v-model:value="grams" :min="1" :max="10000" :show-button="false" placeholder="Amount" class="f-num">
-								<template #suffix>g</template>
+						<div v-else class="f-amount">
+							<n-input-number v-model:value="amount" :min="unit === 'serving' ? 0.25 : 1" :max="10000" :show-button="false"
+								placeholder="Amount" class="f-num">
+								<template v-if="!serving" #suffix>g</template>
 							</n-input-number>
-						</template>
+							<n-select v-if="serving" :value="unit" :options="unitOptions" class="f-unit" @update:value="setUnit" />
+						</div>
 						<span class="f-preview mono">{{ preview ? `${fmt(preview.kcal)} kcal` : '' }}</span>
 						<div class="f-actions">
 							<span v-if="!foods.length && !mealFoods.length" class="f-hint">
@@ -136,15 +160,35 @@
 					</form>
 				</div>
 			</section>
+
+			<!-- Two weeks at a glance: each bar is a day, the tick its target. Click a day to open it. -->
+			<section v-if="historyDays.some(d => d.kcal != null)" class="history card">
+				<div class="h-head">
+					<h2>Last two weeks</h2>
+					<span class="h-legend"><span class="h-sw" /> Target</span>
+				</div>
+				<p v-if="historySummary" class="h-sum">{{ historySummary }}</p>
+				<div class="h-chart">
+					<button v-for="d in historyDays" :key="d.date" class="h-col"
+						:class="{ today: d.date === todayISO(), selected: d.date === date, empty: d.kcal == null }"
+						:aria-label="d.aria" :title="d.aria" @click="date = d.date">
+						<span class="h-plot">
+							<span v-if="d.kcal != null" class="h-bar" :style="{ height: (d.kcal / historyMax) * 100 + '%' }" />
+							<span v-if="d.target" class="h-target" :style="{ bottom: (d.target / historyMax) * 100 + '%' }" />
+						</span>
+						<span class="h-day">{{ d.label }}</span>
+					</button>
+				</div>
+			</section>
 		</template>
 	</div>
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { NButton, NIcon, NInputNumber, NSelect, useMessage } from 'naive-ui'
-import { AddOutline, ChevronBackOutline, ChevronForwardOutline, CloseOutline, WarningOutline } from '@vicons/ionicons5'
+import { AddOutline, ChevronBackOutline, ChevronForwardOutline, CloseOutline, CopyOutline, WarningOutline } from '@vicons/ionicons5'
 import { addDays, format, parseISO } from 'date-fns'
 import { db, MISSING_MEALS } from '@/db'
 import { useFuelPlan } from '@/fuel'
@@ -152,7 +196,8 @@ import { foodMissingTable, foods, foodsById, loadFoodLibrary, mealFoods, savedMe
 import { hydrateSettings } from '@/settings'
 import { dailyWeights, kmOf, loaded, loadStats, raceGoals, recordedOf, sportOf, workouts } from '@/stats'
 import { isOwner, GENERIC_SCHEMA_MESSAGE } from '@/owner'
-import { MEAL_SLOTS, mealTotals, portion } from '@/utils/meals'
+import { copyEntries, kcalByDate, MEAL_SLOTS, mealTotals, portion, rescaleEntry } from '@/utils/meals'
+import { flushMeals, isNetworkError, pendingMeals, queueMeal, unqueueMeal } from '@/mealQueue'
 import FoodsPanel from '@/components/food/FoodsPanel.vue'
 import SavedMealsPanel from '@/components/food/SavedMealsPanel.vue'
 import type { MealEntry, MealSlot } from '@/types'
@@ -191,18 +236,111 @@ const fuel = useFuelPlan({ workouts, dailyWeights, sportOf, kmOf, recordedOf, go
 const target = computed(() => fuel.dayFuel(date.value))
 
 const entries = ref<MealEntry[]>([])
+const prevEntries = ref<MealEntry[]>([])
+const pending = ref(pendingMeals())
+/** Saved entries plus any waiting to sync; waiting ones get negative ids from their queue position. */
+const shown = computed<MealEntry[]>(() => [
+	...entries.value,
+	...pending.value.map((p, i) => ({ ...p, id: -(i + 1) })).filter(p => p.date === date.value),
+])
 const recent = ref<MealEntry[]>([])
 const entriesMissing = ref(false)
 const missingTable = computed(() => entriesMissing.value || foodMissingTable.value)
 
-const totals = computed(() => mealTotals(entries.value))
+const totals = computed(() => mealTotals(shown.value))
 const left = computed(() => (target.value?.intakeKcal ?? 0) - totals.value.kcal)
 
 const bySlot = computed(() => {
 	const out = {} as Record<MealSlot, { items: MealEntry[]; total: number }>
 	for (const s of MEAL_SLOTS) out[s.key] = { items: [], total: 0 }
-	for (const e of entries.value) { out[e.meal].items.push(e); out[e.meal].total += e.kcal }
+	for (const e of shown.value) { out[e.meal].items.push(e); out[e.meal].total += e.kcal }
 	return out
+})
+
+// ─── the day before, for copying ──────────────────────────────────────────────
+const prevDate = computed(() => format(addDays(parseISO(date.value), -1), 'yyyy-MM-dd'))
+const prevLabel = computed(() => (isToday.value ? 'yesterday' : format(parseISO(prevDate.value), 'EEEE')))
+const prevTotal = computed(() => mealTotals(prevEntries.value).kcal)
+const prevBySlot = computed(() => Object.fromEntries(MEAL_SLOTS.map(s =>
+	[s.key, prevEntries.value.filter(e => e.meal === s.key)])) as Record<MealSlot, MealEntry[]>)
+const copying = ref(false)
+
+async function copy(slot?: MealSlot) {
+	const src = prevEntries.value.filter(e => !slot || e.meal === slot)
+	if (!src.length) return
+	copying.value = true
+	try {
+		const rows = await db.addMealEntries(copyEntries(src, date.value))
+		entries.value = [...entries.value, ...rows]
+		refreshHistory()
+	} catch (err) { handleError(err, 'copy those entries') }
+	finally { copying.value = false }
+}
+
+// ─── editing a logged entry ───────────────────────────────────────────────────
+const slotOptions = MEAL_SLOTS.map(s => ({ label: s.label, value: s.key }))
+const editingId = ref<number | null>(null)
+const editAmount = ref<number | null>(null)
+const editSlot = ref<MealSlot>('breakfast')
+const editRef = ref<{ focus: () => void }[] | null>(null)
+const editing = computed(() => entries.value.find(e => e.id === editingId.value) ?? null)
+const editPreview = computed(() => {
+	const e = editing.value, a = editAmount.value
+	return e && a ? (e.grams ? rescaleEntry(e, a).kcal : Math.round(a)) : null
+})
+
+function startEdit(e: MealEntry) {
+	adding.value = null
+	editingId.value = e.id
+	editAmount.value = e.grams ? Math.round(e.grams) : e.kcal
+	editSlot.value = e.meal
+	nextTick(() => editRef.value?.[0]?.focus())
+}
+
+async function saveEdit(e: MealEntry) {
+	const a = editAmount.value
+	if (!a) return
+	const patch = { meal: editSlot.value, ...(e.grams ? rescaleEntry(e, a) : { kcal: Math.round(a) }) }
+	entries.value = entries.value.map(x => (x.id === e.id ? { ...x, ...patch } : x))
+	editingId.value = null
+	try { await db.updateMealEntry(e.id, patch); refreshHistory() }
+	catch (err) { entries.value = entries.value.map(x => (x.id === e.id ? e : x)); handleError(err, 'save that change') }
+}
+
+// ─── the last two weeks ───────────────────────────────────────────────────────
+const HISTORY_DAYS = 14
+const history = ref(new Map<string, number>())
+
+async function refreshHistory() {
+	const to = todayISO()
+	try { history.value = kcalByDate(await db.getMealEntries(format(addDays(parseISO(to), 1 - HISTORY_DAYS), 'yyyy-MM-dd'), to)) }
+	catch { /* the chart is a nicety; the day still works */ }
+}
+
+const historyDays = computed(() => {
+	const t = parseISO(todayISO())
+	return Array.from({ length: HISTORY_DAYS }, (_, i) => {
+		const day = addDays(t, i + 1 - HISTORY_DAYS)
+		const d = format(day, 'yyyy-MM-dd')
+		const kcal = history.value.get(d) ?? null
+		const target = fuel.dayFuel(d)?.intakeKcal ?? null
+		const aria = `${format(day, 'EEE d MMM')}: ${kcal == null ? 'nothing logged' : `${fmt(kcal)} kcal`}${target ? ` of ${fmt(target)}` : ''}`
+		return { date: d, kcal, target, label: format(day, 'EEEEE'), aria }
+	})
+})
+const historyMax = computed(() => Math.max(1, ...historyDays.value.flatMap(d => [d.kcal ?? 0, d.target ?? 0])) * 1.05)
+
+/** Today is still in progress, so the summary covers finished days only. */
+const historySummary = computed(() => {
+	const done = historyDays.value.filter(d => d.kcal != null && d.date !== todayISO())
+	if (!done.length) return ''
+	const avg = done.reduce((s, d) => s + d.kcal!, 0) / done.length
+	const targeted = done.filter(d => d.target)
+	const close = targeted.filter(d => Math.abs(d.kcal! - d.target!) <= d.target! * 0.1).length
+	const days = `${done.length} logged ${done.length === 1 ? 'day' : 'days'}`
+	return targeted.length >= 3
+		? `You averaged ${fmt(avg)} kcal over ${days}, and were within 10% of target on ${close} of ${targeted.length}.`
+		: `You averaged ${fmt(avg)} kcal over ${days}.`
 })
 
 /** The bar's scale: the target, or what was eaten when that's more, so going over shows. */
@@ -234,14 +372,27 @@ function handleError(err: unknown, action: string) {
 }
 
 async function loadDay() {
-	const d = date.value
+	const d = date.value, prev = prevDate.value
 	try {
-		const rows = await db.getMealEntries(d, d)
-		if (d === date.value) entries.value = rows
+		const rows = await db.getMealEntries(prev, d)
+		if (d !== date.value) return
+		entries.value = rows.filter(r => r.date === d)
+		prevEntries.value = rows.filter(r => r.date === prev)
 		entriesMissing.value = false
 	} catch (err) { handleError(err, 'load this day') }
 }
-watch(date, () => { adding.value = null; loadDay() })
+watch(date, () => { adding.value = null; editingId.value = null; loadDay() })
+
+/** Send anything logged while offline, then reload so the saved rows replace the waiting ones. */
+async function syncPending() {
+	if (!pendingMeals().length) return
+	try {
+		await flushMeals()
+		pending.value = pendingMeals()
+		await loadDay()
+		refreshHistory()
+	} catch { /* still offline; try again on the next 'online' event */ }
+}
 
 // ─── adding ───────────────────────────────────────────────────────────────────
 //
@@ -253,7 +404,8 @@ const adding = ref<MealSlot | null>(null)
 const saving = ref(false)
 const pickerRef = ref<{ focusInput: () => void }[] | null>(null)
 const pick = ref<string | null>(null)
-const grams = ref<number | null>(null)
+const amount = ref<number | null>(null)
+const unit = ref<'g' | 'serving'>('g')
 const quickKcal = ref<number | null>(null)
 const query = ref('')
 
@@ -295,8 +447,34 @@ const picked = computed(() => {
 	return f ? { kind: 'food' as const, name: f.name, per100: f, defaultGrams: 100, id } : null
 })
 
-// A meal defaults to the whole recipe, a food to 100 g; the amount stays editable.
-watch(picked, p => { if (p && p.kind !== 'quick') grams.value = p.defaultGrams })
+/** A food with a serving size can be logged as "2 eggs" as well as by weight. */
+const serving = computed(() => {
+	const p = picked.value
+	return p?.kind === 'food' && p.per100.serving_g ? { g: p.per100.serving_g, name: p.per100.serving_name || 'serving' } : null
+})
+const unitOptions = computed(() => (serving.value
+	? [{ label: 'g', value: 'g' }, { label: `× ${serving.value.name} (${Math.round(serving.value.g)} g)`, value: 'serving' }]
+	: []))
+const grams = computed(() => {
+	if (amount.value == null) return null
+	return unit.value === 'serving' && serving.value ? amount.value * serving.value.g : amount.value
+})
+
+/** Switching unit keeps the same weight, so the kcal preview doesn't jump. */
+function setUnit(u: 'g' | 'serving') {
+	const s = serving.value
+	if (s && amount.value != null && u !== unit.value) {
+		amount.value = u === 'serving' ? Math.round((amount.value / s.g) * 4) / 4 || 0.25 : Math.round(amount.value * s.g)
+	}
+	unit.value = u
+}
+
+// One serving if the food has one, the whole recipe for a meal, else 100 g; always editable.
+watch(picked, p => {
+	if (!p || p.kind === 'quick') return
+	if (serving.value) { unit.value = 'serving'; amount.value = 1 }
+	else { unit.value = 'g'; amount.value = p.defaultGrams }
+})
 
 const preview = computed(() => {
 	const p = picked.value
@@ -305,10 +483,11 @@ const preview = computed(() => {
 	return grams.value ? portion(p.per100, grams.value) : null
 })
 
-function resetForm() { pick.value = null; grams.value = null; quickKcal.value = null; query.value = '' }
+function resetForm() { pick.value = null; amount.value = null; unit.value = 'g'; quickKcal.value = null; query.value = '' }
 
 function openAdd(slot: MealSlot) {
 	resetForm()
+	editingId.value = null
 	adding.value = slot
 	nextTick(() => pickerRef.value?.[0]?.focusInput())
 }
@@ -317,30 +496,42 @@ async function save() {
 	const p = picked.value, n = preview.value
 	if (!p || !n || !adding.value) return
 	saving.value = true
+	const payload = {
+		date: date.value, meal: adding.value, name: p.name.trim().slice(0, 120),
+		kcal: Math.round(n.kcal), protein_g: n.protein_g, carbs_g: n.carbs_g, fat_g: n.fat_g,
+		grams: p.kind === 'quick' || grams.value == null ? null : Math.round(grams.value * 10) / 10,
+		food_id: p.kind === 'food' ? p.id : null,
+		saved_meal_id: p.kind === 'meal' ? p.id : null,
+	}
 	try {
-		const row = await db.addMealEntry({
-			date: date.value, meal: adding.value, name: p.name.trim().slice(0, 120),
-			kcal: Math.round(n.kcal), protein_g: n.protein_g, carbs_g: n.carbs_g, fat_g: n.fat_g,
-			grams: p.kind === 'quick' ? null : grams.value,
-			food_id: p.kind === 'food' ? p.id : null,
-			saved_meal_id: p.kind === 'meal' ? p.id : null,
-		})
+		const row = await db.addMealEntry(payload)
 		entries.value = [...entries.value, row]
 		recent.value = [row, ...recent.value]
-		resetForm()
-		nextTick(() => pickerRef.value?.[0]?.focusInput())
-	} catch (err) { handleError(err, 'add that food') }
-	finally { saving.value = false }
+		refreshHistory()
+	} catch (err) {
+		if (!isNetworkError(err)) { handleError(err, 'add that food'); return }
+		queueMeal(payload)
+		pending.value = pendingMeals()
+		message.info("No connection. It's saved on this device and will sync when you're back online.")
+	} finally { saving.value = false }
+	resetForm()
+	nextTick(() => pickerRef.value?.[0]?.focusInput())
 }
 
 async function remove(e: MealEntry) {
+	if (e.id < 0) { unqueueMeal(-e.id - 1); pending.value = pendingMeals(); return }
 	entries.value = entries.value.filter(x => x.id !== e.id)
-	try { await db.deleteMealEntry(e.id) }
+	try { await db.deleteMealEntry(e.id); refreshHistory() }
 	catch (err) { entries.value = [...entries.value, e]; handleError(err, 'remove that food') }
 }
 
+onUnmounted(() => window.removeEventListener('online', syncPending))
+
 onMounted(async () => {
+	window.addEventListener('online', syncPending)
+	syncPending()
 	loadDay()
+	refreshHistory()
 	loadFoodLibrary().catch(err => handleError(err, 'load your foods'))
 	db.getRecentMealEntries().then(r => { recent.value = r }).catch(() => { /* ordering only */ })
 	await hydrateSettings()
@@ -437,7 +628,7 @@ onMounted(async () => {
 	.del-btn { grid-row: 1 / 3; grid-column: 3; }
 }
 
-.add-form { display: grid; grid-template-columns: minmax(0, 1fr) 130px 84px; gap: 10px; align-items: center; margin: 10px 0 2px 20px; }
+.add-form { display: grid; grid-template-columns: minmax(0, 1fr) auto 84px; gap: 10px; align-items: center; margin: 10px 0 2px 20px; }
 .f-preview { font-size: 0.92rem; font-weight: 600; color: var(--text-color); text-align: right; }
 .f-actions { grid-column: 1 / -1; display: flex; align-items: center; justify-content: flex-end; gap: 6px; }
 .f-hint { margin-right: auto; font-size: 0.82rem; color: var(--text-muted); }
@@ -449,5 +640,59 @@ onMounted(async () => {
 .schema-warning { display: flex; gap: 10px; padding: 12px 14px; border-radius: var(--radius-sm); background: var(--warning-soft); color: var(--text-secondary); font-size: 0.88rem; line-height: 1.5; }
 .schema-warning .n-icon { color: var(--warning-color); font-size: 1.1rem; margin-top: 2px; }
 
+/* ─── copying, editing, waiting ─── */
+.copy-btn {
+	display: inline-flex; align-items: center; gap: 5px; border: none; background: none; cursor: pointer; font: inherit;
+	padding: 6px 10px; border-radius: 999px; font-size: 0.82rem; color: var(--text-muted);
+}
+.copy-btn:hover:not(:disabled) { background: var(--surface-hover); color: var(--text-color); }
+.meal-head .copy-btn { margin-left: auto; }
+.meal-head .copy-btn + .add-btn { margin-left: 0; }
+.copy-day { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 10px 0 4px; font-size: 0.9rem; color: var(--text-secondary); }
+.copy-day .copy-btn { color: var(--primary-color); font-weight: 600; background: var(--primary-soft); }
+button.entry-name { border: none; background: none; padding: 0; font: inherit; text-align: left; cursor: pointer; }
+button.entry-name:hover:not(:disabled) { color: var(--primary-color); }
+button.entry-name:disabled { cursor: default; }
+.entry.pending .entry-name, .entry.pending .entry-kcal { color: var(--text-muted); }
+.entry.pending .entry-sub { color: var(--warning-color); }
+.edit-form { grid-column: 1 / -1; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 6px 0; }
+.edit-name { flex: 1 1 140px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-color); }
+.edit-num { width: 110px; }
+.edit-slot { width: 130px; }
+.edit-kcal { min-width: 70px; text-align: right; font-size: 0.88rem; font-weight: 600; }
+.f-amount { display: flex; gap: 6px; }
+.f-num { width: 130px; }
+.f-unit { width: 150px; }
+
+/* ─── two-week history ─── */
+.history { display: flex; flex-direction: column; gap: 6px; }
+.h-head { display: flex; align-items: baseline; gap: 10px; }
+.h-head h2 { margin: 0; font-size: 1rem; font-weight: 600; font-family: var(--font-display); }
+.h-legend { margin-left: auto; display: inline-flex; align-items: center; gap: 6px; font-size: 0.8rem; color: var(--text-muted); }
+.h-sw { width: 14px; height: 2px; background: var(--text-color); border-radius: 1px; }
+.h-sum { margin: 0 0 6px; font-size: 0.88rem; line-height: 1.5; color: var(--text-secondary); }
+.h-chart { display: grid; grid-template-columns: repeat(14, minmax(0, 1fr)); gap: 4px; }
+.h-col {
+	display: flex; flex-direction: column; align-items: stretch; gap: 6px; padding: 4px 2px;
+	border: none; background: none; border-radius: var(--radius-sm); cursor: pointer; font: inherit;
+}
+.h-col:hover, .h-col.selected { background: var(--surface-hover); }
+.h-plot { position: relative; height: 110px; display: flex; align-items: flex-end; justify-content: center; }
+.h-bar { width: min(100%, 18px); border-radius: 4px 4px 0 0; background: var(--primary-color); }
+.h-col.today .h-bar { background: color-mix(in srgb, var(--primary-color) 40%, transparent); }
+.h-col.empty .h-plot::after { content: ''; width: min(100%, 18px); height: 2px; border-radius: 1px; background: var(--border-color); }
+.h-target { position: absolute; left: 50%; width: min(100%, 26px); transform: translateX(-50%); height: 2px; border-radius: 1px; background: var(--text-color); }
+.h-day { font-size: 0.74rem; color: var(--text-muted); text-align: center; }
+.h-col.selected .h-day { color: var(--text-color); font-weight: 600; }
+
+@media (max-width: 520px) {
+	.add-form { grid-template-columns: minmax(0, 1fr) 72px; }
+	.f-amount { grid-column: 1; }
+	.f-num { width: 100%; flex: 1; }
+	.f-unit { width: 130px; flex-shrink: 0; }
+	.edit-name { flex-basis: 100%; }
+	.h-chart { gap: 1px; }
+	.h-plot { height: 90px; }
+}
 @media (prefers-reduced-motion: reduce) { .seg, .macro-track span { transition: none; } }
 </style>

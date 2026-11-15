@@ -279,6 +279,10 @@ export interface FoodItem {
 	protein_per_100g: number | null;
 	carbs_per_100g: number | null;
 	fat_per_100g: number | null;
+	/** One serving's weight, e.g. 60 for an egg, so it can be logged as "2 eggs". */
+	serving_g?: number | null;
+	/** What one serving is called: "egg", "scoop", "slice". */
+	serving_name?: string | null;
 }
 
 export type FoodItemPayload = Omit<FoodItem, 'id'>;

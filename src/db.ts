@@ -14,7 +14,7 @@ export const MISSING_PHOTOS = 'MISSING_PHOTOS'
 /** Thrown when supabase_meals.sql hasn't been run yet. */
 export const MISSING_MEALS = 'MISSING_MEALS'
 const MEAL_COLUMNS = 'id, date, meal, name, kcal, protein_g, carbs_g, fat_g, grams, food_id, saved_meal_id'
-const FOOD_COLUMNS = 'id, name, kcal_per_100g, protein_per_100g, carbs_per_100g, fat_per_100g'
+const FOOD_COLUMNS = 'id, name, kcal_per_100g, protein_per_100g, carbs_per_100g, fat_per_100g, serving_g, serving_name'
 /** Every food-diary table shares one migration, so any missing one means the same fix. */
 const mealsError = (error: { code?: string } | null) => (isMissingTable(error) || isMissingColumn(error) ? new Error(MISSING_MEALS) : error)
 
@@ -778,6 +778,29 @@ export const db = {
     const { data, error } = await supabase
       .from('meal_entries')
       .insert([{ ...entry, user_id: currentUserId() }])
+      .select(MEAL_COLUMNS)
+      .single()
+    if (error) throw mealsError(error)
+    return data as MealEntry
+  },
+
+  /** Several entries in one insert: copying a day or a meal, or flushing the offline queue. */
+  addMealEntries: async (entries: AddMealEntryPayload[]): Promise<MealEntry[]> => {
+    if (!entries.length) return []
+    const uid = currentUserId()
+    const { data, error } = await supabase
+      .from('meal_entries')
+      .insert(entries.map(e => ({ ...e, user_id: uid })))
+      .select(MEAL_COLUMNS)
+    if (error) throw mealsError(error)
+    return (data ?? []) as MealEntry[]
+  },
+
+  updateMealEntry: async (id: number, patch: Partial<AddMealEntryPayload>): Promise<MealEntry> => {
+    const { data, error } = await supabase
+      .from('meal_entries')
+      .update(patch)
+      .eq('id', id)
       .select(MEAL_COLUMNS)
       .single()
     if (error) throw mealsError(error)

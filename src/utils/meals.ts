@@ -64,3 +64,42 @@ export function mealAsFood(meal: SavedMeal, foods: Map<number, FoodItem>): (Per1
 		fat_per_100g: per100(sums.fat),
 	}
 }
+
+type Nutrition = Pick<MealEntry, 'kcal' | 'protein_g' | 'carbs_g' | 'fat_g'>
+const round1 = (v: number | null, f: number) => (v == null ? null : Math.round(v * f * 10) / 10)
+
+/**
+ * A logged entry at a new weight. Stored values are linear in grams, so this
+ * works even when the food it came from has since been edited or deleted.
+ */
+export function rescaleEntry(e: Nutrition & { grams?: number | null }, grams: number) {
+	const f = e.grams ? grams / e.grams : 1
+	return {
+		grams, kcal: Math.round(e.kcal * f),
+		protein_g: round1(e.protein_g, f), carbs_g: round1(e.carbs_g, f), fat_g: round1(e.fat_g, f),
+	}
+}
+
+/** Entries re-dated (and optionally re-slotted) for a new insert, without their ids. */
+export function copyEntries(entries: MealEntry[], date: string): Omit<MealEntry, 'id'>[] {
+	return entries.map(({ id: _id, ...rest }) => ({ ...rest, date }))
+}
+
+/** kcal eaten per date; dates with no entries are absent, not zero. */
+export function kcalByDate(entries: Pick<MealEntry, 'date' | 'kcal'>[]): Map<string, number> {
+	const out = new Map<string, number>()
+	for (const e of entries) out.set(e.date, (out.get(e.date) ?? 0) + e.kcal)
+	return out
+}
+
+/**
+ * When the scale and the diary disagree by more than day-to-day noise, the
+ * diary is the likelier one to be off: forgotten snacks, oil, eyeballed portions.
+ * Needs most of the week logged, or the gap is just the unlogged days.
+ */
+export function diaryGap(scalePerDay: number | null, logged: { perDay: number; days: number } | null, minGap = 150) {
+	if (scalePerDay == null || !logged || logged.days < 5) return null
+	const gap = Math.round(scalePerDay - logged.perDay)
+	if (Math.abs(gap) < minGap) return null
+	return { kind: gap > 0 ? 'under' as const : 'over' as const, kcal: Math.abs(gap) }
+}

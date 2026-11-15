@@ -250,12 +250,14 @@ const meals: any[] = previewFlags.get('user') === 'new' ? [] : [
 	{ id: 4, date: day(1), meal: 'dinner', name: 'Salmon pasta', kcal: 780, protein_g: 42, carbs_g: 85, fat_g: 26 },
 	{ id: 5, date: day(1), meal: 'snack', name: 'Greek yoghurt', kcal: 160, protein_g: 17, carbs_g: 6, fat_g: 8 },
 	// Five logged days last week, so the week review's diary bar has something to show.
-	...[8, 9, 10, 12, 13].map((n, i) => ({ id: 20 + i, date: day(n), meal: 'dinner', name: 'Logged day', kcal: 2050 + i * 40, protein_g: 140, carbs_g: 230, fat_g: 65 })),
+	...[8, 9, 10, 12, 13].map((n, i) => ({ id: 20 + i, date: day(n), meal: 'dinner', name: 'Logged day', kcal: 1750 + i * 40, protein_g: 140, carbs_g: 230, fat_g: 65 })),
 ]
 let mealId = 100
 d.getMealEntries = async (from: string, to: string) => meals.filter(m => m.date >= from && m.date <= to)
 d.getRecentMealEntries = async () => [...meals].reverse()
 d.addMealEntry = async (m: any) => { const row = { ...m, id: mealId++ }; meals.push(row); return row }
+d.addMealEntries = async (list: any[]) => list.map(m => { const row = { ...m, id: mealId++ }; meals.push(row); return row })
+d.updateMealEntry = async (id: number, patch: any) => { const row = meals.find(m => m.id === id); Object.assign(row, patch); return { ...row } }
 d.deleteMealEntry = async (id: number) => { const i = meals.findIndex(m => m.id === id); if (i >= 0) meals.splice(i, 1) }
 const foodLib: any[] = previewFlags.get('user') === 'new' ? [] : [
 	{ id: 1, name: 'Oats', kcal_per_100g: 389, protein_per_100g: 13.2, carbs_per_100g: 60, fat_per_100g: 7 },
@@ -268,6 +270,7 @@ const savedLib: any[] = previewFlags.get('user') === 'new' ? [] : [
 	{ id: 1, name: 'Oat porridge', items: [{ food_id: 1, grams: 80 }, { food_id: 3, grams: 250 }, { food_id: 2, grams: 120 }] },
 ]
 let libId = 500
+foodLib.forEach((f: any) => { if (f.name === 'Banana') Object.assign(f, { serving_g: 120, serving_name: 'banana' }) })
 d.getFoods = async () => [...foodLib].sort((a, b) => a.name.localeCompare(b.name))
 d.saveFood = async (f: any, id?: number) => {
 	if (id) { const row = foodLib.find(x => x.id === id); Object.assign(row, f); return { ...row } }

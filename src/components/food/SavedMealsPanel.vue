@@ -7,6 +7,7 @@
 		<template v-else>
 			<form v-if="editing" class="meal-form" @submit.prevent="save">
 				<n-input v-model:value="editing.name" placeholder="Meal name, e.g. Overnight oats" :maxlength="120" />
+			<p v-if="duplicate" class="dup">You already have a meal called “{{ duplicate.name }}”. Give this one another name, or edit that one.</p>
 				<div v-for="(it, i) in editing.items" :key="i" class="ing">
 					<n-select
 						v-model:value="it.food_id"
@@ -74,7 +75,11 @@ const saving = ref(false)
 const foodOptions = computed(() => foods.value.map(f => ({ label: `${f.name} · ${Math.round(f.kcal_per_100g)} kcal/100 g`, value: f.id })))
 const validItems = computed(() => (editing.value?.items ?? [])
 	.filter((i): i is { food_id: number; grams: number } => i.food_id != null && !!i.grams && i.grams > 0))
-const canSave = computed(() => !!editing.value?.name.trim() && validItems.value.length > 0)
+const duplicate = computed(() => {
+	const n = editing.value?.name.trim().toLowerCase()
+	return n ? savedMeals.value.find(m => m.id !== editing.value!.id && m.name.trim().toLowerCase() === n) ?? null : null
+})
+const canSave = computed(() => !!editing.value?.name.trim() && validItems.value.length > 0 && !duplicate.value)
 
 const ingKcal = (it: DraftItem) => {
 	const f = it.food_id != null ? foodsById.value.get(it.food_id) : undefined
@@ -143,6 +148,7 @@ function remove(m: SavedMeal) {
 	font-size: 0.88rem; font-weight: 600; color: var(--primary-color);
 }
 .mf-foot { display: flex; align-items: center; gap: 8px; }
+.dup { margin: -4px 0 0; font-size: 0.84rem; color: var(--warning-color); }
 .mf-total { margin-right: auto; font-size: 0.88rem; color: var(--text-secondary); }
 .mf-total strong { color: var(--text-color); }
 @media (max-width: 520px) {

@@ -13,6 +13,7 @@
 import { computed } from 'vue'
 import { format, parseISO } from 'date-fns'
 import type { FuelTrend, FuelWeekReview } from '@/utils/fuelReview'
+import { diaryGap } from '@/utils/meals'
 
 const props = withDefaults(defineProps<{
 	review: FuelWeekReview | null
@@ -82,6 +83,9 @@ const bars = computed(() => {
 	return rows.map(b => ({ ...b, pct: (b.value / max) * 100 }))
 })
 
+/** When the scale and a well-kept diary disagree, say which way and by how much. */
+const gap = computed(() => diaryGap(implied.value, props.logged))
+
 /** A week barely begun hasn't moved on the scale yet. */
 const showScale = computed(() =>
 	!!props.review && props.review.actualChangeKg !== null && props.review.unknownReason !== 'partial')
@@ -135,6 +139,17 @@ const showTrend = computed(() => !!props.trend && props.trend.measured > 0)
 					<span v-if="b.note" class="wb-note">{{ b.note }}</span>
 				</div>
 			</div>
+
+			<p v-if="gap" class="wfr-gap">
+				<template v-if="gap.kind === 'under'">
+					The scale says you ate about <strong class="mono">{{ kcal(gap.kcal) }}</strong> kcal a day more than you logged.
+					That's usually cooking oil, drinks, snacks or eyeballed portions, so weighing those for a week is the fastest fix.
+				</template>
+				<template v-else>
+					You logged about <strong class="mono">{{ kcal(gap.kcal) }}</strong> kcal a day more than the scale shows.
+					Portions may be logged generously, or water weight is hiding a drop. Give it another week before changing anything.
+				</template>
+			</p>
 
 			<dl class="wfr-facts">
 				<div>
@@ -209,6 +224,8 @@ const showTrend = computed(() => !!props.trend && props.trend.measured > 0)
 .wfr-facts dd { margin: 0; font-size: 0.86rem; color: var(--text-secondary); }
 .wfr-facts strong { color: var(--text-color); font-weight: 600; }
 
+.wfr-gap { margin: 0; font-size: 0.86rem; line-height: 1.55; color: var(--text-secondary); max-width: 68ch; }
+.wfr-gap strong { color: var(--text-color); font-weight: 600; }
 .wfr-msg { margin: 0; font-size: 0.88rem; line-height: 1.55; color: var(--text-secondary); max-width: 68ch; }
 .wfr-trend {
 	margin: 0; font-size: 0.86rem; line-height: 1.55; max-width: 68ch;

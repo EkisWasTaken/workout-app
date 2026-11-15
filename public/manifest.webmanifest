@@ -1,0 +1,14 @@
+{
+	"name": "Trainlog",
+	"short_name": "Trainlog",
+	"description": "Training log: plan sessions, import FIT files, track goal paces and food.",
+	"start_url": "./",
+	"scope": "./",
+	"display": "standalone",
+	"background_color": "#0d0c0a",
+	"theme_color": "#0d0c0a",
+	"icons": [
+		{ "src": "favicon.png", "sizes": "192x192", "type": "image/png" },
+		{ "src": "favicon.svg", "sizes": "any", "type": "image/svg+xml" }
+	]
+}

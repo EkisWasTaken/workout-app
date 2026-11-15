@@ -23,6 +23,9 @@ create table if not exists public.food_items (
   fat_per_100g      real check (fat_per_100g is null or fat_per_100g between 0 and 100),
   created_at        timestamptz not null default now()
 );
+-- Servings, so a food can be logged as "2 eggs" instead of by weight.
+alter table public.food_items add column if not exists serving_g real check (serving_g is null or (serving_g > 0 and serving_g <= 5000));
+alter table public.food_items add column if not exists serving_name text check (serving_name is null or char_length(serving_name) between 1 and 40);
 create index if not exists food_items_user on public.food_items (user_id, name);
 
 create table if not exists public.saved_meals (
